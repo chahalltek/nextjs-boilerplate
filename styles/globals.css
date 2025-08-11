@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --skol-purple: #4F2683;
+  --skol-gold: #FFC62F;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-black text-white;
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *)) {
+  @apply bg-white/10 px-1.5 py-0.5 rounded;
+}
