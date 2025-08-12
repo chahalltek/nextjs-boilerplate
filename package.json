@@ -7,14 +7,17 @@
     "start": "next start"
   },
   "dependencies": {
-    "autoprefixer": "10.4.20",
     "gray-matter": "4.0.3",
     "next": "14.2.5",
-    "postcss": "8.4.41",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-markdown": "9.0.1",
-    "remark-gfm": "4.0.0",
-    "tailwindcss": "3.4.10"
+    "remark-gfm": "4.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.16",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11"
   }
 }
