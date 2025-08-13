@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { getPostBySlug } from "@/lib/posts";
 import Comments from "@/components/Comments";
 
-export default function BlogPostPage({ params }: { params: { slug: string } }) {
+export default function BlogPostPage({ params }) {
+
   const post = getPostBySlug(params.slug); // your existing loader
 
   return (
