@@ -6,8 +6,12 @@ export default function HyvorComments({ pageId, title }) {
 
   if (!websiteId) {
     return (
-      <div className="mt-6 rounded-md border border-red-400/40 bg-red-500/10 p-4 text-red-200">
-        Comments are misconfigured. Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> in Vercel.
+      <div className="mt-6 rounded border border-white/15 bg-white/5 p-4 text-sm">
+        <p className="font-medium">Comments are not configured</p>
+        <p className="text-white/70 mt-1">
+          Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> to your numeric Hyvor
+          Website ID and redeploy.
+        </p>
       </div>
     );
   }
