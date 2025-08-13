@@ -33,9 +33,13 @@ export default function BlogPost({ params }) {
       </article>
 
       <section className="mt-12">
-        <h2 className="text-xl font-semibold mb-4">Comments</h2>
-        <CommentsEmbed />
-      </section>
+  <h2 className="text-xl font-semibold mb-4">Comments</h2>
+  <CommentsEmbed
+    identifier={post.slug}
+    title={post.title}
+    url={`${process.env.NEXT_PUBLIC_SITE_URL || "https://www.theskolsisters.com"}/blog/${post.slug}`}
+  />
+</section>
     </div>
   );
 }
