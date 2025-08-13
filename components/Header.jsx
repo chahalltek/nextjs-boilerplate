@@ -11,7 +11,7 @@ const nav = [
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
-  { href: "/cws", label: "CWS", title: "Coulda, Woulda, Shoulda" }, // tooltip on hover
+  { href: "/cws", label: "CWS", title: "Coulda, Woulda, Shoulda" },
   { href: "/survivor", label: "Survivor" },
 ];
 
@@ -19,13 +19,12 @@ export default function Header() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const isActive = (href: string) =>
+  const isActive = (href) =>
     pathname === href || (href !== "/" && pathname?.startsWith(href));
 
   return (
     <header className="sticky top-0 z-50 bg-[#120F1E]/80 backdrop-blur supports-[backdrop-filter]:bg-[#120F1E]/60 border-b border-white/10">
       <div className="container mx-auto max-w-6xl px-4 h-14 flex items-center gap-4">
-        {/* Brand */}
         <Link href="/" className="flex items-center gap-2 text-white font-semibold">
           <Logo size={28} />
           <span className="hidden sm:inline">The Skol Sisters</span>
@@ -76,9 +75,7 @@ export default function Header() {
                 key={item.href}
                 href={item.href}
                 title={item.title}
-                className={`py-1 ${
-                  isActive(item.href) ? "text-white" : "text-white/80"
-                }`}
+                className={`py-1 ${isActive(item.href) ? "text-white" : "text-white/80"}`}
                 onClick={() => setOpen(false)}
               >
                 {item.label}
@@ -97,4 +94,3 @@ export default function Header() {
     </header>
   );
 }
-
