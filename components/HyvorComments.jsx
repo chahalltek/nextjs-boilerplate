@@ -1,37 +1,52 @@
 "use client";
+import { useEffect } from "react";
 import Script from "next/script";
 
-export default function HyvorComments({ pageId, title }) {
-  const websiteId = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || "";
+export default function HyvorComments({ pageId, title = "" }) {
+  // This is replaced at build-time. Make sure it exists in Vercel for ALL envs.
+  const siteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || 0);
 
-  // Nice fallback so the page still renders if the env var is missing
-  if (!websiteId) {
+  // If siteId is missing, show a tiny hint (prevents a blank page).
+  if (!siteId) {
     return (
-      <div className="mt-6 rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-white/70">
-        HYVOR site id is not set. Add <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> and redeploy.
+      <div className="rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-sm">
+        Hyvor Website ID is not set. Add <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> in Vercel
+        and redeploy.
       </div>
     );
   }
 
+  // Make Hyvor reload when the page id changes (client-side nav).
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.HYVOR_TALK) {
+      try {
+        window.HYVOR_TALK.reload();
+      } catch {}
+    }
+  }, [pageId]);
+
   return (
     <>
-      {/* 1) Define globals BEFORE the embed script runs */}
-      <Script id="hyvor-config" strategy="beforeInteractive">
+      {/* 1) Define config BEFORE loading embed.js */}
+      <Script id="hyvor-talk-config" strategy="afterInteractive">
         {`
-          window.HYVOR_TALK_WEBSITE = ${JSON.stringify(websiteId)};
+          window.HYVOR_TALK_WEBSITE = ${JSON.stringify(siteId)};
           window.HYVOR_TALK_CONFIG = {
             id: ${JSON.stringify(pageId)},
-            title: ${JSON.stringify(title || pageId)},
-            url: window.location.href
+            url: window.location.href,
+            title: ${JSON.stringify(title)}
           };
         `}
       </Script>
 
-      {/* 2) Load the embed AFTER the globals exist */}
-      <Script src="https://talk.hyvor.com/embed/embed.js" strategy="afterInteractive" />
+      {/* 2) Hyvor mount point */}
+      <div id="hyvor-talk-view" key={pageId} />
 
-      {/* 3) The mount point */}
-      <div id="hyvor-talk-view" />
+      {/* 3) Loader */}
+      <Script
+        src="https://talk.hyvor.com/embed/embed.js"
+        strategy="afterInteractive"
+      />
     </>
   );
 }
