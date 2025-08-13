@@ -7,7 +7,7 @@ export default function Header() {
       <div className="container py-3 flex items-center justify-between gap-3">
        <Link href="/" className="flex items-center gap-2">
     {/* Next/Image is fine for SVG (it won’t optimize it), <img> also works */}
-   /* <img src={logo.src || logo} alt="The Skol Sisters" className="h-7 w-auto" /> */
+   <img src={logo.src || logo} alt="The Skol Sisters" className="h-7 w-auto" /> 
    <span className="font-extrabold tracking-tight text-lg">The Skol Sisters</span>
  </Link>
 
