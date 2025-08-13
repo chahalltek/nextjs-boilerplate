@@ -38,3 +38,12 @@ body {
   @apply px-4 py-2 rounded font-semibold text-black hover:opacity-90;
   background: color-mix(in oklab, var(--color-skol-gold) 96%, #000 4%);
 }
+/* Disqus picks this up as its accent color */
+#disqus_thread a {
+  color: var(--skol-gold); /* your gold */
+}
+
+/* Optional: hover tweak */
+#disqus_thread a:hover {
+  opacity: 0.85;
+}

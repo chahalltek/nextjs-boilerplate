@@ -34,11 +34,15 @@ export default function BlogPost({ params }) {
 
       <section className="mt-12">
   <h2 className="text-xl font-semibold mb-4">Comments</h2>
+  {/* On your post page where <CommentsEmbed /> is used */}
+<div className="mt-10 rounded-xl border border-white/10 bg-white/5 p-4">
   <CommentsEmbed
     identifier={post.slug}
     title={post.title}
-    url={`${process.env.NEXT_PUBLIC_SITE_URL || "https://www.theskolsisters.com"}/blog/${post.slug}`}
+    url={`https://www.theskolsisters.com/blog/${post.slug}`}
   />
+</div>
+
 </section>
     </div>
   );
