@@ -1,10 +1,9 @@
-// components/Logo.tsx
-export default function Logo({ size = 28 }: { size?: number }) {
+// components/Logo.jsx
+export default function Logo({ size = 28 }) {
   const w = size * 1.1;
-  const h = size;
   const id = "grad-" + Math.random().toString(36).slice(2, 7);
   return (
-    <svg width={w} height={h} viewBox="0 0 55 50" aria-hidden>
+    <svg width={w} height={size} viewBox="0 0 55 50" aria-hidden>
       <defs>
         <linearGradient id={id} x1="0" x2="1" y1="0" y2="1">
           <stop offset="0" stopColor="#9B5CF6" />
