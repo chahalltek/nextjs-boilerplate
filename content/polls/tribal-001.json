@@ -1,6 +1,11 @@
 {
-  "title": "Who’s getting their torch snuffed next?",
-  "options": ["Player A", "Player B", "Player C"],
-  "multiple": false,
-  "status": "open" 
+  "slug": "best-blindside-ever",
+  "question": "Best blindside ever?",
+  "options": [
+    { "id": "ozzy", "label": "Ozzy (Micronesia)" },
+    { "id": "jt", "label": "JT’s idol letter" },
+    { "id": "erik", "label": "Erik gives up immunity" },
+    { "id": "sarah", "label": "Sarah (Game Changers)" }
+  ],
+  "blurb": "We’ve all yelled at the TV. Which move lives rent-free in your head?"
 }
