@@ -39,11 +39,12 @@ export default function BlogPostPage({ params }) {
         </ReactMarkdown>
       </article>
 
+     // ...
       <div className="mt-10 border-t border-white/10 pt-8">
         <h2 className="text-xl font-semibold mb-3">Join the discussion</h2>
-        {/* one thread per post */}
-        <HyvorComments pageId={`blog:${post.slug}`} />
+        <HyvorComments pageId={`blog:${post.slug}`} title={post.title} />
       </div>
+
     </div>
   );
 }
