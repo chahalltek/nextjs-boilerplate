@@ -1,4 +1,6 @@
 // app/about/page.jsx
+import Link from "next/link";
+
 export const metadata = {
   title: "About — The Skol Sisters",
   description:
@@ -157,22 +159,17 @@ export default function AboutPage() {
       {/* CTA */}
       <section className="mt-12">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 flex items-center justify-between gap-4 flex-col md:flex-row">
-          <div>
-            <h3 className="font-semibold text-lg">Want to learn or join a league?</h3>
-            <p className="text-white/80 mt-1">
-              If you’d like to learn the game, refine your strategy, or join a women-only league,
-              drop me a note—I’m organizing new groups and happy to match skill levels.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <a href="/101" className="px-4 py-2 rounded border border-white/20 hover:bg-white/10">Start with 101</a>
-            <a
-              href="/contact"
-              className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90"
-            >
-              Contact us
-            </a>
-          </div>
+          <div className="not-prose mt-10 grid gap-4 sm:grid-cols-2">
+  <Link href="/101" className="cta-card">
+    <div className="cta-title">Start with 101</div>
+    <div className="cta-sub">New here? This quick primer has you.</div>
+  </Link>
+
+  <Link href="/contact" className="cta-card">
+    <div className="cta-title">Contact us</div>
+    <div className="cta-sub">Have a tip, idea, or request? We read every message.</div>
+  </Link>
+</div>
         </div>
       </section>
     </div>
