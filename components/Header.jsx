@@ -1,6 +1,5 @@
 import Link from "next/link";
-import Logo from "@/components/Logo";
-
+import Logo from "@/components/Logo"; // keep your inline SVG Logo component
 
 export default function Header() {
   return (
@@ -10,15 +9,19 @@ export default function Header() {
           <Logo size={28} />
           <span className="font-extrabold tracking-tight text-lg">The Skol Sisters</span>
         </Link>
+
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <Link href="/episodes" className="hover:opacity-80">Episodes</Link>
           <Link href="/start-sit" className="hover:opacity-80">Start/Sit</Link>
           <Link href="/blog" className="hover:opacity-80">Blog</Link>
+          <Link href="/101" className="hover:opacity-80">101</Link> {/* NEW */}
           <Link href="/about" className="hover:opacity-80">About</Link>
         </nav>
-        <Link href="/subscribe"
-              className="px-3 py-2 rounded"
-              style={{ background:"var(--skol-gold)", color:"#000", fontWeight:600 }}>
+
+        <Link
+          href="/subscribe"
+          className="px-3 py-2 rounded bg-[#FFC62F] text-black font-semibold hover:opacity-90 text-sm"
+        >
           Subscribe
         </Link>
       </div>
