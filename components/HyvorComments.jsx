@@ -1,19 +1,21 @@
-// components/HyvorComments.jsx
 "use client";
-import { Comments } from "@hyvor/hyvor-talk-react";
+import Script from "next/script";
 
-export default function HyvorComments({ pageId, title }) {
-  const websiteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || 0);
-  if (!websiteId) return null; // avoid rendering if env var missing
-
+export default function HyvorComments({ pageId }) {
+  const siteId = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || "";
   return (
-    <Comments
-      websiteId={websiteId}
-      pageId={String(pageId)}
-      pageTitle={title || "Discussion"}
-      key={String(pageId)} // ensures thread switches on route change
-    />
+    <>
+      <div id="hyvor-talk-view" />
+      <Script src="https://talk.hyvor.com/embed/embed.js" strategy="lazyOnload" />
+      <Script id={`hyvor-config-${pageId}`} strategy="lazyOnload">
+        {`
+          window.HYVOR_TALK_WEBSITE = ${JSON.stringify(siteId)};
+          window.HYVOR_TALK_CONFIG = {
+            id: ${JSON.stringify(pageId)},
+            url: window.location.href
+          };
+        `}
+      </Script>
+    </>
   );
 }
-
-

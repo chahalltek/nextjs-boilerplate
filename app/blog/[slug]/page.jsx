@@ -1,32 +1,36 @@
-// app/blog/[slug]/page.jsx
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { getPostBySlug } from "@/lib/posts";
-import CommentsEmbed from "@/components/CommentsEmbed";
-import dynamic from "next/dynamic";
-const Comments = dynamic(() => import("@/components/CommentsEmbed"), { ssr: false });
+import { getAllSlugs, getPostBySlug } from "@/lib/posts";
+import HyvorComments from "@/components/HyvorComments";
 
-export const runtime = "nodejs";
+export const runtime = "nodejs";         // ensure fs is allowed
+export const dynamic = "force-static";   // pre-render posts at build
+export const revalidate = false;         // no ISR, change to a number if you want it
+
+export async function generateStaticParams() {
+  return getAllSlugs().map((slug) => ({ slug }));
+}
+
 export async function generateMetadata({ params }) {
   const post = getPostBySlug(params.slug);
-  if (!post) return { title: "Post not found — The Skol Sisters" };
+  if (!post) return { title: "Not found — Skol Sisters" };
   return {
-    title: `${post.title} — The Skol Sisters`,
+    title: `${post.title} — Skol Sisters`,
     description: post.excerpt || "",
   };
 }
 
-export default function BlogPost({ params }) {
+export default function BlogPostPage({ params }) {
   const post = getPostBySlug(params.slug);
-  if (!post) return notFound();
+  if (!post || post.draft) return notFound();
 
   return (
     <div className="container py-12 max-w-3xl">
       <article className="prose prose-invert max-w-none">
         <h1>{post.title}</h1>
         {post.date && (
-          <p className="text-white/60 text-sm">
+          <p className="text-white/60">
             {new Date(post.date).toLocaleDateString()}
           </p>
         )}
@@ -35,19 +39,11 @@ export default function BlogPost({ params }) {
         </ReactMarkdown>
       </article>
 
-      <section className="mt-12">
-  <h2 className="text-xl font-semibold mb-4">Comments</h2>
-  {/* On your post page where <CommentsEmbed /> is used */}
-<div className="mt-10 rounded-xl border border-white/10 bg-white/5 p-4">
-<Comments identifier={post.slug} title={post.title} url={`https://www.theskolsisters.com/blog/${post.slug}`} />
-  <CommentsEmbed
-  identifier={post.slug}
-  title={post.title}
-  url={canonical}
-/>
-</div>
-
-</section>
+      <div className="mt-10 border-t border-white/10 pt-8">
+        <h2 className="text-xl font-semibold mb-3">Join the discussion</h2>
+        {/* one thread per post */}
+        <HyvorComments pageId={`blog:${post.slug}`} />
+      </div>
     </div>
   );
 }
