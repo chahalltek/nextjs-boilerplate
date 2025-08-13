@@ -4,27 +4,26 @@
 import { useEffect } from "react";
 
 export default function HyvorComments({ pageId, title }) {
-  const websiteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || 0);
+  // READ the public env at runtime (client)
+  const websiteIdRaw = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || "";
+  const websiteIdNum = Number(websiteIdRaw);
 
   useEffect(() => {
-    if (!websiteId) return;
+    if (!websiteIdNum) return;
 
-    // 1) Set required globals BEFORE loading the script
-    //    (Hyvor reads these on initial load)
-    // eslint-disable-next-line no-undef
-    window.HYVOR_TALK_WEBSITE = websiteId;
-    // eslint-disable-next-line no-undef
+    // 1) Set globals BEFORE loading the script
+    window.HYVOR_TALK_WEBSITE = websiteIdNum;
     window.HYVOR_TALK_CONFIG = {
       id: pageId,
-      url: window.location.href, // canonical is fine too if you have it
+      url: window.location.href,
       title: title || document.title,
     };
 
-    // 2) Remove any previous embed (navigating between posts)
-    const old = document.getElementById("hyvor-talk-script");
-    if (old) old.remove();
+    // 2) Remove any previous embed instance (client-side nav between posts)
+    const prev = document.getElementById("hyvor-talk-script");
+    if (prev) prev.remove();
 
-    // 3) Inject embed script AFTER we’ve set the globals
+    // 3) Inject the embed AFTER globals are set
     const s = document.createElement("script");
     s.src = "https://talk.hyvor.com/embed/embed.js";
     s.async = true;
@@ -32,20 +31,18 @@ export default function HyvorComments({ pageId, title }) {
     document.body.appendChild(s);
 
     return () => {
-      // Optional cleanup of the view div content when unmounting
       const view = document.getElementById("hyvor-talk-view");
       if (view) view.innerHTML = "";
     };
-  }, [websiteId, pageId, title]);
+  }, [websiteIdNum, pageId, title]);
 
-  if (!websiteId) {
-    // Helpful message in non-prod or when env is missing
-    return (
-      <p className="text-sm text-red-300">
-        HYVOR website ID is not set. Define NEXT_PUBLIC_HYVOR_WEBSITE_ID in your env.
-      </p>
-    );
-  }
-
-  return <div id="hyvor-talk-view" />;
+  // Visible debug (helpful on production):
+  return (
+    <>
+      <div id="hyvor-talk-view" />
+      <div className="mt-2 text-xs text-white/40">
+        hyvor site: {websiteIdNum || "MISSING"} • pageId: {pageId}
+      </div>
+    </>
+  );
 }
