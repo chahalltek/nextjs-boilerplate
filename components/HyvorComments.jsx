@@ -1,36 +1,27 @@
 "use client";
-
-import Script from "next/script";
+import { Comments } from "@hyvor/hyvor-talk-react";
 
 export default function HyvorComments({ pageId, title }) {
-  // Ensure we pass a NUMBER to Hyvor, not a string
-  const raw = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID;
-  const siteId = Number(raw);
+  const siteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID);
 
   if (!siteId || Number.isNaN(siteId)) {
     return (
       <div className="mt-6 rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-red-200">
-        Website ID not set. Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> in Vercel (Production/Preview/Development)
-        and redeploy.
+        Website ID not set. Define <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> and redeploy.
       </div>
     );
   }
 
-  // Keep config BEFORE loader script
-  const cfg = `
-    var HYVOR_TALK_WEBSITE = ${siteId};
-    var HYVOR_TALK_CONFIG = {
-      id: ${JSON.stringify(pageId || "")},
-      url: window.location.href,
-      title: ${JSON.stringify(title || "")}
-    };
-  `;
+  // pageUrl only exists in the browser; Comments handles empty string fine during SSR.
+  const pageUrl =
+    typeof window !== "undefined" ? window.location.href : "";
 
   return (
-    <>
-      <div id="hyvor-talk-view" />
-      <Script id="hyvor-talk-config" strategy="afterInteractive">{cfg}</Script>
-      <Script src="https://talk.hyvor.com/embed/embed.js" strategy="afterInteractive" />
-    </>
+    <Comments
+      websiteId={siteId}
+      pageId={pageId}
+      pageTitle={title || ""}
+      pageUrl={pageUrl}
+    />
   );
 }
