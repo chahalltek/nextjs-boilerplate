@@ -1,32 +1,42 @@
-// components/CommentsEmbed.tsx
+// components/CommentsEmbed.jsx
 "use client";
-import Script from "next/script";
+import { useEffect } from "react";
 
-export default function CommentsEmbed() {
-  return (
-    <>
-      {/* HYVOR example */}
-      {/* <div id="hyvor-talk-view" />
-      <Script src="https://talk.hyvor.com/web-api/embed.js" strategy="lazyOnload" />
-      <Script id="hyvor-init" strategy="lazyOnload">{`
-        HyvorTalkEmbed.init({
-          websiteId: "${process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID}",
-          page: { id: window.location.pathname, url: window.location.href }
-        });
-      `}</Script> */}
+export default function CommentsEmbed({ identifier, title, url }) {
+  useEffect(() => {
+    const shortname = process.env.NEXT_PUBLIC_DISQUS_SHORTNAME;
+    if (!shortname) {
+      console.warn("Missing NEXT_PUBLIC_DISQUS_SHORTNAME");
+      return;
+    }
 
-      {/* DISQUS example */}
-      <div id="disqus_thread" />
-      <Script id="dsq-config" strategy="lazyOnload">{`
-        var disqus_config = function () {
-          this.page.url = window.location.href;
-          this.page.identifier = window.location.pathname;
-        };
-      `}</Script>
-      <Script
-        src="https://YOUR_SHORTNAME.disqus.com/embed.js"
-        strategy="lazyOnload"
-      />
-    </>
-  );
+    function disqus_config() {
+      this.page.identifier = identifier || window.location.pathname;
+      this.page.title = title || document.title;
+      // Use canonical URL without hash; Disqus requires a stable, absolute URL
+      this.page.url =
+        url ||
+        (typeof window !== "undefined"
+          ? `${window.location.origin}${window.location.pathname}`
+          : undefined);
+    }
+
+    // If Disqus already loaded, just reset it for this page
+    if (window.DISQUS) {
+      window.DISQUS.reset({ reload: true, config: disqus_config });
+      return;
+    }
+
+    // First load: set config and inject script
+    window.disqus_config = disqus_config;
+    const s = document.createElement("script");
+    s.src = `https://${shortname}.disqus.com/embed.js`;
+    s.async = true;
+    s.setAttribute("data-timestamp", Date.now().toString());
+    (document.head || document.body).appendChild(s);
+
+    // no cleanup API from Disqus; leaving script is fine across pages
+  }, [identifier, title, url]);
+
+  return <div id="disqus_thread" className="mt-8" />;
 }
