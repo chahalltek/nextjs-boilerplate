@@ -1,25 +1,51 @@
-import { NextResponse } from "next/server";
+// middleware.js
+import { NextResponse } from 'next/server';
+
+function parseBasicAuth(header) {
+  if (!header || !header.startsWith('Basic ')) return null;
+  const base64 = header.slice(6);
+
+  // Edge runtime has atob(); fall back to Buffer only if we're not on Edge.
+  let decoded;
+  try {
+    decoded =
+      typeof atob === 'function'
+        ? atob(base64)
+        : Buffer.from(base64, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+
+  const i = decoded.indexOf(':');
+  if (i === -1) return null;
+  return { user: decoded.slice(0, i), pass: decoded.slice(i + 1) };
+}
 
 export function middleware(req) {
-  const url = new URL(req.url);
-  const isAdmin = url.pathname.startsWith("/admin") || url.pathname.startsWith("/api/admin");
-  if (!isAdmin) return NextResponse.next();
-
-  const auth = req.headers.get("authorization");
-  if (!auth?.startsWith("Basic ")) {
-    return new NextResponse("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Basic realm=admin" } });
+  const { pathname } = new URL(req.url);
+  // Protect admin pages and admin APIs only
+  if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
+    return NextResponse.next();
   }
-  const b64 = auth.split(" ")[1] || "";
-  let decoded = "";
-  try { decoded = atob(b64); } catch { return new NextResponse("Bad auth", { status: 400 }); }
-  const [user, pass] = decoded.split(":");
 
-  const expectedUser = process.env.ADMIN_USER || "";
-  const expectedPass = process.env.ADMIN_PASS || "";
-  if (user !== expectedUser || pass !== expectedPass) {
-    return new NextResponse("Forbidden", { status: 403 });
+  const expectedUser = process.env.ADMIN_USER ?? '';
+  const expectedPass = process.env.ADMIN_PASS ?? '';
+
+  const creds = parseBasicAuth(req.headers.get('authorization'));
+  if (!creds) {
+    return new NextResponse('Unauthorized', {
+      status: 401,
+      headers: { 'WWW-Authenticate': 'Basic realm="admin"' },
+    });
   }
+
+  if (creds.user !== expectedUser || creds.pass !== expectedPass) {
+    return new NextResponse('Forbidden', { status: 403 });
+  }
+
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };
+export const config = {
+  matcher: ['/admin/:path*', '/api/admin/:path*'],
+};
