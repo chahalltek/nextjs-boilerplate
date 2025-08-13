@@ -1,18 +1,40 @@
-/* app/globals.css */
 @import "tailwindcss";
 
-/* Brand theme + helpers */
+/* Brand tokens */
 @theme {
   --color-skol-purple: #4F2683;
   --color-skol-gold:   #FFC62F;
+  --color-ink:         #EDEAF6;
+
+  /* dark surfaces */
+  --color-surface-950: #0E0916;
+  --color-surface-900: #151022;
+  --color-surface-800: #211934;
+
+  --radius-xl: 0.875rem;
 }
 
-:root {
-  --skol-purple: #4F2683;
-  --skol-gold:   #FFC62F;
-}
-
+/* App-wide base */
 html, body { height: 100%; }
-body { @apply bg-black text-white antialiased; }
-.container { @apply mx-auto max-w-5xl px-4; }
-a { @apply hover:opacity-80; }
+body {
+  @apply text-white antialiased;
+  background: radial-gradient(1200px 600px at 10% -10%, #1d1330 0%, transparent 60%),
+              radial-gradient(1200px 600px at 90% -20%, #2a1a40 0%, transparent 60%),
+              linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
+}
+
+.container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+/* little utility used by cards/inputs */
+.card {
+  @apply bg-[color:var(--color-surface-900)]/70 border border-white/10 rounded-xl;
+}
+.input {
+  @apply px-3 py-2 rounded bg-white/10 border border-white/20 placeholder-white/50;
+}
+.btn-gold {
+  @apply px-4 py-2 rounded font-semibold text-black hover:opacity-90;
+  background: color-mix(in oklab, var(--color-skol-gold) 96%, #000 4%);
+}

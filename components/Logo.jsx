@@ -1,21 +1,20 @@
-export default function Logo({ size = 32 }) {
-  const w = size * 1.1, h = size;
-  const id = "grad-" + Math.random().toString(36).slice(2,7);
+export default function Logo({ size = 24 }) {
+  const w = size * 1.7;
+  const id = "grad-" + Math.random().toString(36).slice(2, 8);
   return (
-    <svg width={w} height={h} viewBox="0 0 110 100" role="img" aria-label="Skol Sisters Logo">
+    <svg width={w} height={size} viewBox="0 0 110 65" role="img" aria-label="Skol Sisters">
       <defs>
         <linearGradient id={id} x1="0" x2="1" y1="0" y2="1">
           <stop offset="0%" stopColor="#4F2683" />
           <stop offset="100%" stopColor="#FFC62F" />
         </linearGradient>
       </defs>
-      <path d="M55 5 L95 25 V55 C95 75 75 90 55 95 C35 90 15 75 15 55 V25 Z"
-            fill={`url(#${id})`} stroke="#240E44" strokeWidth="4"/>
-      <path d="M30 52c8-14 28-10 33-23 3-7-3-13-10-14 10-2 22 6 20 18-3 17-27 18-34 30-4 6-2 13 3 16-11-1-20-14-12-27z"
-            fill="#fff" opacity="0.95"/>
-      <circle cx="78" cy="24" r="3" fill="#fff"/>
-      <circle cx="86" cy="30" r="2.5" fill="#fff"/>
+      {/* shield */}
+      <path d="M10 8 L55 2 L100 8 V38 C100 48 82 60 55 63 C28 60 10 48 10 38 Z"
+            fill={`url(#${id})`} stroke="#2a164a" strokeWidth="4" />
+      {/* sparkles */}
+      <circle cx="82" cy="14" r="3" fill="#fff" />
+      <circle cx="90" cy="20" r="2.5" fill="#fff" />
     </svg>
   );
 }
-
