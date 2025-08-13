@@ -6,10 +6,10 @@ export default function Header() {
     <header className="sticky top-0 z-50 backdrop-blur bg-black/30 border-b border-white/10">
       <div className="container py-3 flex items-center justify-between gap-3">
        <Link href="/" className="flex items-center gap-2">
-+    {/* Next/Image is fine for SVG (it won’t optimize it), <img> also works */}
-+    <img src={logo.src || logo} alt="The Skol Sisters" className="h-7 w-auto" />
-+    <span className="font-extrabold tracking-tight text-lg">The Skol Sisters</span>
-+  </Link>
+    {/* Next/Image is fine for SVG (it won’t optimize it), <img> also works */}
+   <img src={logo.src || logo} alt="The Skol Sisters" className="h-7 w-auto" />
+   <span className="font-extrabold tracking-tight text-lg">The Skol Sisters</span>
+ </Link>
 
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <Link href="/episodes" className="hover:opacity-80">Episodes</Link>
