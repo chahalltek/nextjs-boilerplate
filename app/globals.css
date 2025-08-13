@@ -11,6 +11,11 @@
   --color-surface-900: #151022;
   --color-surface-800: #211934;
 
+  /* HYVOR Talk tweaks (dark site) */
+#hyvor-talk-view { color: #fff; }
+#hyvor-talk-view a { color: var(--skol-gold, #f6d34a); }
+
+
   --radius-xl: 0.875rem;
 }
 
