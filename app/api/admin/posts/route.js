@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import matter from "gray-matter";
 import { createOrUpdateFile, getFile, listMarkdownIn } from "@/lib/github";
+import { requireAdminAuth } from "@/lib/adminAuth";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request) {
+  const auth = requireAdminAuth(request);
+  if (auth) return auth;
+  const auth = requireAdminAuth(request);
+  if (auth) return auth;          // 401/403 if not authorized
   // list posts from GitHub
   const files = await listMarkdownIn("content/posts");
   const items = [];
@@ -26,7 +32,9 @@ export async function GET() {
   return NextResponse.json({ ok: true, items });
 }
 
-export async function POST(req) {
+export async function POST(request) {
+  const auth = requireAdminAuth(request);
+  if (auth) return auth;          // 401/403 if not authorized
   const data = await req.json();
   const { title, date, excerpt, tags = [], slug, content = "", draft = true } = data;
 

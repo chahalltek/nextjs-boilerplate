@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createOrUpdateFile } from "@/lib/github";
+import { requireAdminAuth } from "@/lib/adminAuth";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -12,7 +14,9 @@ function slugify(s) {
     .slice(0, 64);
 }
 
-export async function POST(req) {
+export async function POST(request) {
+  const auth = requireAdminAuth(request);
+  if (auth) return auth;          // 401/403 if not authorized
   const form = await req.formData();
   const file = form.get("file");
   const hint = form.get("slug") || "";
