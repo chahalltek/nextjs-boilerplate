@@ -18,3 +18,4 @@ export default function Logo({ size = 32 }) {
     </svg>
   );
 }
+
