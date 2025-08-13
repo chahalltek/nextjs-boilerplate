@@ -1,5 +1,6 @@
 import Link from "next/link";
-import Logo from "./Logo";
+import Logo from "@/components/Logo";
+
 
 export default function Header() {
   return (
