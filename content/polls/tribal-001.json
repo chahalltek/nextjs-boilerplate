@@ -1,0 +1,6 @@
+{
+  "title": "Who’s getting their torch snuffed next?",
+  "options": ["Player A", "Player B", "Player C"],
+  "multiple": false,
+  "status": "open" 
+}
