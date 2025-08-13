@@ -17,6 +17,8 @@
 /* --- Third-party embeds (outside @theme) --- */
 #hyvor-talk-view { color: #fff; }
 #hyvor-talk-view a { color: var(--color-skol-gold); }
+/* in global.css */
+#hyvor-talk-view { min-height: 280px; }
 
 /* Disqus picks this up as its accent color */
 #disqus_thread a { color: var(--color-skol-gold); }
