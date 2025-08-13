@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { getPostBySlug } from "@/lib/posts";
 import CommentsEmbed from "@/components/CommentsEmbed";
 
+export const runtime = "nodejs";
 export async function generateMetadata({ params }) {
   const post = getPostBySlug(params.slug);
   if (!post) return { title: "Post not found — The Skol Sisters" };

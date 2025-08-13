@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllPosts } from "@/lib/posts";
 
+export const runtime = "nodejs";
 export const metadata = {
   title: "Blog — Skol Sisters",
   description: "Fantasy football strategy, Start/Sit tiers, Waiver Wire gems, and Survivor talk."
