@@ -1,24 +1,18 @@
-/* Tailwind v4 */
+/* app/globals.css */
 @import "tailwindcss";
-/* optional prose styles for blog/admin preview */
-@plugin "@tailwindcss/typography";
 
-:root{
-  --skol-purple:#4F2683;
-  --skol-gold:#FFC62F;
-  --page-bg:#0b0b0f;
-  --text:255 255 255;
+/* Brand theme + helpers */
+@theme {
+  --color-skol-purple: #4F2683;
+  --color-skol-gold:   #FFC62F;
 }
 
-html,body{height:100%}
-body{
-  background:var(--page-bg);
-  color:rgb(var(--text));
+:root {
+  --skol-purple: #4F2683;
+  --skol-gold:   #FFC62F;
 }
 
-.container{
-  max-width:1100px;
-  margin:0 auto;
-  padding-left:1rem;
-  padding-right:1rem;
-}
+html, body { height: 100%; }
+body { @apply bg-black text-white antialiased; }
+.container { @apply mx-auto max-w-5xl px-4; }
+a { @apply hover:opacity-80; }
