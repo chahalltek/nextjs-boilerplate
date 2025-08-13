@@ -93,6 +93,9 @@ export default function AdminPage() {
   return (
     <div className="container py-8 grid gap-6">
       <h1 className="text-2xl font-bold">Admin</h1>
+      <div className="text-sm">
+  <a className="underline" href="/admin/polls">Manage Polls →</a>
+</div>
 
       <div className="bg-white/5 border border-white/10 rounded p-4">
         <h2 className="font-semibold mb-2">Posts</h2>
