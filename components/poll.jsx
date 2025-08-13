@@ -22,11 +22,8 @@ export default function Poll({ poll }) {
         body: JSON.stringify({ option })
       });
       const j = await r.json();
-      if (!r.ok) {
-        alert(j.error || "Vote failed");
-      } else {
-        setCounts(j.counts || {});
-      }
+      if (!r.ok) alert(j.error || "Vote failed");
+      else setCounts(j.counts || {});
     } finally {
       setSubmitting(false);
     }
