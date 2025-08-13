@@ -1,56 +1,41 @@
 // app/blog/[slug]/page.jsx
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAllPosts, getPostBySlug } from "@/lib/posts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import Comments from "@/components/Comments";
+import { getPostBySlug } from "@/lib/posts";
+import CommentsEmbed from "@/components/CommentsEmbed";
 
-export function generateStaticParams() {
-  return getAllPosts().map((p) => ({ slug: p.slug }));
-}
-
-export function generateMetadata({ params }) {
+export async function generateMetadata({ params }) {
   const post = getPostBySlug(params.slug);
-  if (!post) return { title: "Not found — Skol Sisters" };
+  if (!post) return { title: "Post not found — The Skol Sisters" };
   return {
-    title: `${post.title} — Skol Sisters`,
+    title: `${post.title} — The Skol Sisters`,
     description: post.excerpt || "",
   };
 }
 
-export default function BlogPostPage({ params }) {
+export default function BlogPost({ params }) {
   const post = getPostBySlug(params.slug);
   if (!post) return notFound();
 
   return (
     <div className="container py-12 max-w-3xl">
-      <p className="text-sm text-white/60">
-        <Link href="/blog" className="hover:underline">← Back to blog</Link>
-      </p>
-
-      <article className="prose prose-invert max-w-none mt-4">
-        <h1 className="!mb-2">{post.title}</h1>
+      <article className="prose prose-invert max-w-none">
+        <h1>{post.title}</h1>
         {post.date && (
-          <p className="text-white/60 !mt-0">
+          <p className="text-white/60 text-sm">
             {new Date(post.date).toLocaleDateString()}
-            {post.tags?.length ? <> · {post.tags.join(", ")}</> : null}
           </p>
         )}
-
-        {post.excerpt && <p className="text-white/80 mt-4">{post.excerpt}</p>}
-
-        <div className="mt-8">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {post.content || ""}
-          </ReactMarkdown>
-        </div>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {post.content}
+        </ReactMarkdown>
       </article>
 
-      {/* Comments */}
-      <div className="mt-12">
-        <Comments />
-      </div>
+      <section className="mt-12">
+        <h2 className="text-xl font-semibold mb-4">Comments</h2>
+        <CommentsEmbed />
+      </section>
     </div>
   );
 }
