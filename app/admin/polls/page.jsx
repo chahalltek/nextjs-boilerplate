@@ -1,147 +1,121 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-function basicAuth() {
-  // If you already attach Authorization globally, swap this.
-  const u = prompt("Admin user:") || "";
-  const p = prompt("Admin pass:") || "";
-  return `Basic ${btoa(`${u}:${p}`)}`;
+// prompt-based Basic Auth (same style you use in /admin)
+function authHeader() {
+  const u = sessionStorage.getItem("adm_u") || prompt("Admin user:") || "";
+  const p = sessionStorage.getItem("adm_p") || prompt("Admin pass:") || "";
+  sessionStorage.setItem("adm_u", u);
+  sessionStorage.setItem("adm_p", p);
+  return { Authorization: `Basic ${btoa(`${u}:${p}`)}` };
 }
+
+const slugify = (s = "") =>
+  s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+
+const letter = (i) => String.fromCharCode(65 + i); // A,B,C…
 
 export default function AdminPollsPage() {
   const [list, setList] = useState([]);
-  const [slug, setSlug] = useState("");
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [excerpt, setExcerpt] = useState("");
-  const [draft, setDraft] = useState(true);
-  const [provider, setProvider] = useState("hyvor");
-  const [embed, setEmbed] = useState("");   // paste Hyvor Polls embed code here
-  const [body, setBody] = useState("");
-  const bodyRef = useRef(null);
+  const [loading, setLoading] = useState(true);
 
-  async function loadList() {
-    const res = await fetch("/api/admin/polls", { headers: { Authorization: basicAuth() } });
-    const json = await res.json();
-    if (json.ok) setList(json.items);
-    else alert("Failed to load list");
+  // form state
+  const [editingSlug, setEditingSlug] = useState("");
+  const [title, setTitle] = useState("");
+  const [question, setQuestion] = useState("");
+  const [draft, setDraft] = useState(true);
+  const [options, setOptions] = useState([{ text: "" }, { text: "" }]); // min 2
+  const [intro, setIntro] = useState(""); // optional Markdown above comments
+  const introRef = useRef(null);
+
+  const canSave = useMemo(() =>
+    title.trim() && question.trim() && options.filter(o => o.text.trim()).length >= 2,
+  [title, question, options]);
+
+  useEffect(() => { refreshList(); }, []);
+
+  async function refreshList() {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/admin/polls", { headers: authHeader() });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error("load failed");
+      setList(j.items || []);
+    } catch (e) {
+      alert("Failed to load polls");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function loadOne(s) {
-    const res = await fetch(`/api/admin/polls/${s}`, { headers: { Authorization: basicAuth() } });
-    const json = await res.json();
-    if (!json.ok) return alert("Load failed");
-    const fm = json.data.frontmatter || {};
-    setSlug(s);
-    setTitle(fm.title || "");
-    setDate(fm.date || new Date().toISOString().slice(0, 10));
-    setExcerpt(fm.excerpt || "");
-    setDraft(!!fm.draft);
-    setProvider(fm.provider || "hyvor");
-    setEmbed(fm.embed || "");
-    setBody(json.data.content || "");
+  async function loadOne(slug) {
+    try {
+      const res = await fetch(`/api/admin/polls/${slug}`, { headers: authHeader() });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error("load failed");
+      const p = j.item || j.data || {};
+      setEditingSlug(p.slug || slug);
+      setTitle(p.title || "");
+      setQuestion(p.question || "");
+      setDraft(!!p.draft);
+      const opts = (p.options || []).map(o => ({ text: o.text || o.label || "" }));
+      setOptions(opts.length >= 2 ? opts : [{ text: "" }, { text: "" }]);
+      setIntro(p.intro || p.body || "");
+    } catch {
+      alert("Failed to load poll");
+    }
   }
 
   async function save() {
-    const payload = { title, date, excerpt, draft, provider, embed, content: body, slug };
-    const method = slug ? "PUT" : "POST";
-    const url = slug ? `/api/admin/polls/${slug}` : "/api/admin/polls";
+    const slug = editingSlug || slugify(title);
+    const payload = {
+      slug,
+      title,
+      question,
+      draft,
+      intro,
+      options: options
+        .map((o, i) => ({ id: letter(i).toLowerCase(), text: o.text.trim() }))
+        .filter(o => o.text),
+    };
+    const method = editingSlug ? "PUT" : "POST";
+    const url = editingSlug ? `/api/admin/polls/${editingSlug}` : "/api/admin/polls";
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json", Authorization: basicAuth() },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(payload),
     });
-    const json = await res.json();
-    if (!res.ok || !json.ok) return alert("Save failed");
-    if (!slug && json.slug) setSlug(json.slug);
+    const j = await res.json();
+    if (!res.ok || !j.ok) return alert("Save failed");
+    setEditingSlug(slug);
     alert("Saved");
-    loadList();
+    refreshList();
   }
 
-  useEffect(() => { loadList(); }, []);
+  async function remove(slug) {
+    if (!confirm(`Delete poll “${slug}”?`)) return;
+    const res = await fetch(`/api/admin/polls/${slug}`, { method: "DELETE", headers: authHeader() });
+    const j = await res.json();
+    if (!res.ok || !j.ok) return alert("Delete failed");
+    if (editingSlug === slug) resetForm();
+    refreshList();
+  }
 
-  return (
-    <div className="container py-8 grid gap-6">
-      <h1 className="text-2xl font-semibold">Admin · Survivor Polls</h1>
+  function resetForm() {
+    setEditingSlug("");
+    setTitle("");
+    setQuestion("");
+    setDraft(true);
+    setOptions([{ text: "" }, { text: "" }]);
+    setIntro("");
+  }
 
-      {/* List */}
-      <div className="rounded border border-white/15 bg-white/5 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-medium">Existing Polls</h2>
-          <button className="text-sm underline" onClick={loadList}>Refresh</button>
-        </div>
-        {list.length === 0 ? (
-          <p className="text-white/70">No polls yet.</p>
-        ) : (
-          <ul className="grid gap-1">
-            {list.map((p) => (
-              <li key={p.slug} className="flex items-center justify-between">
-                <button className="text-left hover:underline" onClick={() => loadOne(p.slug)}>
-                  {p.title || p.slug} {p.draft ? <span className="text-yellow-400/80">(draft)</span> : null}
-                </button>
-                <span className="text-white/50 text-sm">{p.date}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+  function addOption() { setOptions(prev => [...prev, { text: "" }]); }
+  function removeOptionAt(i) {
+    setOptions(prev => prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i));
+  }
 
-      {/* Editor */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="grid gap-3">
-          <label className="grid gap-1">
-            <span className="text-sm">Title</span>
-            <input className="px-3 py-2 rounded bg-white/10 border border-white/20"
-                   value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Date</span>
-            <input type="date" className="px-3 py-2 rounded bg-white/10 border border-white/20"
-                   value={date} onChange={(e) => setDate(e.target.value)} />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Excerpt</span>
-            <input className="px-3 py-2 rounded bg-white/10 border border-white/20"
-                   value={excerpt} onChange={(e) => setExcerpt(e.target.value)} />
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} />
-            <span>Draft (hide from public)</span>
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Provider</span>
-            <select className="px-3 py-2 rounded bg-white/10 border border-white/20"
-                    value={provider} onChange={(e) => setProvider(e.target.value)}>
-              <option value="hyvor">Hyvor Polls</option>
-              <option value="other">Other (iframe/script)</option>
-            </select>
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Embed HTML (paste from Hyvor Polls “Embed”)</span>
-            <textarea className="min-h-[120px] px-3 py-2 rounded bg-white/10 border border-white/20 font-mono"
-                      value={embed} onChange={(e) => setEmbed(e.target.value)} />
-          </label>
-          <button className="px-3 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold"
-                  onClick={save}>Save</button>
-        </div>
-
-        <div className="grid gap-3">
-          <label className="grid gap-1">
-            <span className="text-sm">Intro Body (optional Markdown above comments)</span>
-            <textarea ref={bodyRef}
-                      className="min-h-[260px] px-3 py-2 rounded bg-white/10 border border-white/20 font-mono"
-                      value={body} onChange={(e) => setBody(e.target.value)}
-                      placeholder="Optional intro before the comments…" />
-          </label>
-          <div className="prose prose-invert max-w-none bg-white/5 border border-white/10 rounded p-4">
-            <div className="mb-3 text-xs text-white/60">Live preview</div>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+  function insertAtC
