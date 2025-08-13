@@ -37,10 +37,10 @@ export default function BlogPost({ params }) {
   {/* On your post page where <CommentsEmbed /> is used */}
 <div className="mt-10 rounded-xl border border-white/10 bg-white/5 p-4">
   <CommentsEmbed
-    identifier={post.slug}
-    title={post.title}
-    url={`https://www.theskolsisters.com/blog/${post.slug}`}
-  />
+  identifier={post.slug}
+  title={post.title}
+  url={canonical}
+/>
 </div>
 
 </section>
