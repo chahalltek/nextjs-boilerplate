@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Brand tokens */
+/* Brand tokens ONLY go inside @theme */
 @theme {
   --color-skol-purple: #4F2683;
   --color-skol-gold:   #FFC62F;
@@ -11,26 +11,28 @@
   --color-surface-900: #151022;
   --color-surface-800: #211934;
 
-  /* HYVOR Talk tweaks (dark site) */
-#hyvor-talk-view { color: #fff; }
-#hyvor-talk-view a { color: var(--skol-gold, #f6d34a); }
-
-
   --radius-xl: 0.875rem;
 }
+
+/* --- Third-party embeds (outside @theme) --- */
+#hyvor-talk-view { color: #fff; }
+#hyvor-talk-view a { color: var(--color-skol-gold); }
+
+/* Disqus picks this up as its accent color */
+#disqus_thread a { color: var(--color-skol-gold); }
+#disqus_thread a:hover { opacity: 0.85; }
 
 /* App-wide base */
 html, body { height: 100%; }
 body {
   @apply text-white antialiased;
-  background: radial-gradient(1200px 600px at 10% -10%, #1d1330 0%, transparent 60%),
-              radial-gradient(1200px 600px at 90% -20%, #2a1a40 0%, transparent 60%),
-              linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #1d1330 0%, transparent 60%),
+    radial-gradient(1200px 600px at 90% -20%, #2a1a40 0%, transparent 60%),
+    linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
 }
 
-.container {
-  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
-}
+.container { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
 
 /* little utility used by cards/inputs */
 .card {
@@ -43,20 +45,12 @@ body {
   @apply px-4 py-2 rounded font-semibold text-black hover:opacity-90;
   background: color-mix(in oklab, var(--color-skol-gold) 96%, #000 4%);
 }
-/* Disqus picks this up as its accent color */
-#disqus_thread a {
-  color: var(--skol-gold); /* your gold */
-}
 
-/* Optional: hover tweak */
-#disqus_thread a:hover {
-  opacity: 0.85;
-}
 @layer components {
   .cta-card {
     @apply block rounded-2xl border border-white/15 bg-white/5 px-5 py-4
            text-white/90 hover:bg-white/10 hover:text-white transition-colors
-           shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--skol-gold)];
+           shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-skol-gold)];
   }
   .cta-title { @apply text-lg font-semibold; }
   .cta-sub   { @apply mt-1 text-sm text-white/60; }
