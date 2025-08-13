@@ -1,6 +1,8 @@
 'use client';
 
 import Script from 'next/script';
+"use client";
+import { useEffect } from "react"
 
 type Props = {
   identifier: string;

@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 export default function HomePage() {
   return (
     <section className="container py-16">

@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getPostBySlug } from "@/lib/posts";
 import CommentsEmbed from "@/components/CommentsEmbed";
+import dynamic from "next/dynamic";
+const Comments = dynamic(() => import("@/components/CommentsEmbed"), { ssr: false });
 
 export const runtime = "nodejs";
 export async function generateMetadata({ params }) {
@@ -37,6 +39,7 @@ export default function BlogPost({ params }) {
   <h2 className="text-xl font-semibold mb-4">Comments</h2>
   {/* On your post page where <CommentsEmbed /> is used */}
 <div className="mt-10 rounded-xl border border-white/10 bg-white/5 p-4">
+<Comments identifier={post.slug} title={post.title} url={`https://www.theskolsisters.com/blog/${post.slug}`} />
   <CommentsEmbed
   identifier={post.slug}
   title={post.title}
