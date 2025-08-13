@@ -1,50 +1,56 @@
 import { NextResponse } from "next/server";
 import matter from "gray-matter";
-import { createOrUpdateFile, getFile } from "@/lib/github";
 import { requireAdminAuth } from "@/lib/adminAuth";
-import { NextResponse } from "next/server";
+import { createOrUpdateFile, getFile, deleteFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 
-export async function GET(request) {
-  const auth = requireAdminAuth(request);
-  if (auth) return auth;
-  const raw = await getFile(`content/posts/${params.slug}.md`);
-  if (!raw) return NextResponse.json({ ok: false }, { status: 404 });
-  const fm = matter(raw);
-  return NextResponse.json({ ok: true, ...fm.data, content: fm.content });
+// Optional: fetch one post (only if you use GitHub as the source here)
+export async function GET(request, { params }) {
+  const guard = requireAdminAuth(request);
+  if (guard) return guard;
+
+  try {
+    const filePath = `content/posts/${params.slug}.md`;
+    if (typeof getFile !== "function") {
+      return NextResponse.json({ ok: false, error: "get-not-implemented" }, { status: 501 });
+    }
+    const file = await getFile(filePath);
+    if (!file?.content) return NextResponse.json({ ok: false, error: "not-found" }, { status: 404 });
+    const raw = Buffer.from(file.content, "base64").toString("utf8");
+    const fm = matter(raw);
+    return NextResponse.json({ ok: true, data: { ...fm.data, content: fm.content } });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: "fetch-failed" }, { status: 500 });
+  }
 }
 
-export async function PUT(request, ctx) {
-  const auth = requireAdminAuth(request);
-  if (auth) return auth;
-}
-  const data = await req.json();
+// Update a post
+export async function PUT(request, { params }) {
+  const guard = requireAdminAuth(request);
+  if (guard) return guard;
+
+  const data = await request.json();
   const { title, date, excerpt, tags = [], content = "", draft = true } = data;
+
   const fm = matter.stringify(content, { title, date, excerpt, tags, draft });
   const path = `content/posts/${params.slug}.md`;
-  const res = await createOrUpdateFile(path, Buffer.from(fm).toString("base64"), `Update post ${path}`);
+
+  const res = await createOrUpdateFile(path, Buffer.from(fm, "utf8").toString("base64"), `Update post ${path}`);
   if (!res.ok) return NextResponse.json(res, { status: 500 });
   return NextResponse.json({ ok: true });
+}
 
-export async function DELETE(request, ctx) {
-  const auth = requireAdminAuth(request);
-  if (auth) return auth;
-  // GitHub delete requires file SHA; quick workaround: overwrite with tombstone content? Better: fetch SHA then DELETE.
-  const token = process.env.GITHUB_TOKEN;
-  const repo = process.env.GITHUB_REPO;
-  const branch = process.env.GITHUB_BRANCH || "main";
+// Delete a post
+export async function DELETE(request, { params }) {
+  const guard = requireAdminAuth(request);
+  if (guard) return guard;
+
+  if (typeof deleteFile !== "function") {
+    return NextResponse.json({ ok: false, error: "delete-not-implemented" }, { status: 501 });
+  }
   const path = `content/posts/${params.slug}.md`;
-  const head = await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${branch}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-  });
-  if (!head.ok) return NextResponse.json({ ok: false, status: head.status }, { status: 404 });
-  const j = await head.json();
-  const res = await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
-    body: JSON.stringify({ message: `Delete ${path}`, sha: j.sha, branch })
-  });
-  if (!res.ok) return NextResponse.json({ ok: false, status: res.status }, { status: 500 });
+  const res = await deleteFile(path, `Delete post ${path}`);
+  if (!res.ok) return NextResponse.json(res, { status: 500 });
   return NextResponse.json({ ok: true });
 }
