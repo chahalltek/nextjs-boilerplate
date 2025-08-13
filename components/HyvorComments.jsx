@@ -1,23 +1,36 @@
-// components/HyvorComments.jsx
 "use client";
 
-import { Comments } from "@hyvor/hyvor-talk-react";
+import Script from "next/script";
 
 export default function HyvorComments({ pageId, title }) {
-  // MUST be a number for the SDK
-  const websiteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID);
+  // Ensure we pass a NUMBER to Hyvor, not a string
+  const raw = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID;
+  const siteId = Number(raw);
 
-  if (!websiteId) {
+  if (!siteId || Number.isNaN(siteId)) {
     return (
-      <div className="mt-6 rounded-xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-red-200">
-        Hyvor Website ID is missing or invalid. Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> (e.g. <code>13899</code>) and redeploy.
+      <div className="mt-6 rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-red-200">
+        Website ID not set. Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> in Vercel (Production/Preview/Development)
+        and redeploy.
       </div>
     );
   }
 
+  // Keep config BEFORE loader script
+  const cfg = `
+    var HYVOR_TALK_WEBSITE = ${siteId};
+    var HYVOR_TALK_CONFIG = {
+      id: ${JSON.stringify(pageId || "")},
+      url: window.location.href,
+      title: ${JSON.stringify(title || "")}
+    };
+  `;
+
   return (
-    <div className="mt-8">
-      <Comments websiteId={websiteId} pageId={pageId} pageTitle={title} />
-    </div>
+    <>
+      <div id="hyvor-talk-view" />
+      <Script id="hyvor-talk-config" strategy="afterInteractive">{cfg}</Script>
+      <Script src="https://talk.hyvor.com/embed/embed.js" strategy="afterInteractive" />
+    </>
   );
 }
