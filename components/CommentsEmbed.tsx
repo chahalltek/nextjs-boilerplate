@@ -1,66 +1,45 @@
+// components/CommentsEmbed.tsx
 'use client';
 
 import Script from 'next/script';
-"use client";
-import { useEffect } from "react"
+import { useEffect } from 'react';
 
 type Props = {
-  identifier: string;
+  identifier: string; // unique per post (e.g., slug)
   title: string;
-  url: string; // absolute URL
+  url: string;       // canonical URL for the post
 };
 
 export default function CommentsEmbed({ identifier, title, url }: Props) {
   const shortname = process.env.NEXT_PUBLIC_DISQUS_SHORTNAME;
 
-  if (!shortname) {
-    // Visible fallback so we know why it's empty
-    return (
-      <div className="rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-red-400">
-        Disqus shortname is missing. Set <code>NEXT_PUBLIC_DISQUS_SHORTNAME</code> in Vercel.
-      </div>
-    );
-  }
+  useEffect(() => {
+    (window as any).disqus_config = function () {
+      // @ts-ignore - Disqus sets `this` to its config object
+      this.page.url = url;
+      // @ts-ignore
+      this.page.identifier = identifier;
+      // @ts-ignore
+      this.page.title = title;
+    };
+  }, [identifier, title, url]);
 
-  // Escapes for inline config
-  const esc = (s: string) => s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  if (!shortname) {
+    return <p className="text-red-400 text-sm">Disqus shortname missing (set NEXT_PUBLIC_DISQUS_SHORTNAME).</p>;
+  }
 
   return (
     <div className="mt-10">
-      {/* Disqus config MUST be defined before the embed.js loads */}
+      <div id="disqus_thread" />
       <Script
-        id="dsq-config"
-        strategy="afterInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `
-            var disqus_config = function () {
-              this.page.url = "${esc(url)}";
-              this.page.identifier = "${esc(identifier)}";
-              this.page.title = "${esc(title)}";
-            };
-          `,
-        }}
-      />
-      <Script
-        id="dsq-embed"
-        strategy="afterInteractive"
         src={`https://${shortname}.disqus.com/embed.js`}
-        onError={() => {
-          // Simple visual hint if something blocks the script
-          const el = document.getElementById('disqus_thread');
-          if (el) el.innerHTML =
-            '<div style="padding:12px;border:1px solid #ff6b6b33;border-radius:12px;background:#ff6b6b0d;color:#ff9a9a">We were unable to load Disqus. If you use an ad/tracker blocker, please allow disqus.com and reload.</div>';
-        }}
+        strategy="lazyOnload"
+        onError={(e) => console.error('Disqus failed to load', e)}
       />
-
-      <div id="disqus_thread" className="rounded-xl border border-white/10 bg-white/[0.04] p-4" />
-
-      {/* Optional stylistic overrides for dark theme */}
-      <style jsx global>{`
-        #disqus_thread a { color: var(--skol-gold, #ffc62f) !important; }
-        #disqus_thread, #disqus_thread * { color: rgba(255,255,255,0.92) !important; }
-        #disqus_thread iframe { background: transparent !important; }
-      `}</style>
+      <noscript>
+        Please enable JavaScript to view the{' '}
+        <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a>
+      </noscript>
     </div>
   );
 }
