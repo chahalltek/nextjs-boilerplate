@@ -1,4 +1,3 @@
-// components/Logo.jsx
 export default function Logo({ size = 32 }) {
   const w = size * 1.1, h = size;
   const id = "grad-" + Math.random().toString(36).slice(2,7);
@@ -19,4 +18,3 @@ export default function Logo({ size = 32 }) {
     </svg>
   );
 }
-
