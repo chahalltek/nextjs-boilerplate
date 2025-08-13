@@ -74,7 +74,7 @@ export default function SurvivorPage() {
             A quick primer so your hot takes don’t get snuffed at Tribal.
           </p>
           <div className="mt-4 inline-flex items-center gap-2">
-            <span className="rounded-full px-3 py-1 bg-[color:var(--skol-gold)] text-black text-xs font-semibold">
+            <span className="rounded-full px-3 py-1 bg-[color:var(--skol-gold)] text-white text-xs font-semibold">
               Begin
             </span>
             <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80 group-hover:opacity-100">
