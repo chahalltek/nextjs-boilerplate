@@ -38,7 +38,9 @@ export default function HomePage() {
               href="/start-sit"
               className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90"
             >
-              Get this week’s Start/Sit
+             <p className="mt-6 text-xl font-semibold text-white">
+        Get this week’s sit/starts
+      </p>
             </Link>
             <Link
               href="/subscribe"

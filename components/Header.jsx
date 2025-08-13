@@ -13,6 +13,7 @@ export default function Header() {
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <Link href="/episodes" className="hover:opacity-80">Episodes</Link>
           <Link href="/start-sit" className="hover:opacity-80">Start/Sit</Link>
+          <Link href="/101" className="hover:opacity-80">101</Link>{/* ← added */}
           <Link href="/blog" className="hover:opacity-80">Blog</Link>
           <Link href="/about" className="hover:opacity-80">About</Link>
         </nav>
