@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Logo from "@/components/Logo";
+import Logo from "./Logo";
 
 export default function Header() {
   return (
@@ -15,7 +15,11 @@ export default function Header() {
           <Link href="/blog" className="hover:opacity-80">Blog</Link>
           <Link href="/about" className="hover:opacity-80">About</Link>
         </nav>
-        <Link href="/subscribe" className="px-3 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90 text-sm">Subscribe</Link>
+        <Link href="/subscribe"
+              className="px-3 py-2 rounded"
+              style={{ background:"var(--skol-gold)", color:"#000", fontWeight:600 }}>
+          Subscribe
+        </Link>
       </div>
     </header>
   );
