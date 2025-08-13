@@ -1,42 +1,25 @@
 "use client";
-
-import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { Comments } from "@hyvor/hyvor-talk-react";
 
 export default function HyvorComments({ pageId, title }) {
-  const pathname = usePathname();
-  const siteId = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || "";
+  const websiteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || 0);
 
-  useEffect(() => {
-    if (!siteId) return;
+  if (!websiteId) {
+    return (
+      <div className="mt-6 rounded-md border border-red-400/40 bg-red-500/10 p-4 text-red-200">
+        Comments are misconfigured. Set <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> in Vercel.
+      </div>
+    );
+  }
 
-    // Prepare config for this page/thread
-    const config = {
-      id: pageId,                  // unique per post, e.g. "blog:my-post"
-      url: window.location.href,   // canonical URL for the thread
-      title: title || document.title,
-    };
-
-    // If embed script already loaded (client-side nav), just reload
-    if (window.HYVOR_TALK?.reload) {
-      window.HYVOR_TALK.reload(config);
-      return;
-    }
-
-    // First load: set globals then inject the script once
-    window.HYVOR_TALK_WEBSITE = siteId;
-    window.HYVOR_TALK_CONFIG = config;
-
-    // Avoid double-injecting the script
-    if (!document.getElementById("hyvor-talk-embed-js")) {
-      const s = document.createElement("script");
-      s.src = "https://talk.hyvor.com/embed/embed.js";
-      s.async = true;
-      s.defer = true;
-      s.id = "hyvor-talk-embed-js";
-      document.body.appendChild(s);
-    }
-  }, [siteId, pageId, title, pathname]);
-
-  return <div id="hyvor-talk-view" />;
+  return (
+    <div id="hyvor-talk-view" className="mt-8">
+      <Comments
+        websiteId={websiteId}
+        pageId={pageId}
+        pageTitle={title}
+        pageUrl={typeof window !== "undefined" ? window.location.href : undefined}
+      />
+    </div>
+  );
 }
