@@ -1,27 +1,37 @@
 "use client";
-import { Comments } from "@hyvor/hyvor-talk-react";
+import Script from "next/script";
 
 export default function HyvorComments({ pageId, title }) {
-  const siteId = Number(process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID);
+  const websiteId = process.env.NEXT_PUBLIC_HYVOR_WEBSITE_ID || "";
 
-  if (!siteId || Number.isNaN(siteId)) {
+  // Nice fallback so the page still renders if the env var is missing
+  if (!websiteId) {
     return (
-      <div className="mt-6 rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-red-200">
-        Website ID not set. Define <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> and redeploy.
+      <div className="mt-6 rounded-xl border border-white/15 bg-white/5 p-4 text-sm text-white/70">
+        HYVOR site id is not set. Add <code>NEXT_PUBLIC_HYVOR_WEBSITE_ID</code> and redeploy.
       </div>
     );
   }
 
-  // pageUrl only exists in the browser; Comments handles empty string fine during SSR.
-  const pageUrl =
-    typeof window !== "undefined" ? window.location.href : "";
-
   return (
-    <Comments
-      websiteId={siteId}
-      pageId={pageId}
-      pageTitle={title || ""}
-      pageUrl={pageUrl}
-    />
+    <>
+      {/* 1) Define globals BEFORE the embed script runs */}
+      <Script id="hyvor-config" strategy="beforeInteractive">
+        {`
+          window.HYVOR_TALK_WEBSITE = ${JSON.stringify(websiteId)};
+          window.HYVOR_TALK_CONFIG = {
+            id: ${JSON.stringify(pageId)},
+            title: ${JSON.stringify(title || pageId)},
+            url: window.location.href
+          };
+        `}
+      </Script>
+
+      {/* 2) Load the embed AFTER the globals exist */}
+      <Script src="https://talk.hyvor.com/embed/embed.js" strategy="afterInteractive" />
+
+      {/* 3) The mount point */}
+      <div id="hyvor-talk-view" />
+    </>
   );
 }
