@@ -1,55 +1,59 @@
-// middleware.ts
+// middleware.js
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import crypto from "node:crypto";
 
-function sessionHash(user: string, pass: string, secret: string) {
-  return crypto.createHash("sha256").update(`${user}:${pass}|${secret}`).digest("hex");
+// Protect only /admin
+export const config = { matcher: ["/admin/:path*"] };
+
+// --- helpers (Edge-safe) ---
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function expectedCookie() {
+  const u = process.env.ADMIN_USER || "";
+  const p = process.env.ADMIN_PASS || "";
+  const s = process.env.ADMIN_SECRET || "fallback-secret";
+  return sha256Hex(`${u}:${p}:${s}`);
 }
 
-export function middleware(req: NextRequest) {
-  const { pathname } = new URL(req.url);
-  const needsAdmin = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
-  if (!needsAdmin) return NextResponse.next();
+export async function middleware(req) {
+  const url = req.nextUrl;
+  const cookieName = "skol-admin";
+  const cookieVal = req.cookies.get(cookieName)?.value;
+  const want = await expectedCookie();
 
-  const expectedUser = process.env.ADMIN_USER ?? "";
-  const expectedPass = process.env.ADMIN_PASS ?? "";
-  const secret = process.env.ADMIN_SESSION_SECRET ?? process.env.ADMIN_PASS ?? "fallback-secret";
+  // If session cookie matches, allow
+  if (cookieVal === want) return NextResponse.next();
 
-  const expected = sessionHash(expectedUser, expectedPass, secret);
+  // Check Basic Auth header
+  const auth = req.headers.get("authorization") || "";
+  if (auth.startsWith("Basic ")) {
+    try {
+      const [, b64] = auth.split(" ");
+      const creds = atob(b64);
+      const idx = creds.indexOf(":");
+      const user = creds.slice(0, idx);
+      const pass = creds.slice(idx + 1);
 
-  // 1) If we already have a valid session cookie, allow
-  const cookie = req.cookies.get("admin_session")?.value;
-  if (cookie === expected) return NextResponse.next();
-
-  // 2) Otherwise require Basic auth
-  const auth = req.headers.get("authorization");
-  if (!auth?.startsWith("Basic ")) {
-    return new NextResponse("Unauthorized", {
-      status: 401,
-      headers: { "WWW-Authenticate": 'Basic realm="admin"' },
-    });
+      if (user === (process.env.ADMIN_USER || "") && pass === (process.env.ADMIN_PASS || "")) {
+        const res = NextResponse.next();
+        // Set an 8-hour session cookie so you don't get re-prompted
+        res.cookies.set(cookieName, want, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "Lax",
+          path: "/admin",
+          maxAge: 60 * 60 * 8,
+        });
+        return res;
+      }
+    } catch {}
   }
 
-  const decoded = Buffer.from(auth.slice(6), "base64").toString();
-  const [user, pass] = decoded.split(":");
-
-  if (user !== expectedUser || pass !== expectedPass) {
-    return new NextResponse("Forbidden", { status: 403 });
-  }
-
-  // 3) First successful login: set session cookie so follow-ups don’t re-prompt
-  const res = NextResponse.next();
-  res.cookies.set("admin_session", expected, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 8, // 8 hours
+  // Challenge
+  return new NextResponse("Authentication required", {
+    status: 401,
+    headers: { "WWW-Authenticate": 'Basic realm="Skol Admin"' },
   });
-  return res;
 }
-
-export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
-};
