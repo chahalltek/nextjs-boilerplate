@@ -37,16 +37,16 @@ export default function AdminPollsPage() {
         status,
       };
 
-      const res = await fetch("/api/admin/polls", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setMsg(data?.error || "Save failed");
+      const res = await fetch("/api/admin/polls", { credentials: "include", 
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),
+  credentials: "include",   // 👈 IMPORTANT
+});
+if (!res.ok) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(`Save failed (${res.status}) ${err.error || ""}`);
+}
       } else {
         setMsg("✅ Poll saved!");
       }

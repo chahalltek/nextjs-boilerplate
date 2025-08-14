@@ -30,15 +30,15 @@ export default function AdminPage() {
       const fd = new FormData();
       fd.append("file", file);
 
-      const res = await fetch("/api/admin/uploads", {
-        method: "POST",
-        credentials: "include", // IMPORTANT: send cookie
-        body: fd,
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setUploadMsg(data?.error || "Upload failed");
+      const res = await fetch("/api/admin/uploads", { credentials: "include", 
+  method: "POST",
+  body: formData,
+  credentials: "include",   // 👈 IMPORTANT
+});
+if (!res.ok) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(`Upload failed (${res.status}) ${err.error || ""}`);
+}
       } else {
         setUploadedUrl(data.url);
         setUploadMsg("✅ Uploaded!");
@@ -78,15 +78,17 @@ export default function AdminPage() {
         content,
       };
 
-      const res = await fetch("/api/admin/posts", {
-        method: "POST",
-        credentials: "include", // IMPORTANT for cookie session
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setSaveMsg(data?.error || "Save failed");
+      // save post
+const res = await fetch("/api/admin/posts", { credentials: "include", 
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ title, date, excerpt, tags, draft, content }),
+  credentials: "include",   // 👈 IMPORTANT
+});
+if (!res.ok) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(`Save failed (${res.status}) ${err.error || ""}`);
+}
       } else {
         setSaveMsg("✅ Saved!");
       }
