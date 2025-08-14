@@ -1,45 +1,51 @@
+// app/api/admin/uploads/route.js
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/adminAuth";
 import { createOrUpdateFile } from "@/lib/github";
-import crypto from "node:crypto";
 
 export const runtime = "nodejs";
 
-function slugify(s) {
-  return (s || "")
+function safeName(name = "upload.bin") {
+  const base = String(name)
     .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "upload.bin";
 }
 
 export async function POST(request) {
-  const guard = requireAdminAuth(request);
-  if (guard) return guard;
+  // Cookie-based admin check
+  const denied = await requireAdminAuth(request);
+  if (denied) return denied;
 
-  const form = await request.formData();
-  const file = form.get("file");
-  const hint = form.get("slug") || "";
-
-  if (!(file instanceof File)) {
-    return NextResponse.json({ ok: false, error: "no-file" }, { status: 400 });
+  let form;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const ext = (file.name.split(".").pop() || "png").toLowerCase();
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const rand = crypto.randomBytes(6).toString("hex");
-  const base = slugify(hint || file.name.replace(/\.[^.]+$/, ""));
+  const file = form.get("file");
+  if (!file || typeof file === "string") {
+    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
 
-  const repoPath = `public/uploads/${y}/${m}/${base}-${rand}.${ext}`;
-  const contentBase64 = buf.toString("base64");
+  const arrayBuffer = await file.arrayBuffer();
+  const b64 = Buffer.from(arrayBuffer).toString("base64");
 
-  const res = await createOrUpdateFile(repoPath, contentBase64, `Upload image ${repoPath}`);
-  if (!res.ok) return NextResponse.json(res, { status: 500 });
+  const dated = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const filename = `${dated}-${safeName(file.name)}`;
+  const path = `public/uploads/${filename}`; // served at /uploads/...
 
-  const url = `/uploads/${y}/${m}/${base}-${rand}.${ext}`;
-  return NextResponse.json({ ok: true, url, path: repoPath, name: file.name, size: buf.length });
+  const gh = await createOrUpdateFile(path, b64, `Upload image ${filename}`);
+  if (!gh?.ok) {
+    return NextResponse.json(
+      { error: "GitHub save failed", details: gh },
+      { status: 500 }
+    );
+  }
+
+  const url = `/uploads/${filename}`;
+  return NextResponse.json({ ok: true, url, path });
 }
