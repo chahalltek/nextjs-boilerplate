@@ -4,8 +4,8 @@ import { createOrUpdateFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 
-function slugify(s) {
-  return String(s || "")
+function slugify(input) {
+  return String(input || "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
@@ -17,36 +17,46 @@ export async function POST(request) {
   if (denied) return denied;
 
   let body;
-  try {
-    body = await request.json();
-  } catch {
+  try { body = await request.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { title, date, excerpt, tags = [], draft = false, content = "" } = body || {};
-  if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+  const { title, question, options, status = "draft", slug: s } = body || {};
+  if (!title || !question) return NextResponse.json({ error: "title and question required" }, { status: 400 });
 
-  const slug = slugify(title);
-  const fm = [
-    "---",
-    `title: ${JSON.stringify(title)}`,
-    date ? `date: ${JSON.stringify(date)}` : null,
-    excerpt ? `excerpt: ${JSON.stringify(excerpt)}` : null,
-    Array.isArray(tags) && tags.length ? `tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]` : null,
-    `draft: ${!!draft}`,
-    "---",
-    "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const slug = slugify(s || title);
+  const safeOptions = Array.isArray(options)
+    ? options.map((o) => (typeof o === "string" ? o : o?.label || ""))
+        .map((label) => label.trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
 
-  const md = fm + (content || "");
-  const b64 = Buffer.from(md).toString("base64");
-  const path = `content/posts/${slug}.md`;
+  if (safeOptions.length < 2) {
+    return NextResponse.json({ error: "At least two options required" }, { status: 400 });
+  }
 
-  const gh = await createOrUpdateFile(path, b64, `Save post ${slug}`);
+  const now = new Date().toISOString();
+  const poll = {
+    slug,
+    title,
+    question,
+    options: safeOptions.map((label, idx) => ({
+      id: String.fromCharCode(97 + idx),
+      label,
+      votes: 0,
+    })),
+    status: status === "published" ? "published" : "draft",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const path = `content/polls/${slug}.json`;
+  const b64  = Buffer.from(JSON.stringify(poll, null, 2)).toString("base64");
+
+  const gh = await createOrUpdateFile(path, b64, `Save poll ${slug}`);
   if (!gh?.ok) {
     return NextResponse.json({ error: "GitHub save failed", details: gh }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, slug, path });
+  return NextResponse.json({ ok: true, slug });
 }
