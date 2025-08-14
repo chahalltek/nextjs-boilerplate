@@ -1,40 +1,52 @@
-// app/api/admin/posts/route.js
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/adminAuth";
-import { getAllPosts } from "@/lib/posts";
+import { createOrUpdateFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 
-/**
- * List posts for the Admin UI.
- * (Uses the local posts loader; feel free to swap to GitHub later.)
- */
-export async function GET() {
-  const denied = requireAdminAuth();
-  if (denied) return denied;
-
-  const posts = getAllPosts().map((p) => ({
-    slug: p.slug,
-    title: p.title,
-    date: p.date || null,
-    draft: !!p.draft,
-    excerpt: p.excerpt || "",
-    tags: p.tags || [],
-  }));
-
-  return NextResponse.json({ ok: true, posts });
+function slugify(s) {
+  return String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
 }
 
-/**
- * Creating/updating via API can be wired to GitHub later.
- * For now we return 501 so the build succeeds and the list works.
- */
 export async function POST(request) {
-  const denied = requireAdminAuth();
+  const denied = await requireAdminAuth(request);
   if (denied) return denied;
 
-  return NextResponse.json(
-    { ok: false, error: "POST /api/admin/posts not implemented yet." },
-    { status: 501 }
-  );
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { title, date, excerpt, tags = [], draft = false, content = "" } = body || {};
+  if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+
+  const slug = slugify(title);
+  const fm = [
+    "---",
+    `title: ${JSON.stringify(title)}`,
+    date ? `date: ${JSON.stringify(date)}` : null,
+    excerpt ? `excerpt: ${JSON.stringify(excerpt)}` : null,
+    Array.isArray(tags) && tags.length ? `tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]` : null,
+    `draft: ${!!draft}`,
+    "---",
+    "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const md = fm + (content || "");
+  const b64 = Buffer.from(md).toString("base64");
+  const path = `content/posts/${slug}.md`;
+
+  const gh = await createOrUpdateFile(path, b64, `Save post ${slug}`);
+  if (!gh?.ok) {
+    return NextResponse.json({ error: "GitHub save failed", details: gh }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, slug, path });
 }

@@ -1,4 +1,3 @@
-// app/api/admin/uploads/route.js
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/adminAuth";
 import { createOrUpdateFile } from "@/lib/github";
@@ -15,7 +14,6 @@ function safeName(name = "upload.bin") {
 }
 
 export async function POST(request) {
-  // Cookie-based admin check
   const denied = await requireAdminAuth(request);
   if (denied) return denied;
 
@@ -36,16 +34,12 @@ export async function POST(request) {
 
   const dated = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const filename = `${dated}-${safeName(file.name)}`;
-  const path = `public/uploads/${filename}`; // served at /uploads/...
+  const path = `public/uploads/${filename}`;
 
   const gh = await createOrUpdateFile(path, b64, `Upload image ${filename}`);
   if (!gh?.ok) {
-    return NextResponse.json(
-      { error: "GitHub save failed", details: gh },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "GitHub save failed", details: gh }, { status: 500 });
   }
 
-  const url = `/uploads/${filename}`;
-  return NextResponse.json({ ok: true, url, path });
+  return NextResponse.json({ ok: true, url: `/uploads/${filename}`, path });
 }
