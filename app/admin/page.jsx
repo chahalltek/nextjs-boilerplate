@@ -4,16 +4,13 @@
 import React, { useMemo, useState } from "react";
 
 function slugify(s) {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
 export default function PollAdminPage() {
   const [question, setQuestion] = useState("");
   const [slug, setSlug] = useState("");
-  const [options, setOptions] = useState(["", ""]); // at least two
+  const [options, setOptions] = useState(["", ""]); // min 2
   const [openAt, setOpenAt] = useState("");
   const [closeAt, setCloseAt] = useState("");
   const [draft, setDraft] = useState(true);
@@ -21,7 +18,6 @@ export default function PollAdminPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // keep slug in sync when the user hasn't typed a custom one yet
   const autoSlug = useMemo(() => slugify(question), [question]);
 
   function updateOption(i, value) {
@@ -48,11 +44,7 @@ export default function PollAdminPage() {
       const finalSlug = slug.trim() || autoSlug;
       if (!finalSlug) throw new Error("Please enter a slug or question");
 
-      const cleaned = options
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .slice(0, 8);
-
+      const cleaned = options.map((t) => t.trim()).filter(Boolean).slice(0, 8);
       if (cleaned.length < 2) throw new Error("Add at least two options");
 
       const payload = {
@@ -67,7 +59,7 @@ export default function PollAdminPage() {
       const res = await fetch("/api/admin/polls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
+        credentials: "same-origin", // send admin cookie
         body: JSON.stringify(payload),
       });
 
@@ -75,10 +67,7 @@ export default function PollAdminPage() {
 
       if (!res.ok) {
         const errText = data?.error ? `• ${data.error}` : "";
-        const err = await Promise.resolve({
-          message: `Save failed (${res.status}) ${errText}`,
-        });
-        throw new Error(err.message);
+        throw new Error(`Save failed (${res.status}) ${errText}`);
       } else {
         setMsg("✅ Poll saved!");
       }
@@ -114,6 +103,7 @@ export default function PollAdminPage() {
             Final: <span className="font-mono">{slug.trim() || autoSlug || "…"}</span>
           </p>
         </div>
+
         <label className="inline-flex items-center gap-2 mt-6">
           <input
             type="checkbox"
@@ -167,6 +157,7 @@ export default function PollAdminPage() {
           </div>
         ))}
       </div>
+
       <button
         type="button"
         className="mt-3 px-3 py-2 rounded bg-white/10 hover:bg-white/15 border border-white/20"
