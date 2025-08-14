@@ -1,40 +1,42 @@
-// app/api/admin/posts/route.js
 import { NextResponse } from "next/server";
+import matter from "gray-matter";
 import { requireAdminAuth } from "@/lib/adminAuth";
-import { getAllPosts } from "@/lib/posts";
+import { createOrUpdateFile } from "@/lib/github"; // your existing GitHub helper
 
 export const runtime = "nodejs";
 
-/**
- * List posts for the Admin UI.
- * (Uses the local posts loader; feel free to swap to GitHub later.)
- */
-export async function GET() {
-  const denied = requireAdminAuth();
-  if (denied) return denied;
-
-  const posts = getAllPosts().map((p) => ({
-    slug: p.slug,
-    title: p.title,
-    date: p.date || null,
-    draft: !!p.draft,
-    excerpt: p.excerpt || "",
-    tags: p.tags || [],
-  }));
-
-  return NextResponse.json({ ok: true, posts });
-}
-
-/**
- * Creating/updating via API can be wired to GitHub later.
- * For now we return 501 so the build succeeds and the list works.
- */
 export async function POST(request) {
-  const denied = requireAdminAuth();
+  const denied = requireAdminAuth(request);
   if (denied) return denied;
 
-  return NextResponse.json(
-    { ok: false, error: "POST /api/admin/posts not implemented yet." },
-    { status: 501 }
+  const { title, slug, excerpt, draft, content } = await request.json();
+
+  if (!title || !slug) {
+    return NextResponse.json({ error: "title and slug required" }, { status: 400 });
+  }
+
+  const fm = matter.stringify(content || "", {
+    title,
+    date: new Date().toISOString(),
+    excerpt: excerpt || "",
+    draft: !!draft,
+  });
+
+  const path = `content/posts/${slug}.md`;
+
+  // Save via GitHub API (base64 content per your helper)
+  const res = await createOrUpdateFile(
+    path,
+    Buffer.from(fm).toString("base64"),
+    `Save post ${path}`
   );
+
+  if (!res?.ok) {
+    return NextResponse.json(
+      { error: "GitHub save failed", details: res },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true });
 }
