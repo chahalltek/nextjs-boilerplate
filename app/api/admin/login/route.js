@@ -1,6 +1,9 @@
 // app/api/admin/login/route.js
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";       // important on Vercel
+export const dynamic = "force-dynamic";
+
 const ADMIN_COOKIE = "skol_admin";
 
 export async function POST(req) {
@@ -16,15 +19,15 @@ export async function POST(req) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(ADMIN_COOKIE, "1", {
     httpOnly: true,
-    secure: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 8, // 8 hours
+    maxAge: 60 * 60 * 8, // 8h
   });
   return res;
 }
 
-// Optional: GET = logout
+// Optional logout: GET /api/admin/login
 export async function GET() {
   const res = NextResponse.json({ ok: true, logout: true });
   res.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
