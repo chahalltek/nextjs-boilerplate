@@ -1,100 +1,89 @@
-// app/admin/page.jsx
+// app/admin/polls/page.jsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import React, { useMemo, useState } from "react";
 
-export default function AdminPage() {
-  // form state
-  const [title, setTitle] = useState("");
+function slugify(s) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+export default function PollAdminPage() {
+  const [question, setQuestion] = useState("");
   const [slug, setSlug] = useState("");
-  const [excerpt, setExcerpt] = useState("");
+  const [options, setOptions] = useState(["", ""]); // at least two
+  const [openAt, setOpenAt] = useState("");
+  const [closeAt, setCloseAt] = useState("");
   const [draft, setDraft] = useState(true);
-  const [content, setContent] = useState("");
 
-  // upload state
-  const fileInputRef = useRef(null);
-  const [uploadedUrl, setUploadedUrl] = useState("");
-  const [uploadMsg, setUploadMsg] = useState("");
-
-  // save state
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
+  const [msg, setMsg] = useState("");
 
-  // helpers
-  useEffect(() => {
-    if (!slug && title) {
-      setSlug(
-        title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "")
-      );
-    }
-  }, [title]);
+  // keep slug in sync when the user hasn't typed a custom one yet
+  const autoSlug = useMemo(() => slugify(question), [question]);
 
-  async function handleUpload(file) {
-    if (!file) return;
-    setUploadMsg("Uploading…");
-    setUploadedUrl("");
-
-    const form = new FormData();
-    form.append("file", file);
-
-    try {
-      const res = await fetch("/api/admin/uploads", {
-        method: "POST",
-        body: form,
-        // include the admin session cookie
-        credentials: "same-origin",
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        // show server error (e.g., 403) if any
-        throw new Error(
-          `Upload failed (${res.status}) ${data.error ? "• " + data.error : ""}`
-        );
-      }
-
-      setUploadedUrl(data.url || "");
-      setUploadMsg("✅ Uploaded!");
-    } catch (err) {
-      setUploadMsg(err.message || "Upload failed");
-    }
+  function updateOption(i, value) {
+    setOptions((prev) => {
+      const next = [...prev];
+      next[i] = value;
+      return next;
+    });
+  }
+  function addOption() {
+    setOptions((prev) => (prev.length >= 8 ? prev : [...prev, ""]));
+  }
+  function removeOption(i) {
+    setOptions((prev) =>
+      prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i)
+    );
   }
 
   async function onSave() {
     setSaving(true);
-    setSaveMsg("");
+    setMsg("");
 
     try {
-      const res = await fetch("/api/admin/posts", {
+      const finalSlug = slug.trim() || autoSlug;
+      if (!finalSlug) throw new Error("Please enter a slug or question");
+
+      const cleaned = options
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+
+      if (cleaned.length < 2) throw new Error("Add at least two options");
+
+      const payload = {
+        slug: finalSlug,
+        question: question.trim(),
+        options: cleaned.map((text, i) => ({ id: i + 1, text })),
+        status: draft ? "draft" : "active",
+        openAt: openAt || null,
+        closeAt: closeAt || null,
+      };
+
+      const res = await fetch("/api/admin/polls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          title,
-          slug,
-          excerpt,
-          draft,
-          content,
-          image: uploadedUrl || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          data.error || `Save failed (HTTP ${res.status.toString()})`
-        );
-      }
 
-      setSaveMsg("✅ Saved!");
+      if (!res.ok) {
+        const errText = data?.error ? `• ${data.error}` : "";
+        const err = await Promise.resolve({
+          message: `Save failed (${res.status}) ${errText}`,
+        });
+        throw new Error(err.message);
+      } else {
+        setMsg("✅ Poll saved!");
+      }
     } catch (err) {
-      setSaveMsg(`❌ ${err.message}`);
+      setMsg(`❌ ${err.message || "Save failed"}`);
     } finally {
       setSaving(false);
     }
@@ -102,102 +91,102 @@ export default function AdminPage() {
 
   return (
     <div className="container py-10 max-w-3xl">
-      <h1 className="text-2xl font-bold mb-6">Admin — New Post</h1>
+      <h1 className="text-2xl font-bold mb-6">Admin — Polls</h1>
 
-      <label className="block text-sm text-white/70">Title</label>
+      <label className="block text-sm text-white/70">Question</label>
       <input
         className="input w-full mt-1 mb-4"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Post title"
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+        placeholder="Who should start at flex this week?"
       />
 
-      <label className="block text-sm text-white/70">Slug</label>
-      <input
-        className="input w-full mt-1 mb-4"
-        value={slug}
-        onChange={(e) => setSlug(e.target.value)}
-        placeholder="my-post-slug"
-      />
-
-      <label className="block text-sm text-white/70">Excerpt</label>
-      <input
-        className="input w-full mt-1 mb-4"
-        value={excerpt}
-        onChange={(e) => setExcerpt(e.target.value)}
-        placeholder="One-line summary"
-      />
-
-      <label className="inline-flex items-center gap-2 mb-4">
-        <input
-          type="checkbox"
-          checked={draft}
-          onChange={(e) => setDraft(e.target.checked)}
-        />
-        <span>Draft (hide from public)</span>
-      </label>
-
-      {/* Upload */}
-      <div className="mb-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handleUpload(e.currentTarget.files?.[0] || null)}
-        />
-        <button
-          type="button"
-          className="btn-gold"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          Upload image…
-        </button>
-        {uploadMsg && <span className="ml-3 text-sm text-white/70">{uploadMsg}</span>}
-        {uploadedUrl && (
-          <div className="mt-3">
-            <img
-              src={uploadedUrl}
-              alt="uploaded"
-              className="max-h-40 rounded border border-white/10"
-            />
-            <p className="text-xs text-white/60 mt-1 break-all">{uploadedUrl}</p>
-          </div>
-        )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-white/70">Slug</label>
+          <input
+            className="input w-full mt-1"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder={autoSlug || "auto-from-question"}
+          />
+          <p className="text-xs text-white/50 mt-1">
+            Final: <span className="font-mono">{slug.trim() || autoSlug || "…"}</span>
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-2 mt-6">
+          <input
+            type="checkbox"
+            checked={draft}
+            onChange={(e) => setDraft(e.target.checked)}
+          />
+          <span>Draft (hide from public)</span>
+        </label>
       </div>
 
-      <div className="flex items-center gap-3 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <label className="block text-sm text-white/70">Opens</label>
+          <input
+            type="datetime-local"
+            className="input w-full mt-1"
+            value={openAt}
+            onChange={(e) => setOpenAt(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-white/70">Closes</label>
+          <input
+            type="datetime-local"
+            className="input w-full mt-1"
+            value={closeAt}
+            onChange={(e) => setCloseAt(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <h2 className="text-lg font-semibold mt-6 mb-2">Options</h2>
+      <div className="space-y-2">
+        {options.map((opt, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              className="input w-full"
+              value={opt}
+              onChange={(e) => updateOption(i, e.target.value)}
+              placeholder={`Option ${i + 1}`}
+            />
+            <button
+              type="button"
+              className="px-2 py-2 rounded bg-white/10 hover:bg-white/15 border border-white/20"
+              onClick={() => removeOption(i)}
+              disabled={options.length <= 2}
+              title={options.length <= 2 ? "At least two options required" : "Remove"}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="mt-3 px-3 py-2 rounded bg-white/10 hover:bg-white/15 border border-white/20"
+        onClick={addOption}
+        disabled={options.length >= 8}
+      >
+        + Add option
+      </button>
+
+      <div className="flex items-center gap-3 mt-6">
         <button
           type="button"
           onClick={onSave}
           disabled={saving}
           className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 text-white"
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : "Save Poll"}
         </button>
-
-        {/* Optional delete button you already had */}
-        {/* <button type="button" className="px-4 py-2 rounded-2xl border border-red-400/30 text-red-300">
-          Delete
-        </button> */}
-
-        {saveMsg && <span className="text-sm text-white/70">{saveMsg}</span>}
+        {msg && <span className="text-sm text-white/70">{msg}</span>}
       </div>
-
-      <textarea
-        className="input w-full h-64"
-        placeholder="Write Markdown here…"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-      />
-
-      {/* Live preview (optional) */}
-      {content && (
-        <div className="prose prose-invert mt-8">
-          <h3 className="text-white/80">Preview</h3>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
-      )}
     </div>
   );
 }
