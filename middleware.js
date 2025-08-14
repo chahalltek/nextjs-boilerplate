@@ -1,10 +1,8 @@
 // middleware.js
 import { NextResponse } from "next/server";
 
-// Protect admin pages and admin APIs
 export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };
 
-// Edge-safe helpers (no node:crypto)
 async function sha256Hex(text) {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest("SHA-256", data);
@@ -20,14 +18,25 @@ async function cookieSignature() {
 export async function middleware(req) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
+  // Next can mark prefetches with any of these headers depending on version/browser
+  const isPrefetch =
+    req.headers.get("x-middleware-prefetch") === "1" ||
+    req.headers.get("purpose") === "prefetch" ||
+    req.headers.get("sec-purpose") === "prefetch";
+
   const cookieName = "skol-admin";
   const need = await cookieSignature();
   const have = req.cookies.get(cookieName)?.value;
 
-  // Already has a valid session
+  // If already authenticated, continue
   if (have === need) return NextResponse.next();
 
-  // Check Basic Auth
+  // Never challenge background prefetches – just no-op them
+  if (isPrefetch) {
+    return new NextResponse(null, { status: 204 });
+  }
+
+  // Check Basic Auth for full navigations / API calls
   const auth = req.headers.get("authorization") || "";
   if (auth.startsWith("Basic ")) {
     try {
@@ -37,20 +46,19 @@ export async function middleware(req) {
       const pass = creds.slice(i + 1);
       if (user === (process.env.ADMIN_USER || "") && pass === (process.env.ADMIN_PASS || "")) {
         const res = NextResponse.next();
-        // IMPORTANT: cookie path covers / and thus /api/*
         res.cookies.set(cookieName, need, {
           httpOnly: true,
           secure: true,
           sameSite: "Lax",
-          path: "/",
-          maxAge: 60 * 60 * 8, // 8 hours
+          path: "/",              // <-- important so /api/* gets it too
+          maxAge: 60 * 60 * 8,    // 8 hours
         });
         return res;
       }
     } catch {}
   }
 
-  // If it’s an API call, don’t trigger the browser’s auth dialog
+  // For APIs, return JSON (no WWW-Authenticate) to avoid browser dialog
   if (isApi) {
     return new NextResponse(JSON.stringify({ error: "forbidden" }), {
       status: 403,
@@ -58,7 +66,7 @@ export async function middleware(req) {
     });
   }
 
-  // For pages, show the Basic Auth challenge
+  // For pages, do a Basic Auth challenge
   return new NextResponse("Authentication required", {
     status: 401,
     headers: { "WWW-Authenticate": 'Basic realm="Skol Admin"' },
