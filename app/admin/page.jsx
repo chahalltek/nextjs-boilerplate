@@ -132,7 +132,7 @@ export default function AdminPage() {
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
           Upload image…
         </label>
-        <button
+       <button
   type="submit"
   className="px-4 py-2 rounded border border-white/20 bg-white/10 text-white hover:bg-white/15 transition"
 >
