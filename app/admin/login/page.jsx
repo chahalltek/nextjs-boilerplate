@@ -1,60 +1,75 @@
 // app/admin/login/page.jsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+function Form() {
+  const router = useRouter();
+  const sp = useSearchParams();
 
-export default function AdminLogin() {
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
-  const [msg, setMsg] = useState("");
-  const [next, setNext] = useState("/admin");
-  const router = useRouter();
+  const [err, setErr] = useState(sp.get("error") || "");
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
-      const n = sp.get("next");
-      if (n) setNext(n);
-    }
-  }, []);
-
-  async function submit(e) {
+  async function onSubmit(e) {
     e.preventDefault();
-    setMsg("");
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ user, pass }),
-    });
-    if (res.ok) {
-      router.replace(next || "/admin");
-    } else {
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user, pass }),
+      });
       const data = await res.json().catch(() => ({}));
-      setMsg(data.error || `Login failed (${res.status})`);
+      if (!res.ok) {
+        setErr(data.error || `Login failed (${res.status})`);
+        setLoading(false);
+        return;
+      }
+      router.push("/admin");     // go to dashboard
+      router.refresh();          // ensure middleware sees the cookie immediately
+    } catch (e) {
+      setErr(String(e));
+      setLoading(false);
     }
   }
 
   return (
-    <div className="container py-16 max-w-md">
-      <h1 className="text-3xl font-bold">Admin Login</h1>
-      <p className="text-white/70 mt-2">Enter your credentials to continue.</p>
+    <div className="container max-w-md py-16">
+      <h1 className="text-4xl font-bold mb-6">Admin Login</h1>
+      <p className="text-white/70 mb-8">Enter your credentials to continue.</p>
 
-      <form onSubmit={submit} className="mt-8 space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-white/70">Username</label>
-          <input className="input w-full mt-1" value={user} onChange={(e) => setUser(e.target.value)} />
+          <label className="block mb-1">Username</label>
+          <input className="input w-full" value={user} onChange={(e) => setUser(e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm text-white/70">Password</label>
-          <input type="password" className="input w-full mt-1" value={pass} onChange={(e) => setPass(e.target.value)} />
+          <label className="block mb-1">Password</label>
+          <input
+            className="input w-full"
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+          />
         </div>
-        <button className="btn-gold">Sign in</button>
-        {msg && <div className="text-red-400 text-sm">{msg}</div>}
+        <button className="btn-gold" disabled={loading}>
+          {loading ? "Signing in…" : "Sign in"}
+        </button>
       </form>
+
+      {err && <p className="mt-4 text-red-400">{err}</p>}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense>
+      <Form />
+    </Suspense>
   );
 }
