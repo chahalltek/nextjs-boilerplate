@@ -1,56 +1,76 @@
-import { NextResponse } from "next/server";
-import matter from "gray-matter";
-import { requireAdminAuth } from "@/lib/adminAuth";
-import { createOrUpdateFile, getFile, deleteFile } from "@/lib/github";
-
+// app/api/admin/posts/[slug]/route.js
 export const runtime = "nodejs";
 
-// Optional: fetch one post (only if you use GitHub as the source here)
-export async function GET(request, { params }) {
-  const guard = requireAdminAuth(request);
-  if (guard) return guard;
+import { NextResponse } from "next/server";
+import { getFile, createOrUpdateFile, deleteFile } from "@/lib/github";
 
+// ⚠️ Make sure this matches whatever your reader in `lib/posts` uses.
+const POSTS_DIR = "content/blog"; // or "content/posts"
+const postPath = (slug) => `${POSTS_DIR}/${slug}.md`;
+
+// GET a post's raw Markdown (for the admin editor)
+export async function GET(_req, { params }) {
   try {
-    const filePath = `content/posts/${params.slug}.md`;
-    if (typeof getFile !== "function") {
-      return NextResponse.json({ ok: false, error: "get-not-implemented" }, { status: 501 });
-    }
-    const file = await getFile(filePath);
-    if (!file?.content) return NextResponse.json({ ok: false, error: "not-found" }, { status: 404 });
-    const raw = Buffer.from(file.content, "base64").toString("utf8");
-    const fm = matter(raw);
-    return NextResponse.json({ ok: true, data: { ...fm.data, content: fm.content } });
+    const path = postPath(params.slug);
+    const file = await getFile(path); // { content: base64, sha, ... }
+    const content = Buffer.from(file.content, "base64").toString("utf8");
+
+    return NextResponse.json({
+      ok: true,
+      data: { content, sha: file.sha, path },
+    });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: "fetch-failed" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "Not found" },
+      { status: 404 }
+    );
   }
 }
 
-// Update a post
-export async function PUT(request, { params }) {
-  const guard = requireAdminAuth(request);
-  if (guard) return guard;
+// CREATE/UPDATE a post
+export async function PUT(req, { params }) {
+  try {
+    const slug = params.slug;
+    const path = postPath(slug);
 
-  const data = await request.json();
-  const { title, date, excerpt, tags = [], content = "", draft = true } = data;
+    // Expect: { content: string, sha?: string, message?: string }
+    const { content, sha, message } = await req.json();
 
-  const fm = matter.stringify(content, { title, date, excerpt, tags, draft });
-  const path = `content/posts/${params.slug}.md`;
+    if (typeof content !== "string" || !content.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "Missing or empty 'content'." },
+        { status: 400 }
+      );
+    }
 
-  const res = await createOrUpdateFile(path, Buffer.from(fm, "utf8").toString("base64"), `Update post ${path}`);
-  if (!res.ok) return NextResponse.json(res, { status: 500 });
-  return NextResponse.json({ ok: true });
+    const commitMsg = message || `post: upsert ${slug}`;
+    const result = await createOrUpdateFile(path, content, commitMsg, sha);
+
+    return NextResponse.json({ ok: true, path, result });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
+  }
 }
 
-// Delete a post
-export async function DELETE(request, { params }) {
-  const guard = requireAdminAuth(request);
-  if (guard) return guard;
+// DELETE a post
+export async function DELETE(_req, { params }) {
+  try {
+    const slug = params.slug;
+    const path = postPath(slug);
 
-  if (typeof deleteFile !== "function") {
-    return NextResponse.json({ ok: false, error: "delete-not-implemented" }, { status: 501 });
+    // Get current sha (GitHub requires it to delete)
+    const existing = await getFile(path).catch(() => null);
+    const sha = existing?.sha;
+
+    await deleteFile(path, `post: delete ${slug}`, sha);
+    return NextResponse.json({ ok: true, path });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
   }
-  const path = `content/posts/${params.slug}.md`;
-  const res = await deleteFile(path, `Delete post ${path}`);
-  if (!res.ok) return NextResponse.json(res, { status: 500 });
-  return NextResponse.json({ ok: true });
 }
