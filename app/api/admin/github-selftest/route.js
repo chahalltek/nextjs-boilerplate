@@ -7,7 +7,7 @@ import { getFile, createOrUpdateFile } from "@/lib/github";
 
 export async function POST(request) {
   const denied = requireAdminAuth(request);
-  if (denied) return denied;
+  if (denied) return denied; // must already be a NextResponse
 
   const repo = process.env.GITHUB_REPO || process.env.GH_REPO;
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -18,21 +18,17 @@ export async function POST(request) {
     );
   }
 
-  const { path = "tmp/selftest.txt" } = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({}));
+  const path = body.path || "tmp/selftest.txt";
+
   try {
     const existing = await getFile(path).catch(() => null);
     const content = `skol selftest @ ${new Date().toISOString()}\n`;
-    await createOrUpdateFile(
-      path,
-      content,
-      "chore: github selftest",
-      existing?.sha
-    );
-
+    await createOrUpdateFile(path, content, "chore: github selftest", existing?.sha);
     return NextResponse.json({ ok: true, path });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
+      { ok: false, reason: String(e?.message || e) },
       { status: 500 }
     );
   }
