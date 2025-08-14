@@ -1,26 +1,25 @@
-import { NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/adminAuth";
-import { commitFile } from "@/lib/github";
+// app/api/admin/polls/route.ts
+import { requireAdmin } from "@/lib/adminAuth";
+import fs from "fs/promises";
+import path from "path";
 
-export async function POST(req) {
-  const gate = requireAdminAuth();
-  if (!gate.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export const runtime = "nodejs";
 
-  const body = await req.json().catch(() => ({}));
-  const { slug, question, options, status = "active" } = body;
+const POLLS_DIR = path.join(process.cwd(), "content", "polls");
 
-  if (!slug || !question || !Array.isArray(options) || options.length < 2) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+export async function POST(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
+  const body = await request.json();
+  const { slug, title, question, options } = body || {};
+  if (!slug || !title || !question || !Array.isArray(options) || options.length < 2) {
+    return new Response(JSON.stringify({ ok: false, error: "Invalid payload" }), { status: 400 });
   }
 
-  const json = JSON.stringify({ slug, question, options, status }, null, 2) + "\n";
-  const path = `data/polls/${slug}.json`;
-
-  await commitFile({
-    path,
-    content: json,
-    message: `Add/Update poll: ${slug}`,
-  });
-
-  return NextResponse.json({ ok: true });
+  await fs.mkdir(POLLS_DIR, { recursive: true });
+  const safe = String(slug).replace(/[^\w\-]/g, "");
+  const file = path.join(POLLS_DIR, `${safe}.json`);
+  await fs.writeFile(file, JSON.stringify({ slug: safe, title, question, options }, null, 2));
+  return new Response(JSON.stringify({ ok: true }), { status: 200 });
 }

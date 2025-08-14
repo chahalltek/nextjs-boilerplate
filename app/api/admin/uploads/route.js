@@ -1,32 +1,29 @@
-import { NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/adminAuth";
-import { commitFile } from "@/lib/github";
+// app/api/admin/uploads/route.js
+import { requireAdmin } from "@/lib/adminAuth";
+import fs from "fs/promises";
+import path from "path";
 
-export async function POST(req) {
-  const gate = requireAdminAuth();
-  if (!gate.ok) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+export const runtime = "nodejs";
 
-  const form = await req.formData();
-  const file = form.get("file");
+export async function POST(request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
+  const data = await request.formData();
+  const file = data.get("file");
   if (!file || typeof file === "string") {
-    return NextResponse.json({ error: "No file" }, { status: 400 });
+    return new Response(JSON.stringify({ ok: false, error: "No file" }), { status: 400 });
   }
 
-  const arrayBuffer = await file.arrayBuffer();
-  const bytes = Buffer.from(arrayBuffer);
-  const cleanName = String(file.name || "upload.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
-  const ts = Date.now();
-  const relPath = `public/uploads/${ts}-${cleanName}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const ext = path.extname(file.name) || ".bin";
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const rel = `public/uploads/${Date.now()}_${safeName}`;
+  const abs = path.join(process.cwd(), rel);
 
-  await commitFile({
-    path: relPath,
-    content: bytes,
-    message: `Upload ${cleanName} via Admin`,
-  });
+  await fs.mkdir(path.dirname(abs), { recursive: true });
+  await fs.writeFile(abs, bytes);
 
-  // Public URL your site can serve
-  const url = `/uploads/${ts}-${cleanName}`;
-  return NextResponse.json({ ok: true, url });
+  // public/ is served from /
+  return Response.json({ ok: true, url: `/${rel.replace(/^public\//, "")}` });
 }

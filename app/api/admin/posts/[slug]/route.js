@@ -1,76 +1,58 @@
 // app/api/admin/posts/[slug]/route.js
+import { requireAdmin } from "@/lib/adminAuth";
+import fs from "fs/promises";
+import path from "path";
+
 export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
-import { getFile, createOrUpdateFile, deleteFile } from "@/lib/github";
+const POSTS_DIR = path.join(process.cwd(), "content", "blog");
 
-// ⚠️ Make sure this matches whatever your reader in `lib/posts` uses.
-const POSTS_DIR = "content/blog"; // or "content/posts"
-const postPath = (slug) => `${POSTS_DIR}/${slug}.md`;
+function postPath(slug) {
+  const safe = slug.replace(/[^\w\-]/g, "");
+  return path.join(POSTS_DIR, `${safe}.md`);
+}
 
-// GET a post's raw Markdown (for the admin editor)
 export async function GET(_req, { params }) {
+  const p = postPath(params.slug);
   try {
-    const path = postPath(params.slug);
-    const file = await getFile(path); // { content: base64, sha, ... }
-    const content = Buffer.from(file.content, "base64").toString("utf8");
-
-    return NextResponse.json({
-      ok: true,
-      data: { content, sha: file.sha, path },
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Not found" },
-      { status: 404 }
-    );
+    const content = await fs.readFile(p, "utf8");
+    return Response.json({ ok: true, data: { content } });
+  } catch {
+    return Response.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 }
 
-// CREATE/UPDATE a post
-export async function PUT(req, { params }) {
-  try {
-    const slug = params.slug;
-    const path = postPath(slug);
+export async function PUT(request, { params }) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
 
-    // Expect: { content: string, sha?: string, message?: string }
-    const { content, sha, message } = await req.json();
-
-    if (typeof content !== "string" || !content.trim()) {
-      return NextResponse.json(
-        { ok: false, error: "Missing or empty 'content'." },
-        { status: 400 }
-      );
-    }
-
-    const commitMsg = message || `post: upsert ${slug}`;
-    const result = await createOrUpdateFile(path, content, commitMsg, sha);
-
-    return NextResponse.json({ ok: true, path, result });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
-      { status: 500 }
-    );
+  const body = await request.json();
+  const { title, date, excerpt, content } = body || {};
+  if (!title || !content) {
+    return Response.json({ ok: false, error: "Missing fields" }, { status: 400 });
   }
+
+  const frontMatter =
+    `---\n` +
+    `title: "${title.replace(/"/g, '\\"')}"\n` +
+    (date ? `date: "${date}"\n` : "") +
+    (excerpt ? `excerpt: "${excerpt.replace(/"/g, '\\"')}"\n` : "") +
+    `---\n\n`;
+
+  await fs.mkdir(POSTS_DIR, { recursive: true });
+  await fs.writeFile(postPath(params.slug), frontMatter + content, "utf8");
+
+  return Response.json({ ok: true });
 }
 
-// DELETE a post
-export async function DELETE(_req, { params }) {
+export async function DELETE(request, { params }) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
   try {
-    const slug = params.slug;
-    const path = postPath(slug);
-
-    // Get current sha (GitHub requires it to delete)
-    const existing = await getFile(path).catch(() => null);
-    const sha = existing?.sha;
-
-    await deleteFile(path, `post: delete ${slug}`, sha);
-    return NextResponse.json({ ok: true, path });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
-      { status: 500 }
-    );
+    await fs.unlink(postPath(params.slug));
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 }

@@ -2,45 +2,63 @@
 import { NextResponse } from "next/server";
 
 export const config = {
-  // Only admin pages, not API
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/api/admin/:path*"],
 };
 
+// Compute a deterministic session token in Edge runtime
+async function edgeHash(input) {
+  const enc = new TextEncoder().encode(input);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  const bytes = Array.from(new Uint8Array(buf));
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function parseCookie(header = "") {
+  return Object.fromEntries(
+    header.split(";").map(v => v.trim().split("=").map(decodeURIComponent)).filter(([k]) => k)
+  );
+}
+
 export async function middleware(req) {
-  const { pathname } = req.nextUrl;
+  const url = new URL(req.url);
+  const isApi = url.pathname.startsWith("/api/");
+  const user = process.env.BASIC_AUTH_USER || "";
+  const pass = process.env.BASIC_AUTH_PASS || "";
+  const secret = process.env.ADMIN_SESSION_SECRET || "set-a-secret";
 
-  // If the session cookie is already there, let it through.
-  const hasSession = req.cookies.get("skol_admin")?.value;
-  if (hasSession) return NextResponse.next();
+  // If no admin creds configured, just let everything through.
+  if (!user || !pass) return NextResponse.next();
 
-  // Ask for HTTP Basic just once to mint a cookie.
-  const auth = req.headers.get("authorization");
-  if (!auth?.startsWith("Basic ")) {
-    return new NextResponse("Auth required", {
-      status: 401,
-      headers: { "WWW-Authenticate": 'Basic realm="Skol Sisters Admin"' },
-    });
+  // 1) If we already have a valid cookie, let it through.
+  const cookies = parseCookie(req.headers.get("cookie") || "");
+  const cookieValue = cookies["admin_session"];
+  if (cookieValue) {
+    const [u, token] = cookieValue.split("|");
+    const good = await edgeHash(`${u}:${pass}:${secret}`);
+    if (u === user && token === good) return NextResponse.next();
   }
 
-  const [user, pass] = Buffer.from(auth.slice(6), "base64")
-    .toString()
-    .split(":");
-
-  if (
-    user !== process.env.ADMIN_USER ||
-    pass !== process.env.ADMIN_PASS
-  ) {
-    return new NextResponse("Forbidden", { status: 403 });
+  // 2) If a Basic header is present and correct, set cookie and continue.
+  const auth = req.headers.get("authorization") || "";
+  if (auth.startsWith("Basic ")) {
+    const [u, p] = Buffer.from(auth.slice(6), "base64").toString().split(":");
+    if (u === user && p === pass) {
+      const token = await edgeHash(`${user}:${pass}:${secret}`);
+      const res = NextResponse.next();
+      // 8 hours
+      res.headers.append(
+        "set-cookie",
+        `admin_session=${encodeURIComponent(`${user}|${token}`)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=28800`
+      );
+      return res;
+    }
   }
 
-  // Good creds -> give a cookie so we don't keep prompting.
-  const res = NextResponse.next();
-  res.cookies.set("skol_admin", "ok", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 8, // 8h
-  });
+  // 3) Otherwise, challenge with Basic (keeps the browser prompt on protected areas)
+  const res = NextResponse.json(
+    { ok: false, error: "Auth required" },
+    { status: 401 }
+  );
+  res.headers.set('www-authenticate', 'Basic realm="Admin", charset="UTF-8"');
   return res;
 }

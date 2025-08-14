@@ -1,34 +1,22 @@
-import { NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/adminAuth";
-import { commitFile } from "@/lib/github";
+// app/api/admin/posts/route.js
+import { requireAdmin } from "@/lib/adminAuth";
+import fs from "fs/promises";
+import path from "path";
 
-function fm(s) { return String(s || "").replace(/"/g, '\\"'); }
+export const runtime = "nodejs";
 
-export async function POST(req) {
-  const gate = requireAdminAuth();
-  if (!gate.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+const POSTS_DIR = path.join(process.cwd(), "content", "blog");
 
-  const body = await req.json().catch(() => ({}));
-  const { slug, title, date, excerpt, content, coverImage } = body;
+export async function POST(request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
 
-  if (!slug || !title) {
-    return NextResponse.json({ error: "Missing slug/title" }, { status: 400 });
-  }
+  const { slug } = await request.json();
+  if (!slug) return Response.json({ ok: false, error: "Missing slug" }, { status: 400 });
 
-  const frontmatter =
-`---
-title: "${fm(title)}"
-${date ? `date: ${date}\n` : ""}${excerpt ? `excerpt: "${fm(excerpt)}"\n` : ""}${coverImage ? `coverImage: "${fm(coverImage)}"\n` : ""}---
-`;
-
-  const md = `${frontmatter}\n${content || ""}\n`;
-  const path = `content/blog/${slug}.md`;
-
-  await commitFile({
-    path,
-    content: md,
-    message: `Add/Update blog post: ${slug}`,
-  });
-
-  return NextResponse.json({ ok: true });
+  // Create empty placeholder if not exists
+  await fs.mkdir(POSTS_DIR, { recursive: true });
+  const p = path.join(POSTS_DIR, `${slug.replace(/[^\w\-]/g, "")}.md`);
+  await fs.writeFile(p, "---\n---\n", "utf8");
+  return Response.json({ ok: true });
 }
