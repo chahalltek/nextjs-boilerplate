@@ -132,7 +132,12 @@ export default function AdminPage() {
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
           Upload image…
         </label>
-        <button className="px-3 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold" onClick={save}>Save</button>
+        <button
+  type="submit"
+  className="px-4 py-2 rounded border border-white/20 bg-white/10 text-white hover:bg-white/15 transition disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  {saving ? "Saving…" : "Save"}
+</button>
         <button className="px-3 py-2 rounded border border-red-500/50 text-red-300 hover:bg-red-500/10" onClick={del}>Delete</button>
       </div>
 
