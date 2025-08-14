@@ -1,45 +1,32 @@
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/adminAuth";
-import { createOrUpdateFile } from "@/lib/github";
+import { commitFile } from "@/lib/github";
 
-export const runtime = "nodejs";
-
-function safeName(name = "upload.bin") {
-  const base = String(name)
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return base || "upload.bin";
-}
-
-export async function POST(request) {
-  const denied = await requireAdminAuth(request);
-  if (denied) return denied;
-
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+export async function POST(req) {
+  const gate = requireAdminAuth();
+  if (!gate.ok) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const form = await req.formData();
   const file = form.get("file");
   if (!file || typeof file === "string") {
-    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    return NextResponse.json({ error: "No file" }, { status: 400 });
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  const b64 = Buffer.from(arrayBuffer).toString("base64");
+  const bytes = Buffer.from(arrayBuffer);
+  const cleanName = String(file.name || "upload.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const ts = Date.now();
+  const relPath = `public/uploads/${ts}-${cleanName}`;
 
-  const dated = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const filename = `${dated}-${safeName(file.name)}`;
-  const path = `public/uploads/${filename}`;
+  await commitFile({
+    path: relPath,
+    content: bytes,
+    message: `Upload ${cleanName} via Admin`,
+  });
 
-  const gh = await createOrUpdateFile(path, b64, `Upload image ${filename}`);
-  if (!gh?.ok) {
-    return NextResponse.json({ error: "GitHub save failed", details: gh }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, url: `/uploads/${filename}`, path });
+  // Public URL your site can serve
+  const url = `/uploads/${ts}-${cleanName}`;
+  return NextResponse.json({ ok: true, url });
 }
