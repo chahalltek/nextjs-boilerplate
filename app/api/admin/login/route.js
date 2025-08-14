@@ -1,42 +1,48 @@
+// app/api/admin/login/route.js
 import { NextResponse } from "next/server";
-import {
-  makeSessionValue,
-  setSessionCookie,
-  clearSessionCookie,
-  readSession,
-} from "@/lib/adminAuth";
 
-export async function GET() {
-  // Quick “am I logged in?”
-  const s = readSession();
-  return s
-    ? NextResponse.json({ ok: true, user: s.user })
-    : NextResponse.json({ ok: false }, { status: 401 });
+const ADMIN_COOKIE = "skol_admin";
+const COOKIE_MAX_AGE = 60 * 60 * 8; // 8h
+
+function envUser() {
+  return (
+    process.env.ADMIN_USER ||
+    process.env.BASIC_AUTH_USER ||
+    process.env.NEXT_ADMIN_USER
+  );
+}
+function envPass() {
+  return (
+    process.env.ADMIN_PASS ||
+    process.env.BASIC_AUTH_PASS ||
+    process.env.NEXT_ADMIN_PASS
+  );
 }
 
-export async function POST(req) {
-  const { user, pass } = await req.json().catch(() => ({}));
-  const U = process.env.ADMIN_USER || "";
-  const P = process.env.ADMIN_PASSWORD || "";
-  const S = process.env.ADMIN_COOKIE_SECRET || "";
+export async function POST(request) {
+  const { user, pass } = await request.json().catch(() => ({}));
 
-  if (!user || !pass) {
-    return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
-  }
-  if (!S) {
-    return NextResponse.json({ error: "Server not configured" }, { status: 500 });
-  }
-  if (user === U && pass === P) {
-    const res = NextResponse.json({ ok: true });
-    const value = makeSessionValue(user, S);
-    setSessionCookie(res, value);
-    return res;
-  }
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-}
+  const U = envUser();
+  const P = envPass();
 
-export async function DELETE() {
+  if (!U || !P) {
+    return NextResponse.json(
+      { ok: false, error: "Server admin credentials not configured" },
+      { status: 500 }
+    );
+  }
+
+  if (user !== U || pass !== P) {
+    return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
+  }
+
   const res = NextResponse.json({ ok: true });
-  clearSessionCookie(res);
+  res.cookies.set(ADMIN_COOKIE, "ok", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
   return res;
 }
