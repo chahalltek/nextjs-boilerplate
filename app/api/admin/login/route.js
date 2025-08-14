@@ -2,21 +2,13 @@
 import { NextResponse } from "next/server";
 
 const ADMIN_COOKIE = "skol_admin";
-const COOKIE_MAX_AGE = 60 * 60 * 8; // 8h
+const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
 
 function envUser() {
-  return (
-    process.env.ADMIN_USER ||
-    process.env.BASIC_AUTH_USER ||
-    process.env.NEXT_ADMIN_USER
-  );
+  return process.env.ADMIN_USER || process.env.BASIC_AUTH_USER || process.env.NEXT_ADMIN_USER;
 }
 function envPass() {
-  return (
-    process.env.ADMIN_PASS ||
-    process.env.BASIC_AUTH_PASS ||
-    process.env.NEXT_ADMIN_PASS
-  );
+  return process.env.ADMIN_PASS || process.env.BASIC_AUTH_PASS || process.env.NEXT_ADMIN_PASS;
 }
 
 export async function POST(request) {

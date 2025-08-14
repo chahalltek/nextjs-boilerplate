@@ -11,15 +11,13 @@ export function middleware(req) {
   const isLogin = pathname.startsWith("/admin/login");
   const isAdminAPI = pathname.startsWith("/api/admin");
 
-  // Protect API: no cookie -> 401 JSON
   if (isAdminAPI && !hasCookie) {
-    return new NextResponse(JSON.stringify({ ok: false, error: "Unauthorized: missing admin session" }), {
-      status: 401,
-      headers: { "content-type": "application/json" },
-    });
+    return new NextResponse(
+      JSON.stringify({ ok: false, error: "Unauthorized: missing admin session" }),
+      { status: 401, headers: { "content-type": "application/json" } }
+    );
   }
 
-  // Protect UI: no cookie -> redirect to /admin/login?next=...
   if (isAdminUI && !isLogin && !hasCookie) {
     const url = req.nextUrl.clone();
     url.pathname = "/admin/login";
@@ -30,6 +28,4 @@ export function middleware(req) {
   return NextResponse.next();
 }
 
-export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
-};
+export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };

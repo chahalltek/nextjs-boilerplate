@@ -1,16 +1,25 @@
 // app/admin/login/page.jsx
 "use client";
 
-import { useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default function AdminLogin() {
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [msg, setMsg] = useState("");
-  const search = useSearchParams();
+  const [next, setNext] = useState("/admin");
   const router = useRouter();
-  const next = search.get("next") || "/admin";
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const n = sp.get("next");
+      if (n) setNext(n);
+    }
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -22,7 +31,7 @@ export default function AdminLogin() {
       body: JSON.stringify({ user, pass }),
     });
     if (res.ok) {
-      router.replace(next);
+      router.replace(next || "/admin");
     } else {
       const data = await res.json().catch(() => ({}));
       setMsg(data.error || `Login failed (${res.status})`);
