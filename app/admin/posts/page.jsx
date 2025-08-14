@@ -1,122 +1,92 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
-function slugify(s) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-}
+import { useEffect, useRef, useState } from "react";
 
 export default function AdminPostsPage() {
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(
+    new Date().toISOString().slice(0, 10) // yyyy-mm-dd
+  );
   const [excerpt, setExcerpt] = useState("");
   const [content, setContent] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
 
-  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
   const [uploadMsg, setUploadMsg] = useState("");
   const [uploadedUrl, setUploadedUrl] = useState("");
+
   const fileRef = useRef(null);
 
-  // auto-fill slug as you type a title (but don’t overwrite if user edits slug)
+  // Optional: auto-slug from title when slug empty
   useEffect(() => {
-    if (!slug) setSlug(slugify(title));
-  }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!slug && title) {
+      setSlug(
+        title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)+/g, "")
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title]);
 
-  async function onUpload() {
+  async function handleUpload() {
     setUploadMsg("");
     setUploadedUrl("");
 
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
+    const f = fileRef.current?.files?.[0];
+    if (!f) {
       setUploadMsg("Please choose a file first.");
       return;
     }
-
-    const form = new FormData();
-    form.append("file", file);
-
-    setUploading(true);
     try {
+      const fd = new FormData();
+      fd.append("file", f);
+
       const res = await fetch("/api/admin/uploads", {
         method: "POST",
-        body: form,
-        credentials: "same-origin",
+        body: fd,
+        // IMPORTANT: send cookie with request
+        credentials: "include",
       });
 
-      let data = {};
-      try {
-        data = await res.json();
-      } catch {
-        data = {};
-      }
-
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errText = data?.error ? `• ${data.error}` : "";
-        throw new Error(`Upload failed (${res.status}) ${errText}`);
-      }
-
-      // success
-      if (data?.url) {
-        setUploadedUrl(data.url);
-        setUploadMsg("✅ Uploaded!");
-      } else {
-        setUploadMsg("Uploaded, but no URL returned.");
-      }
+        setUploadMsg(`❌ Upload failed (${res.status}) ${data?.error || ""}`);
+        return;
+        }
+      setUploadedUrl(data.url);
+      setUploadMsg("✅ Uploaded! (copied URL into clipboard)");
+      try {
+        await navigator.clipboard.writeText(data.url);
+      } catch {}
     } catch (err) {
-      setUploadMsg(`❌ ${err.message || "Upload failed"}`);
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      setUploadMsg(`❌ Upload error: ${String(err.message || err)}`);
     }
   }
 
-  async function onSave(e) {
-    e?.preventDefault?.();
+  async function handleSave() {
     setSaving(true);
-    setMessage("");
-
+    setSaveMsg("");
     try {
-      if (!title.trim()) throw new Error("Please add a title.");
-      const finalSlug = (slug || slugify(title)).trim();
-      if (!finalSlug) throw new Error("Please add a slug.");
-
-      const payload = {
-        slug: finalSlug,
-        title: title.trim(),
-        date: date || null,
-        excerpt: excerpt.trim(),
-        content: content,
-        // Optionally include a hero/cover image URL if you want to use it in frontmatter
-        coverImage: uploadedUrl || null,
-      };
-
-      const res = await fetch("/api/admin/posts", {
-        method: "POST",
+      if (!slug) throw new Error("Missing slug");
+      const res = await fetch(`/api/admin/posts/${encodeURIComponent(slug)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify(payload),
+        // IMPORTANT: send cookie with request
+        credentials: "include",
+        body: JSON.stringify({ title, date, excerpt, content }),
       });
-
-      let data = {};
-      try {
-        data = await res.json();
-      } catch {
-        data = {};
-      }
-
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errText = data?.error ? `• ${data.error}` : "";
-        throw new Error(`Save failed (${res.status}) ${errText}`);
+        setSaveMsg(`❌ Save failed (${res.status}) · ${data?.error || "Forbidden"}`);
+      } else {
+        setSaveMsg("✅ Saved!");
       }
-
-      setMessage("✅ Saved!");
     } catch (err) {
-      setMessage(`❌ ${err.message || "Save failed"}`);
+      setSaveMsg(`❌ ${String(err.message || err)}`);
     } finally {
       setSaving(false);
     }
@@ -124,118 +94,109 @@ export default function AdminPostsPage() {
 
   return (
     <div className="container py-10 max-w-5xl">
-      <h1 className="text-2xl font-bold mb-6">Admin — Blog Posts</h1>
+      <h1 className="text-2xl md:text-3xl font-bold mb-6">Admin — Blog Posts</h1>
 
-      <form onSubmit={onSave} className="grid md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-sm text-white/70">Title</label>
-          <input
-            className="input w-full mt-1 mb-4"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Week 1 Waiver Wire Gems"
-          />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Left column: editor */}
+        <div className="space-y-4">
+          <label className="block">
+            <div className="mb-1 text-sm text-white/70">Title</div>
+            <input
+              className="input w-full"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Post title…"
+            />
+          </label>
 
-          <label className="block text-sm text-white/70">Slug</label>
-          <input
-            className="input w-full mt-1 mb-4"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder={slugify(title) || "auto-from-title"}
-          />
+          <label className="block">
+            <div className="mb-1 text-sm text-white/70">Slug</div>
+            <input
+              className="input w-full"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="my-post-slug"
+            />
+          </label>
 
-          <label className="block text-sm text-white/70">Date</label>
-          <input
-            type="date"
-            className="input w-full mt-1 mb-4"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+          <label className="block">
+            <div className="mb-1 text-sm text-white/70">Date</div>
+            <input
+              type="date"
+              className="input w-full"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </label>
 
-          <label className="block text-sm text-white/70">Excerpt</label>
-          <textarea
-            className="input w-full mt-1 mb-4"
-            rows={3}
-            value={excerpt}
-            onChange={(e) => setExcerpt(e.target.value)}
-            placeholder="A quick teaser for the blog card…"
-          />
+          <label className="block">
+            <div className="mb-1 text-sm text-white/70">Excerpt</div>
+            <textarea
+              className="input w-full h-28"
+              value={excerpt}
+              onChange={(e) => setExcerpt(e.target.value)}
+              placeholder="Short summary (optional)…"
+            />
+          </label>
 
-          <label className="block text-sm text-white/70">Content (Markdown)</label>
-          <textarea
-            className="input w-full mt-1"
-            rows={12}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={`# Heading
+          <label className="block">
+            <div className="mb-1 text-sm text-white/70">Content (Markdown)</div>
+            <textarea
+              className="input w-full min-h-[320px]"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Write Markdown here…"
+            />
+          </label>
 
-Some markdown with **bold**, _italics_, and lists.
-
-- one
-- two
-`}
-          />
-
-          <div className="flex items-center gap-3 mt-4">
+          <div className="flex items-center gap-3">
             <button
-              type="submit"
+              onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 text-white"
+              className="btn-gold disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save Post"}
             </button>
-            {message && <span className="text-sm text-white/70">{message}</span>}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold mb-2">Cover Image (optional)</h2>
-          <div className="card p-4">
-            <input
-              type="file"
-              accept="image/*"
-              ref={fileRef}
-              className="block w-full text-sm"
-            />
-            <div className="flex items-center gap-3 mt-3">
-              <button
-                type="button"
-                onClick={onUpload}
-                disabled={uploading}
-                className="px-3 py-2 rounded bg-white/10 hover:bg-white/15 border border-white/20"
+            {saveMsg && (
+              <span
+                className={saveMsg.startsWith("✅") ? "text-green-400" : "text-red-400"}
               >
-                {uploading ? "Uploading…" : "Upload image"}
-              </button>
-              {uploadMsg && <span className="text-sm text-white/70">{uploadMsg}</span>}
-            </div>
+                {saveMsg}
+              </span>
+            )}
+          </div>
+        </div>
 
-            {uploadedUrl ? (
-              <div className="mt-4">
-                <div className="text-xs text-white/60 mb-2 break-all">
-                  {uploadedUrl}
-                </div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={uploadedUrl}
-                  alt="Uploaded preview"
-                  className="rounded-xl border border-white/10 max-h-64"
-                />
+        {/* Right column: upload + preview */}
+        <div className="space-y-4">
+          <div>
+            <div className="mb-2 font-semibold">Cover Image (optional)</div>
+            <div className="flex items-center gap-3">
+              <input type="file" ref={fileRef} className="text-sm" />
+              <button onClick={handleUpload} className="px-3 py-2 rounded bg-white/10 border border-white/20 hover:bg-white/15">
+                Upload image
+              </button>
+            </div>
+            {uploadMsg && (
+              <div className="mt-2 text-sm text-white/80">{uploadMsg}</div>
+            )}
+            {uploadedUrl && (
+              <div className="mt-2 text-sm text-white/60 break-all">
+                URL: {uploadedUrl}
               </div>
-            ) : null}
+            )}
           </div>
 
-          <h2 className="text-lg font-semibold mt-6 mb-2">Preview</h2>
-          <article className="prose prose-invert max-w-none card p-4">
-            <h1 className="mb-0">{title || "Untitled Post"}</h1>
-            <p className="text-white/60 mt-1">
+          <div className="card p-4">
+            <div className="text-sm text-white/60">Preview</div>
+            <div className="mt-2 font-semibold">{title || "(title…)"}</div>
+            <div className="text-white/60 text-sm">
               {date ? new Date(date).toLocaleDateString() : ""}
-            </p>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {content || "_Nothing here yet…_"}
-            </ReactMarkdown>
-          </article>
+            </div>
+            <div className="mt-2 text-white/80">{excerpt}</div>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
