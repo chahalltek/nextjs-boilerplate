@@ -134,10 +134,11 @@ export default function AdminPage() {
         </label>
         <button
   type="submit"
-  className="px-4 py-2 rounded border border-white/20 bg-white/10 text-white hover:bg-white/15 transition disabled:opacity-50 disabled:cursor-not-allowed"
+  className="px-4 py-2 rounded border border-white/20 bg-white/10 text-white hover:bg-white/15 transition"
 >
-  {saving ? "Saving…" : "Save"}
+  Save
 </button>
+
         <button className="px-3 py-2 rounded border border-red-500/50 text-red-300 hover:bg-red-500/10" onClick={del}>Delete</button>
       </div>
 
