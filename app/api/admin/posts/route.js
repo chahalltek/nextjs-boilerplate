@@ -6,13 +6,10 @@ import { createOrUpdateFile } from "@/lib/github";
 export const runtime = "nodejs";
 
 // List posts (stub OK if you already list from FS elsewhere)
-export async function GET(request) {
-  const guard = requireAdminAuth(request);
-  if (guard) return guard;
-
-  // If you already have a list implementation, keep it.
-  // Returning an empty list here keeps build green.
-  return NextResponse.json({ ok: true, items: [] });
+ const denied = requireAdminAuth();
+  if (denied) return denied;
+  // ... normal logic
+  return NextResponse.json({ ok: true });
 }
 
 // Create a post
