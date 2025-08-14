@@ -1,205 +1,203 @@
 // app/admin/page.jsx
 "use client";
 
-import { useRef, useState } from "react";
-import Link from "next/link";
+import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export const runtime = "edge";
-
 export default function AdminPage() {
-  // --- Uploader state ---
-  const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState("");
-  const [uploadedUrl, setUploadedUrl] = useState("");
-
-  async function handlePick() {
-    fileInputRef.current?.click();
-  }
-
-  async function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadMsg("");
-    setUploadedUrl("");
-    setUploading(true);
-
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-
-      const res = await fetch("/api/admin/uploads", { credentials: "include", 
-  method: "POST",
-  body: formData,
-  credentials: "include",   // 👈 IMPORTANT
-});
-if (!res.ok) {
-  const err = await res.json().catch(() => ({}));
-  throw new Error(`Upload failed (${res.status}) ${err.error || ""}`);
-}
-      } else {
-        setUploadedUrl(data.url);
-        setUploadMsg("✅ Uploaded!");
-      }
-    } catch (err) {
-      setUploadMsg("Upload failed (network error)");
-    } finally {
-      setUploading(false);
-      // allow re-upload without refreshing
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
-  // --- (Optional) blog post editor shell you already had ---
+  // form state
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState("");
+  const [slug, setSlug] = useState("");
   const [excerpt, setExcerpt] = useState("");
-  const [tags, setTags] = useState("");
-  const [draft, setDraft] = useState(false);
+  const [draft, setDraft] = useState(true);
   const [content, setContent] = useState("");
 
+  // upload state
+  const fileInputRef = useRef(null);
+  const [uploadedUrl, setUploadedUrl] = useState("");
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  // save state
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
-  async function savePost(e) {
-    e.preventDefault();
+  // helpers
+  useEffect(() => {
+    if (!slug && title) {
+      setSlug(
+        title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "")
+      );
+    }
+  }, [title]);
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setUploadMsg("Uploading…");
+    setUploadedUrl("");
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch("/api/admin/uploads", {
+        method: "POST",
+        body: form,
+        // include the admin session cookie
+        credentials: "same-origin",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // show server error (e.g., 403) if any
+        throw new Error(
+          `Upload failed (${res.status}) ${data.error ? "• " + data.error : ""}`
+        );
+      }
+
+      setUploadedUrl(data.url || "");
+      setUploadMsg("✅ Uploaded!");
+    } catch (err) {
+      setUploadMsg(err.message || "Upload failed");
+    }
+  }
+
+  async function onSave() {
     setSaving(true);
     setSaveMsg("");
 
     try {
-      const payload = {
-        title,
-        date,
-        excerpt,
-        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        draft,
-        content,
-      };
+      const res = await fetch("/api/admin/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          title,
+          slug,
+          excerpt,
+          draft,
+          content,
+          image: uploadedUrl || undefined,
+        }),
+      });
 
-      // save post
-const res = await fetch("/api/admin/posts", { credentials: "include", 
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ title, date, excerpt, tags, draft, content }),
-  credentials: "include",   // 👈 IMPORTANT
-});
-if (!res.ok) {
-  const err = await res.json().catch(() => ({}));
-  throw new Error(`Save failed (${res.status}) ${err.error || ""}`);
-}
-      } else {
-        setSaveMsg("✅ Saved!");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error || `Save failed (HTTP ${res.status.toString()})`
+        );
       }
-    } catch {
-      setSaveMsg("Save failed (network error)");
+
+      setSaveMsg("✅ Saved!");
+    } catch (err) {
+      setSaveMsg(`❌ ${err.message}`);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="container py-12 max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin</h1>
-        <div className="flex gap-4">
-          <Link href="/admin/polls" className="underline text-white/80 hover:text-white">Polls</Link>
-          <Link href="/" className="underline text-white/80 hover:text-white">← Back to site</Link>
-        </div>
-      </div>
+    <div className="container py-10 max-w-3xl">
+      <h1 className="text-2xl font-bold mb-6">Admin — New Post</h1>
 
-      {/* Image Uploader */}
-      <section className="mt-8 card p-5">
-        <h2 className="text-lg font-semibold mb-3">Upload image</h2>
-        <p className="text-sm text-white/70 mb-4">
-          Images are saved to <code>/public/uploads/</code> and served at <code>/uploads/&lt;filename&gt;</code>.
-        </p>
+      <label className="block text-sm text-white/70">Title</label>
+      <input
+        className="input w-full mt-1 mb-4"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Post title"
+      />
 
+      <label className="block text-sm text-white/70">Slug</label>
+      <input
+        className="input w-full mt-1 mb-4"
+        value={slug}
+        onChange={(e) => setSlug(e.target.value)}
+        placeholder="my-post-slug"
+      />
+
+      <label className="block text-sm text-white/70">Excerpt</label>
+      <input
+        className="input w-full mt-1 mb-4"
+        value={excerpt}
+        onChange={(e) => setExcerpt(e.target.value)}
+        placeholder="One-line summary"
+      />
+
+      <label className="inline-flex items-center gap-2 mb-4">
+        <input
+          type="checkbox"
+          checked={draft}
+          onChange={(e) => setDraft(e.target.checked)}
+        />
+        <span>Draft (hide from public)</span>
+      </label>
+
+      {/* Upload */}
+      <div className="mb-4">
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={handleFileChange}
+          onChange={(e) => handleUpload(e.currentTarget.files?.[0] || null)}
         />
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handlePick}
-            disabled={uploading}
-            className="btn-gold disabled:opacity-60"
-          >
-            {uploading ? "Uploading…" : "Upload Image"}
-          </button>
-
-          {uploadMsg && <span className="text-sm text-white/80">{uploadMsg}</span>}
-          {uploadedUrl && (
-            <a
-              href={uploadedUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline text-sm text-white/90"
-            >
-              {uploadedUrl}
-            </a>
-          )}
-        </div>
-      </section>
-
-      {/* Blog editor (unchanged other than the button styling/behavior) */}
-      <form onSubmit={savePost} className="mt-10 space-y-4">
-        <h2 className="text-lg font-semibold">Quick Post Editor</h2>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Title</label>
-            <input className="input w-full" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <button
+          type="button"
+          className="btn-gold"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Upload image…
+        </button>
+        {uploadMsg && <span className="ml-3 text-sm text-white/70">{uploadMsg}</span>}
+        {uploadedUrl && (
+          <div className="mt-3">
+            <img
+              src={uploadedUrl}
+              alt="uploaded"
+              className="max-h-40 rounded border border-white/10"
+            />
+            <p className="text-xs text-white/60 mt-1 break-all">{uploadedUrl}</p>
           </div>
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Date</label>
-            <input className="input w-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-        </div>
+        )}
+      </div>
 
-        <div>
-          <label className="block text-sm text-white/70 mb-1">Excerpt</label>
-          <input className="input w-full" value={excerpt} onChange={(e) => setExcerpt(e.target.value)} />
-        </div>
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 text-white"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
 
-        <div>
-          <label className="block text-sm text-white/70 mb-1">Tags (comma-separated)</label>
-          <input className="input w-full" value={tags} onChange={(e) => setTags(e.target.value)} />
-        </div>
+        {/* Optional delete button you already had */}
+        {/* <button type="button" className="px-4 py-2 rounded-2xl border border-red-400/30 text-red-300">
+          Delete
+        </button> */}
 
-        <label className="inline-flex items-center gap-2 text-sm text-white/80">
-          <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} />
-          Draft
-        </label>
+        {saveMsg && <span className="text-sm text-white/70">{saveMsg}</span>}
+      </div>
 
-        <div>
-          <label className="block text-sm text-white/70 mb-1">Content (Markdown)</label>
-          <textarea
-            className="input w-full min-h-[220px]"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="## Hello world"
-          />
-          <div className="mt-3 text-white/60 text-sm">
-            <span className="opacity-80">Preview:</span>
-            <div className="prose prose-invert max-w-none mt-2 p-3 rounded bg-white/5 border border-white/10">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            </div>
-          </div>
-        </div>
+      <textarea
+        className="input w-full h-64"
+        placeholder="Write Markdown here…"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+      />
 
-        <div className="pt-2 flex items-center gap-3">
-          <button type="submit" disabled={saving} className="btn-gold disabled:opacity-60">
-            {saving ? "Saving…" : "Save"}
-          </button>
-          {saveMsg && <span className="text-sm text-white/80">{saveMsg}</span>}
+      {/* Live preview (optional) */}
+      {content && (
+        <div className="prose prose-invert mt-8">
+          <h3 className="text-white/80">Preview</h3>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
-      </form>
+      )}
     </div>
   );
 }
