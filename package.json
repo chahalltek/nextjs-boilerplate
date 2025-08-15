@@ -9,6 +9,7 @@
   "dependencies": {
     "@giscus/react": "^3.1.0",
     "@hyvor/hyvor-talk-react": "^1.0.2",
+    "@octokit/rest": "^22.0.0",
     "@tailwindcss/postcss": "^4.1.11",
     "@upstash/redis": "^1.6.1",
     "autoprefixer": "^10.4.20",
