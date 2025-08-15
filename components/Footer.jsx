@@ -7,7 +7,7 @@ export default function SiteFooter() {
   const nav = [
     { href: "/about", label: "About" },
     { href: "/blog", label: "Blog" },
-    {/* href: "/episodes", label: "Episodes" */},
+    { href: "/episodes", label: "Episodes" },
     { href: "/start-sit", label: "Start/Sit" },
     { href: "/cws", label: "CWS" },
     { href: "/survivor", label: "Survivor" },
