@@ -15,9 +15,6 @@ export default function HyvorComments({ pageId, title }) {
   return (
     <div className="mt-4">
       <Comments website-id={websiteId} page-id={pageId} title={title} />
-      <div className="mt-2 text-xs text-white/40">
-        hyvor site: {websiteId} • pageId: {pageId}
-      </div>
     </div>
   );
 }

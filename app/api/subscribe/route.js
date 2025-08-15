@@ -1,99 +1,116 @@
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 
-async function subscribeMailchimp(email) {
-  const apiKey = process.env.MAILCHIMP_API_KEY;
-  const dc = process.env.MAILCHIMP_DC;
-  const listId = process.env.MAILCHIMP_LIST_ID;
-  if (!apiKey || !dc || !listId) return { ok: false, reason: "missing-mailchimp-env" };
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members`;
-  const body = { email_address: email, status_if_new: "subscribed", status: "subscribed" };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${Buffer.from(`any:${apiKey}`).toString("base64")}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  if (res.status === 200 || res.status === 201) return { ok: true, provider: "mailchimp" };
-  const json = await res.json().catch(() => ({}));
-  if (res.status === 400 && json?.title?.includes("Member Exists")) return { ok: true, provider: "mailchimp", existed: true };
-  return { ok: false, provider: "mailchimp", status: res.status, json };
+/**
+ * Required env:
+ * MAILCHIMP_API_KEY  e.g. "us6-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+ * MAILCHIMP_LIST_ID  audience/list id
+ * MAILCHIMP_DC       data center, e.g. "us6" (if not embedded in key)
+ */
+function getEnv() {
+  const key = process.env.MAILCHIMP_API_KEY || "";
+  const listId = process.env.MAILCHIMP_LIST_ID || "";
+  const dc = process.env.MAILCHIMP_DC || (key.split("-")[1] || "");
+  if (!key || !listId || !dc) {
+    throw new Error("Missing Mailchimp env: MAILCHIMP_API_KEY, MAILCHIMP_LIST_ID, MAILCHIMP_DC");
+  }
+  return { key, listId, dc };
 }
 
-async function subscribeConvertKit(email) {
-  const apiKey = process.env.CONVERTKIT_API_KEY;
-  const formId = process.env.CONVERTKIT_FORM_ID;
-  if (!apiKey || !formId) return { ok: false, reason: "missing-convertkit-env" };
-
-  const url = `https://api.convertkit.com/v3/forms/${formId}/subscribe`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey, email })
-  });
-  if (res.ok) return { ok: true, provider: "convertkit" };
-  const json = await res.json().catch(() => ({}));
-  return { ok: false, provider: "convertkit", status: res.status, json };
+function mcHeaders(key) {
+  return {
+    "Authorization": `apikey ${key}`, // basic auth style header Mailchimp expects
+    "Content-Type": "application/json",
+  };
 }
 
-async function notifyResend(subject, text) {
-  const key = process.env.RESEND_API_KEY;
-  const to = process.env.NOTIFY_EMAIL_TO;
-  const from = process.env.NOTIFY_EMAIL_FROM || "Skol Sisters <no-reply@theskolsisters.com>";
-  if (!key || !to) return { ok: false, reason: "missing-resend-env" };
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-    body: JSON.stringify({ from, to, subject, text })
-  });
-  if (res.ok) return { ok: true, provider: "resend" };
-  return { ok: false, provider: "resend", status: res.status };
+function hashEmail(email) {
+  return crypto.createHash("md5").update(email.toLowerCase()).digest("hex");
 }
 
-async function logToGAS(payload) {
-  const url = process.env.GOOGLE_APPS_SCRIPT_WEBAPP_URL;
-  if (!url) return { ok: false, reason: "missing-gas-url" };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  return { ok: res.ok, status: res.status };
+async function getMember(dc, listId, key, email) {
+  const hash = hashEmail(email);
+  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${hash}`;
+  const r = await fetch(url, { headers: mcHeaders(key), cache: "no-store" });
+  if (r.status === 404) return null;
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.title || j.detail || `Mailchimp get ${r.status}`);
+  return j; // has .status
 }
 
-export async function POST(request) {
-  const contentType = request.headers.get("content-type") || "";
-  let email = "";
+async function createPending(dc, listId, key, email, mergeFields = {}) {
+  // PUT by hash upserts; status_if_new=pending triggers confirmation
+  const hash = hashEmail(email);
+  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${hash}`;
+  const body = {
+    email_address: email,
+    status_if_new: "pending",
+    status: "pending",
+    merge_fields: mergeFields,
+  };
+  const r = await fetch(url, {
+    method: "PUT",
+    headers: mcHeaders(key),
+    body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.title || j.detail || `Mailchimp upsert ${r.status}`);
+  return j;
+}
+
+async function resendConfirmation(dc, listId, key, email) {
+  const hash = hashEmail(email);
+  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${hash}/actions/resend-confirmation`;
+  const r = await fetch(url, { method: "POST", headers: mcHeaders(key) });
+  // Mailchimp returns 204 No Content on success
+  if (r.status === 204) return { ok: true };
+  const txt = await r.text();
+  let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
+  if (!r.ok) throw new Error(j.title || j.detail || `Mailchimp resend ${r.status}`);
+  return { ok: true };
+}
+
+export async function POST(req) {
   try {
-    if (contentType.includes("application/json")) {
-      const body = await request.json();
-      email = (body.email || "").trim();
-    } else {
-      const form = await request.formData();
-      email = (form.get("email") || "").toString().trim();
+    const { key, listId, dc } = getEnv();
+
+    const payload = await req.json().catch(() => ({}));
+    const email = (payload.email || "").trim();
+    const fname = (payload.fname || "").trim();
+    const lname = (payload.lname || "").trim();
+
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return NextResponse.json({ ok: false, error: "Invalid email." }, { status: 400 });
     }
-  } catch {}
 
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return NextResponse.json({ ok: false, error: "invalid-email" }, { status: 400 });
+    // Check current status
+    const member = await getMember(dc, listId, key, email);
+
+    if (!member) {
+      // brand new -> create pending (triggers confirmation)
+      await createPending(dc, listId, key, email, { FNAME: fname, LNAME: lname });
+      return NextResponse.json({ ok: true, state: "pending", message: "Check your email to confirm." });
+    }
+
+    switch (member.status) {
+      case "subscribed":
+        return NextResponse.json({ ok: true, state: "subscribed", message: "You're already subscribed." });
+      case "unsubscribed":
+      case "transactional":
+      case "cleaned":
+        // try to move to pending -> confirmation email
+        await createPending(dc, listId, key, email, { FNAME: fname, LNAME: lname });
+        return NextResponse.json({ ok: true, state: "pending", message: "Check your email to confirm." });
+      case "pending":
+      default:
+        // already pending -> resend confirmation
+        await resendConfirmation(dc, listId, key, email);
+        return NextResponse.json({ ok: true, state: "pending", message: "We just re-sent the confirmation email." });
+    }
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
-
-  let result = await subscribeMailchimp(email);
-  if (!result.ok) result = await subscribeConvertKit(email);
-
-  await logToGAS({ type: "subscribe", email, ts: new Date().toISOString(), provider: result.provider || null, ok: result.ok });
-  await notifyResend("New subscriber", `Email: ${email}\nProvider: ${result.provider || "none"}\nOK: ${result.ok}`);
-
-  if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
-    const url = new URL(request.url);
-    url.pathname = "/subscribe";
-    url.searchParams.set("ok", result.ok ? "1" : "0");
-    return NextResponse.redirect(url.toString(), { status: 303 });
-  }
-
-  return NextResponse.json({ ok: result.ok, provider: result.provider || null });
 }
