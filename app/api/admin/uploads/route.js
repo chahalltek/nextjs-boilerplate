@@ -1,29 +1,29 @@
-// app/api/admin/uploads/route.js
+import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
-import fs from "fs/promises";
-import path from "path";
+import { commitFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 
-export async function POST(request) {
-  const denied = requireAdmin(request);
+export async function POST(req) {
+  const denied = requireAdmin();
   if (denied) return denied;
 
-  const data = await request.formData();
-  const file = data.get("file");
-  if (!file || typeof file === "string") {
-    return new Response(JSON.stringify({ ok: false, error: "No file" }), { status: 400 });
+  try {
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!file || typeof file === "string") {
+      return NextResponse.json({ ok: false, error: "No file provided" }, { status: 400 });
+    }
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const safeName = file.name.replace(/\s+/g, "-");
+    const path = `public/uploads/${Date.now()}-${safeName}`;
+
+    await commitFile({ path, content: bytes, message: `Upload ${safeName}` });
+
+    // public/ prefix isn't part of the URL
+    return NextResponse.json({ ok: true, url: `/${path.replace(/^public\//, "")}` });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err.message || err) }, { status: 500 });
   }
-
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const ext = path.extname(file.name) || ".bin";
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const rel = `public/uploads/${Date.now()}_${safeName}`;
-  const abs = path.join(process.cwd(), rel);
-
-  await fs.mkdir(path.dirname(abs), { recursive: true });
-  await fs.writeFile(abs, bytes);
-
-  // public/ is served from /
-  return Response.json({ ok: true, url: `/${rel.replace(/^public\//, "")}` });
 }
