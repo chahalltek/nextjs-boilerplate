@@ -1,7 +1,8 @@
 // app/api/admin/whoami/route.js
 import { NextResponse } from "next/server";
+import { readSession } from "@/lib/adminAuth";
 
-export function GET(request) {
-  const has = Boolean(request.cookies.get("skol_admin")?.value);
-  return NextResponse.json({ ok: true, has });
+export async function GET() {
+  const s = readSession();
+  return NextResponse.json({ ok: !!s, who: s?.user || null }, { status: s ? 200 : 401 });
 }
