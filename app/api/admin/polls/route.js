@@ -1,25 +1,51 @@
-// app/api/admin/polls/route.ts
+import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
-import fs from "fs/promises";
-import path from "path";
+import { getFile, commitFile, deleteFile } from "@/lib/github";
+
+const POSTS_DIR = "content/posts";
 
 export const runtime = "nodejs";
 
-const POLLS_DIR = path.join(process.cwd(), "content", "polls");
-
-export async function POST(request: Request) {
-  const denied = requireAdmin(request);
+export async function GET(_req, { params }) {
+  const denied = requireAdmin();
   if (denied) return denied;
 
-  const body = await request.json();
-  const { slug, title, question, options } = body || {};
-  if (!slug || !title || !question || !Array.isArray(options) || options.length < 2) {
-    return new Response(JSON.stringify({ ok: false, error: "Invalid payload" }), { status: 400 });
+  try {
+    const path = `${POSTS_DIR}/${params.slug}.md`;
+    const file = await getFile(path);
+    if (!file) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: true, data: { content: file.content } });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err.message || err) }, { status: 500 });
   }
+}
 
-  await fs.mkdir(POLLS_DIR, { recursive: true });
-  const safe = String(slug).replace(/[^\w\-]/g, "");
-  const file = path.join(POLLS_DIR, `${safe}.json`);
-  await fs.writeFile(file, JSON.stringify({ slug: safe, title, question, options }, null, 2));
-  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+export async function PUT(req, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  try {
+    const { content } = await req.json();
+    if (!content || !String(content).trim()) {
+      return NextResponse.json({ ok: false, error: "Empty content" }, { status: 400 });
+    }
+    const path = `${POSTS_DIR}/${params.slug}.md`;
+    await commitFile({ path, content, message: `Save post ${params.slug}.md` });
+    return NextResponse.json({ ok: true, path });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err.message || err) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  try {
+    const path = `${POSTS_DIR}/${params.slug}.md`;
+    await deleteFile(path, `Delete post ${params.slug}.md`);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err.message || err) }, { status: 500 });
+  }
 }
