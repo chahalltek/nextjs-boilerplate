@@ -6,25 +6,23 @@ import { commitFile } from "@/lib/github";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request) {
   const denied = requireAdmin();
   if (denied) return denied;
 
+  const { path } = await request.json().catch(() => ({}));
+  const stamp = new Date().toISOString();
+  const filePath = path || `data/selftest-${Date.now()}.txt`;
+
   try {
-    const stamp = new Date().toISOString();
-    const path = "data/selftest.txt";
-    const base64 = Buffer.from(`ok ${stamp}\n`, "utf8").toString("base64");
     const gh = await commitFile({
-      path,
-      contentBase64: base64,
+      path: filePath,
+      contentBase64: Buffer.from(`ok ${stamp}\n`, "utf8").toString("base64"),
       message: "selftest",
-      sha: undefined, // TS friendly
+      sha: undefined,
     });
-    return NextResponse.json({ ok: true, path, commit: gh.commit });
+    return NextResponse.json({ ok: true, path: filePath, commit: gh.commit });
   } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
 }
