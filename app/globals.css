@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Brand tokens ONLY go inside @theme */
+/* Brand tokens (custom properties only) */
 @theme {
   --color-skol-purple: #4F2683;
   --color-skol-gold:   #FFC62F;
@@ -14,24 +14,13 @@
   --radius-xl: 0.875rem;
 }
 
-/* --- Third-party embeds (outside @theme) --- */
-#hyvor-talk-view { color: #fff; }
-#hyvor-talk-view a { color: var(--color-skol-gold); }
-/* in global.css */
-#hyvor-talk-view { min-height: 280px; }
-
-/* Disqus picks this up as its accent color */
-#disqus_thread a { color: var(--color-skol-gold); }
-#disqus_thread a:hover { opacity: 0.85; }
-
 /* App-wide base */
 html, body { height: 100%; }
 body {
   @apply text-white antialiased;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #1d1330 0%, transparent 60%),
-    radial-gradient(1200px 600px at 90% -20%, #2a1a40 0%, transparent 60%),
-    linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
+  background: radial-gradient(1200px 600px at 10% -10%, #1d1330 0%, transparent 60%),
+              radial-gradient(1200px 600px at 90% -20%, #2a1a40 0%, transparent 60%),
+              linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
 }
 
 .container { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
@@ -44,10 +33,36 @@ body {
   @apply px-3 py-2 rounded bg-white/10 border border-white/20 placeholder-white/50;
 }
 .btn-gold {
-  @apply px-4 py-2 rounded font-semibold text-black hover:opacity-90;
+  @apply px-4 py-2 rounded font-semibold hover:opacity-90;
+  color: black; /* keep gold button black text where intentionally used */
   background: color-mix(in oklab, var(--color-skol-gold) 96%, #000 4%);
 }
 
+/* Disqus link accent (if used) */
+#disqus_thread a { color: var(--color-skol-gold); }
+#disqus_thread a:hover { opacity: 0.85; }
+
+/* HYVOR Talk tweaks (dark site) */
+#hyvor-talk-view { color: #fff; }
+#hyvor-talk-view a { color: var(--color-skol-gold, #FFC62F); }
+#hyvor-talk-view a:hover { opacity: .9; }
+
+/* Keep icons from turning black: ensure icons inherit a light color, and active = gold */
+#hyvor-talk-view svg { fill: currentColor !important; }
+#hyvor-talk-view button,
+#hyvor-talk-view .ht-btn,
+#hyvor-talk-view .ht-vote,
+#hyvor-talk-view .ht-reaction {
+  color: #fff !important;
+}
+#hyvor-talk-view .is-active,
+#hyvor-talk-view .ht-active,
+#hyvor-talk-view .ht-vote.is-active,
+#hyvor-talk-view .ht-reaction.is-active {
+  color: var(--color-skol-gold, #FFC62F) !important;
+}
+
+/* CTA component from earlier */
 @layer components {
   .cta-card {
     @apply block rounded-2xl border border-white/15 bg-white/5 px-5 py-4
