@@ -29,7 +29,7 @@ export default function StartSitPage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/subscribe" className="btn-gold">Notify me when it drops</Link>
             <Link href="/101" className="cta-card">
-              <span className="cta-title">Start with 101 →</span>
+              <span className="cta-title">Start with 101 → </span>
               <span className="cta-sub">New to fantasy? We got you.</span>
             </Link>
           </div>
