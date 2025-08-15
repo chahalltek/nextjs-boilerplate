@@ -1,46 +1,78 @@
 // app/api/admin/posts/[slug]/route.js
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
-import { commitFile } from "@/lib/github";
+import { commitFile, getFile, deleteFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function frontMatter(obj) {
-  const kv = Object.entries(obj)
-    .filter(([, v]) => v != null && v !== "");
-  const lines = kv.map(([k, v]) =>
-    `${k}: ${typeof v === "string" ? `"${v.replace(/"/g, '\\"')}"` : v}`
-  );
-  return `---\n${lines.join("\n")}\n---\n`;
+const POSTS_DIR = "content/posts";
+
+export async function GET(_request, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  const { slug } = params || {};
+  if (!slug) {
+    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
+  }
+
+  const path = `${POSTS_DIR}/${slug}.md`;
+  try {
+    const f = await getFile(path);
+    if (!f) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+    const content = Buffer.from(f.contentBase64, "base64").toString("utf8");
+    return NextResponse.json({ ok: true, data: { content } });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+  }
 }
 
 export async function PUT(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const slug = params?.slug;
+  const { slug } = params || {};
   if (!slug) {
     return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const { title, excerpt, content, date } = body || {};
-  if (!title || !content) {
-    return NextResponse.json({ ok: false, error: "Missing title/content" }, { status: 400 });
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const { content } = body || {};
+  if (typeof content !== "string" || !content.trim()) {
+    return NextResponse.json({ ok: false, error: "Missing content" }, { status: 400 });
   }
 
-  const md = `${frontMatter({ title, excerpt, date })}\n${content}\n`;
-  const base64 = Buffer.from(md, "utf8").toString("base64");
-
+  const path = `${POSTS_DIR}/${slug}.md`;
   try {
-    const filePath = `content/blog/${slug}.md`;
+    const base64 = Buffer.from(content, "utf8").toString("base64");
     const gh = await commitFile({
-      path: filePath,
+      path,
       contentBase64: base64,
       message: `post: ${slug}`,
     });
-    return NextResponse.json({ ok: true, commit: gh.commit });
+    return NextResponse.json({ ok: true, commit: gh.commit, path });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  const { slug } = params || {};
+  if (!slug) {
+    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
+  }
+
+  const path = `${POSTS_DIR}/${slug}.md`;
+  try {
+    const gh = await deleteFile({ path, message: `delete post: ${slug}` });
+    return NextResponse.json({ ok: true, commit: gh.commit, path });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
