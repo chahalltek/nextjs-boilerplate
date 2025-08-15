@@ -124,7 +124,7 @@ export default function HomePage() {
           <div className="flex gap-2 w-full md:w-auto">
             <Link
               href="/subscribe"
-              className="px-4 py-3 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90 w-full md:w-auto text-center"
+              className="px-4 py-3 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 w-full md:w-auto text-center"
             >
               Subscribe free
             </Link>
