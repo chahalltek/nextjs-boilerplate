@@ -42,7 +42,7 @@ export default function SubscribeClient() {
       <button
         type="submit"
         disabled={busy}
-        className="inline-flex items-center justify-center h-12 px-5 rounded-xl font-semibold bg-[color:var(--skol-gold)] text-black hover:brightness-110 disabled:opacity-60"
+        className="inline-flex items-center justify-center h-12 px-5 rounded-xl font-semibold bg-[color:var(--skol-gold)] text-white hover:brightness-110 disabled:opacity-60"
       >
         {busy ? "Submitting…" : "Notify me"}
       </button>
