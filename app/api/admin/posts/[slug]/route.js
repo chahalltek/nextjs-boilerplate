@@ -1,100 +1,90 @@
 // app/api/admin/posts/[slug]/route.js
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
-import { commitFile, getFile, deleteFile } from "@/lib/github";
+import { getFile, commitFile, deleteFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const POSTS_DIR = "content/posts";
+const BASE_DIR = "content/posts";
 
-/** Build markdown with YAML front-matter from fields sent by the UI */
-function buildMarkdown({ title, excerpt, date, content }) {
-  const fm = [];
-  if (title)  fm.push(`title: ${yamlEscape(title)}`);
-  if (excerpt) fm.push(`excerpt: ${yamlEscape(excerpt)}`);
-  if (date)   fm.push(`date: ${yamlEscape(date)}`); // keep as provided (e.g., 2025-08-15)
-
-  const front = fm.length ? `---\n${fm.join("\n")}\n---\n\n` : "";
-  return `${front}${content || ""}`.trim() + "\n";
+function err(message, status = 400) {
+  return NextResponse.json({ ok: false, error: message }, { status });
+}
+function ok(data) {
+  return NextResponse.json({ ok: true, ...(data || {}) });
 }
 
-// naive YAML escaper good enough for typical titles/excerpts/dates
-function yamlEscape(s) {
-  if (/[":{}[\],&*#?|\-<>=!%@`]/.test(s) || /\s/.test(s)) {
-    // wrap in double quotes and escape inner quotes/backslashes
-    return `"${String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-  }
-  return String(s);
-}
-
-export async function GET(_request, { params }) {
+// Fetch an existing post (raw md for the admin UI)
+export async function GET(_req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const { slug } = params || {};
-  if (!slug) {
-    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-  }
+  const slug = params?.slug;
+  if (!slug) return err("Missing slug");
 
-  const path = `${POSTS_DIR}/${slug}.md`;
+  const path = `${BASE_DIR}/${slug}.md`;
   try {
     const f = await getFile(path);
-    if (!f) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-    const content = Buffer.from(f.contentBase64, "base64").toString("utf8");
-    return NextResponse.json({ ok: true, data: { content } });
+    if (!f) return err("Not found", 404);
+    const md = Buffer.from(f.contentBase64, "base64").toString("utf8");
+    return ok({ path, content: md });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    return err(String(e?.message || e), 500);
   }
 }
 
+// Upsert a post
 export async function PUT(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const { slug } = params || {};
-  if (!slug) {
-    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-  }
+  const slug = params?.slug;
+  if (!slug) return err("Missing slug");
 
   let body = {};
   try { body = await request.json(); } catch {}
+  const { title, excerpt = "", content = "", date } = body || {};
+  if (!title || !content) return err("Missing title or content");
 
-  const { title, excerpt, date, content } = body || {};
-  if (!title || !content) {
-    return NextResponse.json({ ok: false, error: "Missing title or content" }, { status: 400 });
-  }
+  const fmLines = [
+    "---",
+    `title: ${JSON.stringify(title)}`,
+    ...(excerpt ? [`excerpt: ${JSON.stringify(excerpt)}`] : []),
+    ...(date ? [`date: ${JSON.stringify(date)}`] : []),
+    "---",
+    "",
+  ];
+  const md = fmLines.join("\n") + String(content);
 
-  const md = buildMarkdown({ title, excerpt, date, content });
-  const base64 = Buffer.from(md, "utf8").toString("base64");
-  const path = `${POSTS_DIR}/${slug}.md`;
-
+  const path = `${BASE_DIR}/${slug}.md`;
   try {
+    const base64 = Buffer.from(md, "utf8").toString("base64");
     const gh = await commitFile({
       path,
       contentBase64: base64,
       message: `post: ${slug}`,
+      sha: undefined, // TS friendly
     });
-    return NextResponse.json({ ok: true, commit: gh.commit, path });
+    return ok({ commit: gh.commit, path });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    return err(String(e?.message || e), 500);
   }
 }
 
-export async function DELETE(_request, { params }) {
+// Delete a post
+export async function DELETE(_req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const { slug } = params || {};
-  if (!slug) {
-    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-  }
+  const slug = params?.slug;
+  if (!slug) return err("Missing slug");
 
-  const path = `${POSTS_DIR}/${slug}.md`;
+  const path = `${BASE_DIR}/${slug}.md`;
   try {
     const gh = await deleteFile({ path, message: `delete post: ${slug}` });
-    return NextResponse.json({ ok: true, commit: gh.commit, path });
+    return ok({ commit: gh.commit, path });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    return err(String(e?.message || e), 500);
   }
 }

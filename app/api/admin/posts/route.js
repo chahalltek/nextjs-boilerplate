@@ -2,45 +2,56 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
 import { commitFile } from "@/lib/github";
-import matter from "gray-matter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Create a new post at content/posts/<slug>.md
 export async function POST(request) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const body = await request.json().catch(() => ({}));
-  let { slug, title, excerpt, cover, content, date } = body || {};
-  slug = String(slug || "").trim();
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const { slug, title, excerpt = "", content = "", date } = body || {};
 
-  if (!slug) return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-
-  // build markdown from fields if content is not a full raw md
-  let markdown;
-  if (typeof content === "string" && content.trim().length) {
-    markdown = content.endsWith("\n") ? content : content + "\n";
-  } else {
-    const data = {};
-    if (title) data.title = title;
-    if (excerpt) data.excerpt = excerpt;
-    if (cover) data.cover = cover;
-    data.date = date || new Date().toISOString();
-    markdown = matter.stringify("", data) + "\n";
+  if (!slug || !title || !content) {
+    return NextResponse.json(
+      { ok: false, error: "Missing slug, title, or content" },
+      { status: 400 }
+    );
   }
 
-  const path = `content/posts/${slug}.md`;
+  const safeSlug = String(slug)
+    .toLowerCase()
+    .replace(/[^a-z0-9\-]/g, "-")
+    .replace(/--+/g, "-");
+
+  // Simple frontmatter + markdown
+  const fmLines = [
+    "---",
+    `title: ${JSON.stringify(title)}`,
+    ...(excerpt ? [`excerpt: ${JSON.stringify(excerpt)}`] : []),
+    ...(date ? [`date: ${JSON.stringify(date)}`] : []),
+    "---",
+    "",
+  ];
+  const md = fmLines.join("\n") + String(content);
 
   try {
-    const base64 = Buffer.from(markdown, "utf8").toString("base64");
+    const base64 = Buffer.from(md, "utf8").toString("base64");
+    const filePath = `content/posts/${safeSlug}.md`;
     const gh = await commitFile({
-      path,
+      path: filePath,
       contentBase64: base64,
-      message: `post: ${slug}`,
+      message: `post: ${safeSlug}`,
+      sha: undefined, // TS friendly
     });
-    return NextResponse.json({ ok: true, commit: gh.commit, path });
+    return NextResponse.json({ ok: true, commit: gh.commit, path: filePath });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: String(e?.message || e) },
+      { status: 500 }
+    );
   }
 }

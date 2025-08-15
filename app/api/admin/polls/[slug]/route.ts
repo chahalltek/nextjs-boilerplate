@@ -69,7 +69,6 @@ export async function PUT(req: Request, { params }: { params: { slug?: string } 
     updatedAt: now,
   };
 
-  // preserve createdAt if exists
   const existing = await getFile(`${POLLS_DIR}/${slug}.json`).catch(() => null);
   if (existing) {
     try {
@@ -90,7 +89,7 @@ export async function PUT(req: Request, { params }: { params: { slug?: string } 
       path: `${POLLS_DIR}/${slug}.json`,
       contentBase64: base64,
       message: `poll: ${slug}`,
-      sha: undefined, // satisfy TS
+      sha: undefined,
     });
 
     if (poll.active) {
@@ -99,7 +98,7 @@ export async function PUT(req: Request, { params }: { params: { slug?: string } 
         path: ACTIVE_PTR,
         contentBase64: Buffer.from(ptr, "utf8").toString("base64"),
         message: `activate poll: ${slug}`,
-        sha: undefined, // satisfy TS
+        sha: undefined,
       });
     }
 

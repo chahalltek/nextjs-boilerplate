@@ -34,15 +34,17 @@ export async function POST(request) {
       path: filePath,
       contentBase64: base64,
       message: `poll: ${slug}`,
+      sha: undefined, // TS friendly
     });
 
-    // If marked active, write/overwrite pointer
+    // If marked active, write a small pointer file
     if (poll.active) {
       const ptr = JSON.stringify({ slug }, null, 2);
       await commitFile({
         path: "data/active-poll.json",
         contentBase64: Buffer.from(ptr, "utf8").toString("base64"),
         message: `activate poll: ${slug}`,
+        sha: undefined, // TS friendly
       });
     }
 
