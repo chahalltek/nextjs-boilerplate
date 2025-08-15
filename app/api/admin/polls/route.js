@@ -36,7 +36,7 @@ export async function POST(request) {
       message: `poll: ${slug}`,
     });
 
-    // If marked active, write a small pointer file
+    // If marked active, write/overwrite pointer
     if (poll.active) {
       const ptr = JSON.stringify({ slug }, null, 2);
       await commitFile({
