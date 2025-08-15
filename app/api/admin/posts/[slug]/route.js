@@ -1,96 +1,135 @@
 // app/api/admin/posts/[slug]/route.js
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
-import { commitFile, getFile, listDir } from "@/lib/github";
+import { getFile, commitFile, deleteFile } from "@/lib/github";
 import matter from "gray-matter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CANDIDATES = [
-  "app/content/posts",
-  "content/posts",
-  "app/content/blog",
-  "content/blog",
-];
+const POSTS_DIR = "content/posts";
 
-function isPostFile(name) {
-  return /\.(md|mdx)$/i.test(name);
+function toBase64(s) {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+function fromBase64(b64) {
+  return Buffer.from(b64, "base64").toString("utf8");
 }
 
-async function pickExistingDir() {
-  for (const dir of CANDIDATES) {
-    const entries = await listDir(dir);
-    if (entries !== null) return dir; // first existing directory
-  }
-  return "app/content/posts";
+function buildMarkdown({ title, excerpt, content, date, draft }) {
+  // Keep front-matter tidy
+  const data = {
+    ...(title ? { title } : {}),
+    ...(excerpt ? { excerpt } : {}),
+    ...(date ? { date } : {}),
+    ...(typeof draft === "boolean" ? { draft } : {}),
+  };
+  return matter.stringify(content || "", data);
 }
 
+// GET (optional) – returns raw markdown (used by editor preview if you need it)
 export async function GET(_req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const slug = params?.slug;
-  if (!slug) {
-    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-  }
+  const { slug } = params;
+  const path = `${POSTS_DIR}/${slug}.md`;
 
-  // Try both md and mdx across all candidate dirs
-  for (const dir of CANDIDATES) {
-    for (const ext of ["md", "mdx"]) {
-      const path = `${dir}/${slug}.${ext}`;
-      try {
-        const f = await getFile(path);
-        if (f?.contentBase64) {
-          const raw = Buffer.from(f.contentBase64, "base64").toString("utf8");
-          const fm = matter(raw);
-          return NextResponse.json({
-            ok: true,
-            data: { frontmatter: fm.data, content: fm.content, path },
-          });
-        }
-      } catch {
-        // keep trying
-      }
-    }
+  const file = await getFile(path);
+  if (!file) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
-
-  return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  const md = fromBase64(file.contentBase64);
+  return NextResponse.json({ ok: true, content: md });
 }
 
+// PUT – create/update a post
 export async function PUT(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const slug = params?.slug;
-  if (!slug) {
-    return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-  }
-
+  const { slug } = params;
   const body = await request.json().catch(() => ({}));
-  const { title, excerpt, date, content } = body || {};
-  if (!title || !content) {
-    return NextResponse.json({ ok: false, error: "Missing title or content" }, { status: 400 });
+  const { title, excerpt, content, date, draft } = body || {};
+
+  if (!slug || !title || !content) {
+    return NextResponse.json(
+      { ok: false, error: "Missing slug, title or content" },
+      { status: 400 }
+    );
   }
 
-  const fm = {
-    title,
-    excerpt: excerpt || "",
-    date: date || new Date().toISOString().slice(0, 10),
-  };
-  const md = matter.stringify(content, fm);
-  const base64 = Buffer.from(md, "utf8").toString("base64");
-
-  const dir = await pickExistingDir();
-  const path = `${dir}/${slug}.md`;
+  const markdown = buildMarkdown({ title, excerpt, content, date, draft });
+  const path = `${POSTS_DIR}/${slug}.md`;
 
   try {
     const gh = await commitFile({
       path,
-      contentBase64: base64,
-      message: `post: ${slug}`,
+      contentBase64: toBase64(markdown),
+      message: `post: save ${slug}`,
     });
-    return NextResponse.json({ ok: true, commit: gh.commit, path });
+    return NextResponse.json({ ok: true, commit: gh.commit });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH – toggle draft flag (hide/unhide)
+export async function PATCH(request, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  const { slug } = params;
+  const { draft } = (await request.json().catch(() => ({}))) || {};
+  if (typeof draft !== "boolean") {
+    return NextResponse.json(
+      { ok: false, error: "PATCH body must include { draft: boolean }" },
+      { status: 400 }
+    );
+  }
+
+  const path = `${POSTS_DIR}/${slug}.md`;
+
+  try {
+    const file = await getFile(path);
+    if (!file) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+
+    const md = fromBase64(file.contentBase64);
+    const parsed = matter(md);
+    parsed.data = { ...parsed.data, draft };
+    const newMd = matter.stringify(parsed.content, parsed.data);
+
+    const gh = await commitFile({
+      path,
+      contentBase64: toBase64(newMd),
+      message: draft ? `post: set draft ${slug}` : `post: publish ${slug}`,
+    });
+
+    return NextResponse.json({ ok: true, commit: gh.commit, draft });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE – permanently remove the markdown file
+export async function DELETE(_request, { params }) {
+  const denied = requireAdmin();
+  if (denied) return denied;
+
+  const { slug } = params;
+  const path = `${POSTS_DIR}/${slug}.md`;
+
+  try {
+    const gh = await deleteFile({ path, message: `post: delete ${slug}` });
+    return NextResponse.json({ ok: true, commit: gh.commit });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: String(e?.message || e) },
