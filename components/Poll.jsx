@@ -1,38 +1,54 @@
-// components/Poll.jsx
 "use client";
 
 import { useEffect, useState } from "react";
 import HyvorComments from "@/components/HyvorComments";
 
 export default function Poll({ slug: explicitSlug }) {
-  const [state, setState] = useState({ loading: true, error: "", poll: null, results: null });
+  const [state, setState] = useState({
+    loading: true,
+    error: "",
+    poll: null,
+    results: null,
+  });
   const [voting, setVoting] = useState(false);
-  const slug = explicitSlug || null;
 
-  const fetcher = async () => {
+  async function load(slugArg) {
     setState((s) => ({ ...s, loading: true, error: "" }));
     try {
-      const url = slug ? `/api/polls/${encodeURIComponent(slug)}` : "/api/polls/active";
+      const url = slugArg
+        ? `/api/polls/${encodeURIComponent(slugArg)}`
+        : "/api/polls/active";
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || `Load failed (${res.status})`);
-      const pkt = slug ? data : data.active;
-      setState({ loading: false, error: "", poll: pkt?.poll || null, results: pkt?.results || null });
+
+      const pkt = slugArg ? data : data.active;
+      setState({
+        loading: false,
+        error: "",
+        poll: pkt?.poll || null,
+        results: pkt?.results || null,
+      });
     } catch (e) {
       setState({ loading: false, error: String(e?.message || e), poll: null, results: null });
     }
-  };
+  }
 
-  useEffect(() => { fetcher(); /* eslint-disable-next-line */ }, [explicitSlug]);
+  useEffect(() => {
+    load(explicitSlug);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explicitSlug]);
 
-  async function onVote(i) {
-    if (!state.poll) return;
+  async function onVote(index) {
+    const voteSlug = explicitSlug ?? state.poll?.slug;
+    if (!state.poll || voteSlug == null) return;
+
     setVoting(true);
     try {
-      const res = await fetch(`/api/polls/${encodeURIComponent(state.poll.slug || state.poll?.slug || state.poll?.question?.slug || state.poll?.id || (explicitSlug || ""))}/vote`, {
+      const res = await fetch(`/api/polls/${encodeURIComponent(voteSlug)}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index: i }),
+        body: JSON.stringify({ index }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || `Vote failed (${res.status})`);
@@ -48,7 +64,7 @@ export default function Poll({ slug: explicitSlug }) {
   if (state.error) return <div className="card p-6 text-red-300">Error: {state.error}</div>;
   if (!state.poll) return <div className="card p-6">No active polls right now.</div>;
 
-  const { question, options } = state.poll;
+  const { question, options, slug } = state.poll;
   const counts = state.results?.counts || new Array(options.length).fill(0);
   const total = state.results?.total || 0;
 
@@ -69,9 +85,14 @@ export default function Poll({ slug: explicitSlug }) {
                   {opt}
                 </button>
                 <div className="h-2 bg-white/10">
-                  <div className="h-2" style={{ width: `${pct}%`, background: "var(--color-skol-gold, #FFC62F)" }} />
+                  <div
+                    className="h-2"
+                    style={{ width: `${pct}%`, background: "var(--color-skol-gold, #FFC62F)" }}
+                  />
                 </div>
-                <div className="px-3 py-1 text-xs text-white/70">{counts[i]} vote{counts[i] === 1 ? "" : "s"} ({pct}%)</div>
+                <div className="px-3 py-1 text-xs text-white/70">
+                  {counts[i]} vote{counts[i] === 1 ? "" : "s"} ({pct}%)
+                </div>
               </div>
             );
           })}
@@ -82,7 +103,10 @@ export default function Poll({ slug: explicitSlug }) {
       {/* Per-poll comments */}
       <div className="card p-6">
         <h4 className="font-semibold mb-2">Join the conversation</h4>
-        <HyvorComments pageId={`poll:${state.poll.slug || explicitSlug || "active"}`} title={question} />
+        <HyvorComments
+          pageId={`poll:${explicitSlug ?? slug ?? "active"}`}
+          title={question}
+        />
       </div>
     </div>
   );
