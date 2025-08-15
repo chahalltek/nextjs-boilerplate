@@ -7,56 +7,75 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const POLLS_DIR = "data/polls";
+const RESULTS_DIRS = ["data/polls-results", "data/poll-results"]; // try both
+const ACTIVE_PTR = "data/active-poll.json";
 
-export async function GET(_request, { params }) {
+function b64(s) {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
+// PATCH { action: "activate" | "deactivate" }
+export async function PATCH(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const slug = (params?.slug || "").toString().trim();
-  if (!slug) return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
+  const { slug } = params;
+  const { action } = (await request.json().catch(() => ({}))) || {};
+  if (!action || !["activate", "deactivate"].includes(action)) {
+    return NextResponse.json({ ok: false, error: "Invalid action" }, { status: 400 });
+  }
 
   try {
-    const got = await getFile(`${POLLS_DIR}/${slug}.json`);
-    return NextResponse.json({ ok: true, exists: !!got });
+    if (action === "activate") {
+      // ensure poll exists first
+      const file = await getFile(`${POLLS_DIR}/${slug}.json`);
+      if (!file) {
+        return NextResponse.json({ ok: false, error: "Poll not found" }, { status: 404 });
+      }
+      await commitFile({
+        path: ACTIVE_PTR,
+        contentBase64: b64(JSON.stringify({ slug }, null, 2)),
+        message: `activate poll: ${slug}`,
+      });
+      return NextResponse.json({ ok: true, active: slug });
+    } else {
+      // deactivate: remove the pointer file if it points to this slug; else just delete pointer anyway
+      try {
+        await deleteFile({ path: ACTIVE_PTR, message: `deactivate poll: ${slug}` });
+      } catch {
+        // ignore if not found
+      }
+      return NextResponse.json({ ok: true, active: null });
+    }
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
 }
 
-export async function PUT(request, { params }) {
-  const denied = requireAdmin();
-  if (denied) return denied;
-
-  const slug = (params?.slug || "").toString().trim();
-  if (!slug) return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
-
-  try {
-    const body = await request.json().catch(() => ({}));
-    const json = JSON.stringify(body || {}, null, 2);
-    const base64 = Buffer.from(json, "utf8").toString("base64");
-
-    const write = await commitFile({
-      path: `${POLLS_DIR}/${slug}.json`,
-      contentBase64: base64,
-      message: `poll: ${slug}`,
-      sha: undefined,
-    });
-    return NextResponse.json({ ok: true, commit: write.commit });
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
-  }
-}
-
+// DELETE -> remove poll file and any results files. If active, also clear pointer.
 export async function DELETE(_request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
-  const slug = (params?.slug || "").toString().trim();
-  if (!slug) return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
+  const { slug } = params;
 
   try {
-    const del = await deleteFile({ path: `${POLLS_DIR}/${slug}.json`, message: `delete poll: ${slug}` });
-    return NextResponse.json({ ok: true, commit: del.commit });
+    // delete poll JSON
+    await deleteFile({ path: `${POLLS_DIR}/${slug}.json`, message: `poll: delete ${slug}` })
+      .catch(() => {}); // ignore if already gone
+
+    // delete results JSON if present
+    await Promise.all(
+      RESULTS_DIRS.map((dir) =>
+        deleteFile({ path: `${dir}/${slug}.json`, message: `poll: delete results ${slug}` })
+          .catch(() => {})
+      )
+    );
+
+    // if active pointer exists, drop it
+    await deleteFile({ path: ACTIVE_PTR, message: `deactivate poll: ${slug}` }).catch(() => {});
+
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
