@@ -6,7 +6,7 @@ import { useState } from "react";
 import Logo from "@/components/Logo";
 
 const nav = [
-  { href: "/episodes", label: "Episodes" },
+ {/* href: "/episodes", label: "Episodes" */},
   { href: "/start-sit", label: "Start/Sit" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
