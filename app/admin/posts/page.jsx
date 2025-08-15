@@ -170,9 +170,12 @@ export default function AdminPostsPage() {
       <aside className="card p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Existing posts</h2>
-          <Link href="/admin" className="text-white/70 hover:text-white text-sm">
-            ← Admin
-          </Link>
+         <Link
+  href="/admin"
+  className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/20"
+>
+  <span aria-hidden>←</span> Admin Home
+</Link>
         </div>
 
         {items.length === 0 ? (
