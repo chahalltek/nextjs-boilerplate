@@ -201,7 +201,7 @@ export default function AdminPostsPage() {
               }
             />
             <p className="text-xs text-white/50 mt-1">
-              File will be saved as <code>content/blog/&lt;slug&gt;.md</code>
+               File will be saved as <code>app/content/posts/&lt;slug&gt;.md</code>
             </p>
           </div>
 
