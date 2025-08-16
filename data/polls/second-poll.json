@@ -1,0 +1,15 @@
+{
+  "slug": "second-poll",
+  "question": "testing",
+  "options": [
+    {
+      "label": "testing"
+    },
+    {
+      "label": "testing"
+    }
+  ],
+  "active": true,
+  "closesAt": null,
+  "updatedAt": "2025-08-16T14:22:41.698Z"
+}
