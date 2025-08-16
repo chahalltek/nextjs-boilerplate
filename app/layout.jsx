@@ -3,12 +3,12 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
 export const metadata = {
-  title: "The Skol Sisters",
+  title: "Hey Skol Sister",
   description: "Smart, sisterly fantasy football advice—with Skol spirit.",
   metadataBase: new URL("https://theskolsisters.com"),
   alternates: { canonical: "/" },
   openGraph: {
-    title: "The Skol Sisters",
+    title: "Hey Skol Sister",
     description: "Smart, sisterly fantasy football advice—with Skol spirit.",
     url: "https://theskolsisters.com",
     images: ["/og/default-og.png"],
@@ -16,7 +16,7 @@ export const metadata = {
   twitter: {
     card: "summary_large_image",
     site: "@SkolSisters",
-    title: "The Skol Sisters",
+    title: "Hey Skol Sister",
     description: "Smart, sisterly fantasy football advice—with Skol spirit.",
     images: ["/og/default-og.png"],
   },
