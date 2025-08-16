@@ -1,46 +1,55 @@
+// app/api/polls/route.js
 import { NextResponse } from "next/server";
 import { listDir, getFile } from "@/lib/github";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
-async function readJson(path) {
+async function readJSON(path) {
   const f = await getFile(path);
   if (!f) return null;
-  const text = Buffer.from(f.contentBase64, "base64").toString("utf8");
-  return JSON.parse(text);
+  const json = Buffer.from(f.contentBase64, "base64").toString("utf8");
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 export async function GET() {
   try {
-    const entries = await listDir("data/polls").catch(() => []);
-    const slugs = entries
-      .filter((e) => e.type === "file" && e.name.endsWith(".json"))
-      .map((e) => e.name.replace(/\.json$/,""));
+    // All poll files live here, written by the admin routes
+    const dir = await listDir("data/polls"); // [{name, path, type}, ...] or []
+    const files = (dir || []).filter(
+      (it) => it?.type === "file" && typeof it?.name === "string" && it.name.endsWith(".json")
+    );
 
     const polls = [];
-    for (const slug of slugs) {
-      const p = await readJson(`data/polls/${slug}.json`).catch(() => null);
-      if (p) {
-        polls.push({
-          slug: p.slug || slug,
-          question: p.question,
-          active: !!p.active,
-          updatedAt: p.updatedAt || p.createdAt || null,
-        });
+    for (const it of files) {
+      const p = await readJSON(it.path || `data/polls/${it.name}`);
+      if (p?.slug && Array.isArray(p?.options)) {
+        polls.push(p);
       }
     }
 
-    // active first, then newest
-    polls.sort((a, b) =>
-      (b.active - a.active) ||
-      String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) ||
-      a.slug.localeCompare(b.slug)
-    );
+    // Current active poll pointer (if present)
+    const activePtr = await readJSON("data/active-poll.json");
+    const activeSlug =
+      activePtr?.slug || polls.find((p) => p.active)?.slug || null;
 
-    return NextResponse.json({ ok: true, polls }, { headers: { "Cache-Control": "no-store" }});
+    // Sort newest first if updatedAt exists, otherwise by slug
+    polls.sort((a, b) => {
+      const da = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const db = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      if (db !== da) return db - da;
+      return String(a.slug).localeCompare(String(b.slug));
+    });
+
+    return NextResponse.json({ ok: true, polls, activeSlug });
   } catch (e) {
-    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status:500, headers:{ "Cache-Control":"no-store" }});
+    return NextResponse.json(
+      { ok: false, error: String(e?.message || e) },
+      { status: 500 }
+    );
   }
 }
