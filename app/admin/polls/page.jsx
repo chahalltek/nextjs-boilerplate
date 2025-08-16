@@ -1,261 +1,298 @@
 // app/admin/polls/page.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-export default function AdminPollsPage() {
-  // list
-  const [items, setItems] = useState([]); // [{slug, active}]
-  const [activeSlug, setActiveSlug] = useState(null);
-  const [listMsg, setListMsg] = useState("");
+const emptyForm = {
+  slug: "",
+  question: "",
+  options: ["", ""],
+  active: false,
+  closesAt: "",
+};
 
-  // editor
-  const [slug, setSlug] = useState("");
-  const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState(["", ""]);
-  const [makeActive, setMakeActive] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
+export default function AdminPollsPage() {
+  const [polls, setPolls] = useState([]);
+  const [form, setForm] = useState(emptyForm);
+  const [msg, setMsg] = useState("");
+  const [loadingList, setLoadingList] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  function addOption() {
-    setOptions((o) => [...o, ""]);
-  }
-  function setOpt(i, v) {
-    setOptions((o) => o.map((x, idx) => (idx === i ? v : x)));
-  }
+  const sorted = useMemo(
+    () => [...polls].sort((a, b) => a.slug.localeCompare(b.slug)),
+    [polls]
+  );
 
   async function loadList() {
-    setListMsg("");
-    try {
-      const res = await fetch("/api/admin/polls", { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
+    setLoadingList(true);
+    setMsg("");
+    const res = await fetch("/api/admin/polls", { credentials: "include" });
+    if (res.status === 401) {
+      window.location.href = `/admin/login?from=${encodeURIComponent("/admin/polls")}`;
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      setMsg(data.error || `Load failed (${res.status})`);
+    } else {
+      setPolls(data.polls || []);
+    }
+    setLoadingList(false);
+  }
+
+  useEffect(() => { loadList(); }, []);
+
+  async function load(slug) {
+    setMsg("");
+    const res = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, { credentials: "include" });
+    if (res.status === 401) {
+      window.location.href = `/admin/login?from=${encodeURIComponent("/admin/polls")}`;
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      setMsg(data.error || `Load failed (${res.status})`);
+      return;
+    }
+    const { poll } = data;
+    setForm({
+      slug: poll.slug,
+      question: poll.question || "",
+      options: (poll.options || []).map(o => (typeof o === "string" ? o : o.label || "")),
+      active: !!poll.active,
+      closesAt: poll.closesAt || "",
+    });
+  }
+
+  function setOption(idx, val) {
+    setForm(f => {
+      const next = [...f.options];
+      next[idx] = val;
+      return { ...f, options: next };
+    });
+  }
+
+  function addOption() {
+    setForm(f => ({ ...f, options: [...f.options, ""] }));
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setMsg("");
+    setSaving(true);
+
+    const payload = {
+      question: form.question,
+      options: form.options.filter(Boolean).map(s => ({ label: s })),
+      active: !!form.active,
+      closesAt: form.closesAt || null,
+    };
+
+    const res = await fetch(`/api/admin/polls/${encodeURIComponent(form.slug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
       if (res.status === 401) {
         window.location.href = `/admin/login?from=${encodeURIComponent("/admin/polls")}`;
         return;
       }
-      setItems(data.polls || []);
-      setActiveSlug(data.activeSlug ?? null);
-      if (!data.polls || data.polls.length === 0) setListMsg("No polls yet.");
-    } catch {
-      setListMsg("Failed to load polls.");
+      setMsg(data.error || `Save failed (${res.status})`);
+    } else {
+      setMsg("✅ Saved!");
+      loadList();
     }
+    setSaving(false);
   }
 
-  useEffect(() => {
+  async function makeActive(slug) {
+    setMsg("");
+    const res = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ question: form.question || "(unchanged)", options: form.options.filter(Boolean).map(s => ({ label: s })), active: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Activate failed (${res.status})`); return; }
+    setMsg("✅ Activated");
     loadList();
-  }, []);
-
-  async function onSave(e) {
-    e.preventDefault();
-    setSaveMsg("");
-    if (!slug.trim() || !question.trim()) {
-      setSaveMsg("❌ Provide slug and question.");
-      return;
-    }
-    const cleaned = options.map((x) => x.trim()).filter(Boolean);
-    if (cleaned.length < 2) {
-      setSaveMsg("❌ At least two options.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/polls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          slug,
-          question,
-          options: cleaned.map((label) => ({ label })),
-          active: makeActive,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        if (res.status === 401) {
-          window.location.href = `/admin/login?from=${encodeURIComponent("/admin/polls")}`;
-          return;
-        }
-        throw new Error(data.error || `Save failed (${res.status})`);
-      }
-      setSaveMsg("✅ Saved!");
-      setSlug("");
-      setQuestion("");
-      setOptions(["", ""]);
-      setMakeActive(false);
-      await loadList();
-    } catch (e) {
-      setSaveMsg(`❌ ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
   }
 
-  async function activate(s) {
-    await fetch(`/api/admin/polls/${encodeURIComponent(s)}`, {
-      method: "PATCH",
+  async function archive(slug) {
+    setMsg("");
+    // set active:false by PUT with minimal payload (question/options required)
+    const resLoad = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, { credentials: "include" });
+    const cur = await resLoad.json().catch(() => ({}));
+    if (!resLoad.ok || !cur.ok) { setMsg(cur.error || `Load failed (${resLoad.status})`); return; }
+
+    const res = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ action: "activate" }),
+      body: JSON.stringify({
+        question: cur.poll.question,
+        options: (cur.poll.options || []).map(o => (typeof o === "string" ? { label: o } : o)),
+        active: false,
+        closesAt: cur.poll.closesAt || null,
+      }),
     });
-    await loadList();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Archive failed (${res.status})`); return; }
+    setMsg("✅ Archived");
+    loadList();
   }
-  async function deactivate(s) {
-    await fetch(`/api/admin/polls/${encodeURIComponent(s)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action: "deactivate" }),
-    });
-    await loadList();
-  }
-  async function removePoll(s) {
-    if (!confirm(`Delete poll "${s}"? This cannot be undone.`)) return;
-    await fetch(`/api/admin/polls/${encodeURIComponent(s)}`, {
+
+  async function remove(slug) {
+    if (!confirm(`Delete poll "${slug}"? This cannot be undone.`)) return;
+    setMsg("");
+    const res = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, {
       method: "DELETE",
       credentials: "include",
     });
-    await loadList();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Delete failed (${res.status})`); return; }
+    setMsg("🗑️ Deleted");
+    setForm(emptyForm);
+    loadList();
   }
 
   return (
-    <div className="container max-w-6xl py-10 grid grid-cols-1 md:grid-cols-[320px,1fr] gap-6">
-      {/* left: list */}
-      <aside className="card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Existing polls</h2>
-          <Link href="/admin" className="text-white/70 hover:text-white text-sm">
-            ← Admin
-          </Link>
-        </div>
+    <div className="container mx-auto max-w-6xl py-8">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Admin — Polls</h1>
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/20"
+        >
+          <span aria-hidden>←</span> Admin Home
+        </Link>
+      </div>
 
-        {items.length === 0 ? (
-          <p className="text-white/60 text-sm">{listMsg || "No polls yet."}</p>
-        ) : (
-          <ul className="space-y-2">
-            {items.map((it) => (
-              <li
-                key={it.slug}
-                className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-white/5"
-              >
-                <div className="text-white/90">
-                  {it.slug}
-                  {it.active ? (
-                    <span className="ml-2 text-xs rounded bg-white/10 px-1.5 py-0.5">
-                      active
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-1">
-                  {it.active ? (
+      <div className="grid grid-cols-1 md:grid-cols-[320px,1fr] gap-6">
+        {/* Left: list */}
+        <div className="card p-4 min-h-[320px]">
+          <div className="text-lg font-semibold mb-2">Existing polls</div>
+          {loadingList ? (
+            <div className="text-white/60">Loading…</div>
+          ) : sorted.length === 0 ? (
+            <div className="text-white/60">No polls yet.</div>
+          ) : (
+            <ul className="space-y-1">
+              {sorted.map(p => (
+                <li key={p.slug} className="flex items-center justify-between gap-2">
+                  <button
+                    className="text-left flex-1 py-1 hover:text-white text-white/80"
+                    onClick={() => load(p.slug)}
+                  >
+                    {p.slug} {p.active && <span className="ml-2 text-xs text-emerald-400">● active</span>}
+                  </button>
+                  {p.active ? (
                     <button
-                      className="text-xs px-2 py-1 rounded border border-white/20 hover:bg-white/10"
-                      onClick={() => deactivate(it.slug)}
-                      title="Deactivate poll"
+                      className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                      onClick={() => archive(p.slug)}
+                      title="Set inactive"
                     >
-                      Deactivate
+                      Hide
                     </button>
                   ) : (
                     <button
-                      className="text-xs px-2 py-1 rounded border border-white/20 hover:bg-white/10"
-                      onClick={() => activate(it.slug)}
-                      title="Make this the active poll"
+                      className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                      onClick={() => makeActive(p.slug)}
+                      title="Set active"
                     >
                       Activate
                     </button>
                   )}
                   <button
-                    className="text-xs px-2 py-1 rounded border border-red-400/40 text-red-300 hover:bg-red-400/10"
-                    onClick={() => removePoll(it.slug)}
-                    title="Delete poll"
+                    className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                    onClick={() => remove(p.slug)}
+                    title="Delete"
                   >
                     Delete
                   </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
-      {/* right: create/edit */}
-      <section>
-        <h1 className="text-2xl font-bold mb-6">Admin — Polls</h1>
-
-        <form onSubmit={onSave} className="card p-5 space-y-4">
+        {/* Right: editor */}
+        <form onSubmit={save} className="card p-4 space-y-4">
           <div>
             <label className="block text-sm text-white/70 mb-1">Slug</label>
             <input
               className="input w-full"
-              placeholder="week-1"
-              value={slug}
+              value={form.slug}
               onChange={(e) =>
-                setSlug(
-                  e.target.value
+                setForm(f => ({
+                  ...f,
+                  slug: e.target.value
                     .toLowerCase()
                     .replace(/[^a-z0-9\-]/g, "-")
-                    .replace(/--+/g, "-")
-                )
+                    .replace(/--+/g, "-"),
+                }))
               }
+              placeholder="week-1"
             />
-            <p className="text-xs text-white/50 mt-1">
-              Saved as <code>data/polls/&lt;slug&gt;.json</code>
-            </p>
+            <p className="text-xs text-white/50 mt-1">Saved as <code>data/polls/&lt;slug&gt;.json</code></p>
           </div>
 
           <div>
             <label className="block text-sm text-white/70 mb-1">Question</label>
             <input
               className="input w-full"
+              value={form.question}
+              onChange={(e) => setForm(f => ({ ...f, question: e.target.value }))}
               placeholder="Who wins this week?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-sm text-white/70">Options</label>
-            {options.map((opt, i) => (
-              <input
-                key={i}
-                className="input w-full"
-                placeholder={`Option ${i + 1}`}
-                value={opt}
-                onChange={(e) => setOpt(i, e.target.value)}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={addOption}
-              className="text-sm rounded border border-white/20 px-2 py-1 hover:bg-white/10"
-            >
-              + Add option
-            </button>
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Options</label>
+            <div className="space-y-2">
+              {form.options.map((opt, i) => (
+                <input
+                  key={i}
+                  className="input w-full"
+                  value={opt}
+                  onChange={(e) => setOption(i, e.target.value)}
+                  placeholder={`Option ${i + 1}`}
+                />
+              ))}
+              <button type="button" onClick={addOption} className="px-3 py-1.5 rounded border border-white/20 text-white/80 hover:text-white hover:bg-white/10">
+                + Add option
+              </button>
+            </div>
           </div>
 
           <label className="inline-flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              checked={makeActive}
-              onChange={(e) => setMakeActive(e.target.checked)}
+              checked={form.active}
+              onChange={(e) => setForm(f => ({ ...f, active: e.target.checked }))}
             />
             Make active after save
           </label>
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !form.slug || !form.question || form.options.filter(Boolean).length < 2}
               className="px-4 py-2 rounded bg-white/10 text-white border border-white/20 hover:bg-white/20 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save Poll"}
             </button>
-            {saveMsg && <span className="text-sm">{saveMsg}</span>}
+            {msg && <span className="text-sm">{msg}</span>}
           </div>
         </form>
-      </section>
+      </div>
     </div>
   );
 }
-
