@@ -166,7 +166,7 @@ export default function AdminPollsPage() {
     <div className="container mx-auto max-w-6xl py-8">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin — Polls</h1>
+        <h1 className="text-2xl font-bold">Admin — Survivor</h1>
         <Link
           href="/admin"
           className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/20"

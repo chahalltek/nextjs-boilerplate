@@ -1,209 +1,148 @@
-"use client";
-
-import { useEffect, useState } from "react";
+// app/holdem-foldem/page.jsx
+import { listDir, getFile } from "@/lib/github";
+import matter from "gray-matter";
+import ReactMarkdown from "react-markdown";
+import nextDynamic from "next/dynamic";
 import Link from "next/link";
 
-export default function AdminHoldFoldPage() {
-  const [slug, setSlug] = useState("");
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState("");
-  const [holds, setHolds] = useState("- Player A — brief reason\n- Player B — brief reason");
-  const [folds, setFolds] = useState("- Player X — brief reason\n- Player Y — brief reason");
-  const [notes, setNotes] = useState("## Notes\nShort blurb about bye weeks, injuries, or vibes.\n");
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
-  const [existing, setExisting] = useState([]);
+const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { ssr: false });
 
-  async function loadExisting() {
-    setExisting([]);
-    try {
-      const res = await fetch("/api/admin/holdfold", { credentials: "include" });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load");
-      setExisting(data.items || []);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error(e);
-    }
+export const metadata = {
+  title: "Hold ’em / Fold ’em — Hey Skol Sister",
+  description:
+    "Fantasy football stash-or-trash advice: injuries, usage trends, upcoming matchups, and when it’s time to let go.",
+};
+
+const DIR = "content/holdfold";
+
+async function loadAll() {
+  const entries = await listDir(DIR);
+  const files = entries
+    .filter((e) => e.type === "file" && e.name.endsWith(".md"))
+    .map((e) => e.path);
+
+  const result = [];
+  for (const path of files) {
+    const file = await getFile(path);
+    if (!file) continue;
+    const buf = Buffer.from(file.contentBase64, "base64");
+    const { content, data } = matter(buf.toString("utf8"));
+    const slug = path.split("/").pop().replace(/\.md$/, "");
+    result.push({
+      slug,
+      title: data.title || slug.replace(/-/g, " "),
+      date: data.date || null,
+      content,
+    });
   }
 
-  useEffect(() => {
-    loadExisting();
-  }, []);
+  // newest first (by date if present, else filename)
+  result.sort((a, b) => {
+    const da = a.date ? new Date(a.date).getTime() : 0;
+    const db = b.date ? new Date(b.date).getTime() : 0;
+    return db - da || b.slug.localeCompare(a.slug);
+  });
 
-  async function onSave(e) {
-    e.preventDefault();
-    setSaveMsg("");
-    if (!slug.trim() || !title.trim()) {
-      setSaveMsg("❌ Please provide a slug and title.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const content = `---\ntitle: ${JSON.stringify(title)}\ndate: ${JSON.stringify(
-        date || new Date().toISOString().slice(0, 10)
-      )}\n---\n\n## Hold ’em\n\n${holds}\n\n## Fold ’em\n\n${folds}\n\n${notes}\n`;
+  return result;
+}
 
-      const res = await fetch(`/api/admin/holdfold/${encodeURIComponent(slug)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ title, date, content }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        if (res.status === 401) {
-          window.location.href = `/admin/login?from=${encodeURIComponent("/admin/holdem-foldem")}`;
-          return;
-        }
-        throw new Error(data.error || `Save failed (${res.status})`);
-      }
-      setSaveMsg("✅ Saved!");
-      loadExisting();
-    } catch (err) {
-      setSaveMsg(`❌ ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
-  }
+export default async function HoldFoldIndexPage() {
+  const posts = await loadAll();
+  const latest = posts[0];
+  const older = posts.slice(1);
 
   return (
-    <div className="container max-w-4xl py-10 space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin — Hold ’em / Fold ’em</h1>
-        <Link
-          href="/admin"
-          className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
-        >
-          ← Admin Home
-        </Link>
-      </div>
+    <div className="container max-w-5xl py-10 space-y-10">
+      <header className="space-y-3">
+        <h1 className="text-3xl font-bold">Hold ’em / Fold ’em</h1>
+        <p className="text-white/70 max-w-2xl">
+          Weekly fantasy football reality check. We weigh{" "}
+          <span className="font-semibold">injuries</span>,{" "}
+          <span className="font-semibold">usage & snap share</span>,{" "}
+          <span className="font-semibold">upcoming matchups</span>, and good old{" "}
+          <span className="font-semibold">“trust your eyes”</span> to decide who to{" "}
+          <span className="font-semibold">hold</span> (patience!) and who to{" "}
+          <span className="font-semibold">fold</span> (free the roster spot).
+        </p>
 
-      <form onSubmit={onSave} className="space-y-5">
-        <div className="card p-5 space-y-3">
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Slug</label>
-            <input
-              className="input w-full"
-              placeholder="2025-week-01"
-              value={slug}
-              onChange={(e) =>
-                setSlug(
-                  e.target.value
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\-]/g, "-")
-                    .replace(/--+/g, "-")
-                )
-              }
-            />
-            <p className="text-xs text-white/50 mt-1">
-              File will be saved as <code>content/holdfold/&lt;slug&gt;.md</code>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">Injuries & Role</div>
+            <p className="text-sm text-white/70">
+              If a player’s role is shrinking (or they’re not right physically), the name
+              on the jersey can’t save your matchup.
             </p>
           </div>
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">Matchups & Schedule</div>
+            <p className="text-sm text-white/70">
+              We consider defensive tendencies and short-term schedules (bye weeks count!).
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">When to Let Go</div>
+            <p className="text-sm text-white/70">
+              Draft capital is a sunk cost. If the data says bail, we say thanks for the
+              memories and hit “Drop”.
+            </p>
+          </div>
+        </div>
+      </header>
 
+      {latest ? (
+        <section className="space-y-6">
           <div>
-            <label className="block text-sm text-white/70 mb-1">Title</label>
-            <input
-              className="input w-full"
-              placeholder="Week 1 — Hope, Dreams, and Waiver Schemes"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+            <h2 className="text-2xl font-semibold">{latest.title}</h2>
+            {latest.date && (
+              <div className="text-xs text-white/50">
+                {new Date(latest.date).toLocaleDateString()}
+              </div>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm text-white/70 mb-1">Date</label>
-            <input
-              type="date"
-              className="input w-full"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+          <article className="prose prose-invert max-w-none">
+            <ReactMarkdown>{latest.content}</ReactMarkdown>
+          </article>
+
+          <div id="comments" className="rounded-xl border border-white/10 p-4 bg-white/5">
+            <h3 className="text-lg font-semibold mb-1">Comments & Reactions</h3>
+            <p className="text-white/60 text-sm mb-3">
+              Got a contrarian take? Drop it below—bonus points for injury/usage receipts.
+            </p>
+            <HyvorComments pageId={`hef:${latest.slug}`} />
           </div>
-        </div>
+        </section>
+      ) : (
+        <div className="text-white/60">No entries yet.</div>
+      )}
 
-        <div className="grid md:grid-cols-2 gap-5">
-          <div className="card p-5 space-y-2">
-            <label className="block text-sm text-white/70 mb-1">Hold ’em (one per line)</label>
-            <textarea
-              className="input w-full min-h-[160px]"
-              value={holds}
-              onChange={(e) => setHolds(e.target.value)}
-            />
-          </div>
-
-          <div className="card p-5 space-y-2">
-            <label className="block text-sm text-white/70 mb-1">Fold ’em (one per line)</label>
-            <textarea
-              className="input w-full min-h-[160px]"
-              value={folds}
-              onChange={(e) => setFolds(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="card p-5 space-y-2">
-          <label className="block text-sm text-white/70 mb-1">Notes (Markdown)</label>
-          <textarea
-            className="input w-full min-h-[160px]"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 rounded bg-white/10 text-white border border-white/20 hover:bg-white/20 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          {saveMsg && <span className="text-sm">{saveMsg}</span>}
-        </div>
-      </form>
-
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Existing entries</h2>
-        {existing.length === 0 ? (
-          <div className="text-white/60 text-sm">None yet.</div>
-        ) : (
-          <ul className="space-y-2">
-            {existing.map((item) => (
-              <li
-                key={item.slug}
-                className="flex items-center justify-between rounded-lg border border-white/10 p-3"
+      {older.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">Previous Weeks</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {older.map((p) => (
+              <Link
+                key={p.slug}
+                href={`/holdem-foldem/${p.slug}`}
+                className="block rounded-lg border border-white/10 p-4 hover:bg-white/5"
               >
-                <div>
-                  <div className="font-semibold">{item.title || item.slug}</div>
-                  {item.date && (
-                    <div className="text-xs text-white/50">
-                      {new Date(item.date).toLocaleDateString()}
-                    </div>
-                  )}
+                <div className="font-semibold">{p.title}</div>
+                {p.date && (
+                  <div className="text-xs text-white/50">
+                    {new Date(p.date).toLocaleDateString()}
+                  </div>
+                )}
+                <div className="text-sm text-white/60 mt-2 line-clamp-3">
+                  {p.content.replace(/\s+/g, " ").slice(0, 140)}…
                 </div>
-                <div className="flex gap-2">
-                  <Link
-                    href={`/holdem-foldem/${item.slug}`}
-                    className="px-3 py-1.5 rounded border border-white/20 text-white hover:bg-white/10 text-sm"
-                  >
-                    View
-                  </Link>
-                  <a
-                    href={`/holdem-foldem/${item.slug}#comments`}
-                    className="px-3 py-1.5 rounded border border-white/20 text-white hover:bg-white/10 text-sm"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open comments
-                  </a>
-                </div>
-              </li>
+              </Link>
             ))}
-          </ul>
-        )}
-      </section>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
