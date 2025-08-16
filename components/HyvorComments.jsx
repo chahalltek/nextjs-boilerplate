@@ -1,56 +1,48 @@
+// components/HyvorComments.jsx
 "use client";
 
 /**
- * Minimal Hyvor Talk loader used across the site.
- * - Requires NEXT_PUBLIC_HYVOR_SITE_ID
- * - Unique per-page thread via `pageId` (e.g., "poll:<slug>" or "blog:<slug>")
+ * Minimal Hyvor Talk embed that:
+ * - Loads the embed script once (as a module)
+ * - Reconfigures when pageId changes
+ * 
+ * Configure your site id via NEXT_PUBLIC_HYVOR_SITE_ID
+ * (falls back to 13899 for local/demo).
  */
+
 import { useEffect } from "react";
 
+const SITE_ID = Number(process.env.NEXT_PUBLIC_HYVOR_SITE_ID || 13899);
+
 export default function HyvorComments({ pageId }) {
-  const siteId = process.env.NEXT_PUBLIC_HYVOR_SITE_ID;
-
   useEffect(() => {
-    if (!siteId || !pageId) return;
+    if (!pageId) return;
 
-    // reset the container so reloading a different pageId works reliably
-    const container = document.getElementById("hyvor-talk-view");
-    if (container) container.innerHTML = "";
+    // Insert the script once
+    const SCRIPT_ID = "hyvor-talk-script";
+    if (!document.getElementById(SCRIPT_ID)) {
+      const s = document.createElement("script");
+      s.id = SCRIPT_ID;
+      s.src = "https://talk.hyvor.com/embed/embed.js";
+      s.type = "module";
+      s.async = true;
+      document.body.appendChild(s);
+    }
 
-    // global config consumed by embed.js
+    // Configure (Hyvor reads these globals)
     // eslint-disable-next-line no-undef
-    window.HYVOR_TALK_WEBSITE = siteId;
+    window.HYVOR_TALK_WEBSITE = SITE_ID;
     // eslint-disable-next-line no-undef
     window.HYVOR_TALK_CONFIG = {
-      url: typeof window !== "undefined" ? window.location.href : "",
-      id: pageId,
+      id: pageId,                 // stable thread id per poll
+      url: window.location.href,  // best-effort; Hyvor updates on navigation
     };
+  }, [pageId]);
 
-    // load (or reload) script
-    const existing = document.getElementById("hyvor-embed-js");
-    if (!existing) {
-      const s = document.createElement("script");
-      s.src = "https://talk.hyvor.com/web-api/embed.js";
-      s.async = true;
-      s.defer = true;
-      s.id = "hyvor-embed-js";
-      document.body.appendChild(s);
-    } else {
-      // eslint-disable-next-line no-undef
-      if (window.HyvorTalk && typeof window.HyvorTalk.reload === "function") {
-        // @ts-ignore
-        window.HyvorTalk.reload();
-      }
-    }
-  }, [siteId, pageId]);
-
-  if (!siteId) {
-    return (
-      <div className="text-sm text-red-400">
-        Comments unavailable: <code>NEXT_PUBLIC_HYVOR_SITE_ID</code> is not set.
-      </div>
-    );
-  }
-
-  return <div id="hyvor-talk-view" />;
+  return (
+    <div className="card p-4 md:p-6">
+      <h3 className="text-lg font-semibold mb-3">Join the conversation</h3>
+      <div id="hyvor-talk-view" />
+    </div>
+  );
 }

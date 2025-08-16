@@ -1,24 +1,75 @@
 // app/survivor/page.jsx
+import dynamic from "next/dynamic";
+
+export const runtime = "nodejs";
 export const metadata = {
   title: "Survivor — Skol Sisters",
-  description: "Vote in the weekly poll, see live results, and join the conversation.",
+  description:
+    "Vote in our weekly Survivor-style poll, watch live results, and join the conversation.",
 };
 
-export default function SurvivorPage() {
-  // Keep the page a server component and load interactivity in the client child.
-  return (
-    <div className="container mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-4xl font-extrabold tracking-tight text-white">Survivor</h1>
-      <p className="mt-2 text-lg text-white/70">
-        Vote in the weekly poll and see live results.
-      </p>
+// IMPORTANT: your client file is app/survivor-client.jsx
+const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
 
-      {/* Client-side UI */}
+export default function SurvivorPage() {
+  return (
+    <div className="container mx-auto max-w-6xl px-4 py-10 space-y-10">
+      <header>
+        <h1 className="text-4xl font-bold">Survivor</h1>
+        <p className="mt-2 text-white/70">
+          Vote in the weekly poll and see live results.
+        </p>
+      </header>
+
+      {/* Polls UI (client) */}
       <SurvivorClient />
+
+      {/* ——————————————————————————————————————————————— */}
+      {/* Educational / fun content */}
+      <section className="grid gap-6 lg:grid-cols-3">
+        <article className="card p-6 space-y-3 lg:col-span-1">
+          <h2 className="text-xl font-semibold">Survivor, meet Fantasy</h2>
+          <p className="text-white/80">
+            Survivor is basically fantasy football’s chaotic cousin: draftable
+            humans, unpredictable weather, questionable alliances, and one
+            confessional where everyone swears they’re “not here to make
+            friends.” If you like managing rosters, reading vibes, and shouting
+            at the TV, you’ll feel right at home.
+          </p>
+          <ul className="list-disc list-inside text-white/70 space-y-1">
+            <li><span className="text-white">Strategy</span> over luck (mostly 🙃)</li>
+            <li>Hidden advantages = waiver wire with palm fronds</li>
+            <li>Tribal Council = the ultimate start/sit decision</li>
+          </ul>
+        </article>
+
+        <article className="card p-6 space-y-3 lg:col-span-1">
+          <h2 className="text-xl font-semibold">How our polls work</h2>
+          <ol className="list-decimal list-inside text-white/80 space-y-1">
+            <li>Pick a poll on the left.</li>
+            <li>Make your choice — no account required.</li>
+            <li>See live results update instantly.</li>
+          </ol>
+          <p className="text-white/70">
+            We’ll post new polls through the season. Ties are possible; that’s
+            showbiz. Be nice in the comments — we mod like Jeff hosts:
+            relentlessly, but with a smile.
+          </p>
+        </article>
+
+        <article className="card p-6 space-y-3 lg:col-span-1">
+          <h2 className="text-xl font-semibold">Season snapshot</h2>
+          <p className="text-white/80">
+            Each season tweaks the rules a bit — new idols, advantages, and
+            twists that make your fantasy brain tingle. We’ll highlight notable
+            changes in each week’s poll so you’re never blindsided.
+          </p>
+          <p className="text-white/60 text-sm">
+            Premiere date: we’ll update here once CBS posts the official slate.
+            Either way, the torch is lit — let’s play.
+          </p>
+        </article>
+      </section>
     </div>
   );
 }
-
-/* ---- Lazy import of client component to keep this file server-only ---- */
-import dynamic from "next/dynamic";
-const SurvivorClient = dynamic(() => import("./SurvivorClient"), { ssr: false });
