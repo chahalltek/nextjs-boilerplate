@@ -1,123 +1,135 @@
-import React from "react";
-import Link from "next/link";
-import matter from "gray-matter";
-import ReactMarkdown from "react-markdown";
+// app/cws/page.jsx
 import { listDir, getFile } from "@/lib/github";
+import matter from "gray-matter";
+import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RECAPS_DIR = "content/recaps";
+const DIR = "content/recaps";
 
-function safeDateValue(d) {
-  // Prefer YYYY-MM-DD; if missing/invalid, return empty so sort falls back.
-  if (!d) return "";
-  // basic guard to avoid "Invalid Date" issues
-  return /^\d{4}-\d{2}-\d{2}/.test(d) ? d : "";
-}
+async function fetchPublishedRecaps() {
+  const items = await listDir(DIR);
+  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
 
-async function fetchAllRecapsDetailed() {
-  const entries = await listDir(RECAPS_DIR).catch(() => []);
-  const files = (entries || []).filter(e => e.type === "file" && e.name.endsWith(".md"));
-
-  const items = [];
+  const recaps = [];
   for (const f of files) {
-    try {
-      const got = await getFile(f.path);
-      if (!got?.contentBase64) continue;
-      const text = Buffer.from(got.contentBase64, "base64").toString("utf8");
-      const { data, content } = matter(text);
-      const slug = f.name.replace(/\.md$/, "");
-      items.push({
-        slug,
-        title: data.title || slug,
-        date: safeDateValue(data.date),
-        excerpt: data.excerpt || "",
-        content: content || "",
-      });
-    } catch {
-      // ignore an individual bad file and continue
-    }
+    const file = await getFile(f.path);
+    if (!file?.contentBase64) continue;
+    const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
+    const parsed = matter(raw);
+    const fm = parsed.data || {};
+    if (!fm.published) continue;
+
+    recaps.push({
+      slug: f.name.replace(/\.md$/, ""),
+      title: fm.title || f.name,
+      date: fm.date || "",
+      excerpt: fm.excerpt || "",
+      content: parsed.content || "",
+    });
   }
 
-  // Newest first by date; if equal/missing, fall back to slug desc (recently named usually last)
-  items.sort((a, b) =>
-    String(b.date).localeCompare(String(a.date)) || b.slug.localeCompare(a.slug)
-  );
+  // newest first by date or filename
+  recaps.sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
+  return recaps;
+}
 
-  return items;
+function CwsExplainer() {
+  return (
+    <section className="card p-5 space-y-4">
+      <h3 className="text-lg font-semibold">What is “Weekly Recap” (aka CWS)?</h3>
+      <div className="prose prose-invert max-w-none">
+        <p>
+          CWS stands for <em>Coulda, Woulda, Shoulda</em> — the spiritual cousin of Survivor
+          confessionals and the official diary of fantasy football regret. Survivor fans tend to
+          love fantasy because it’s the same game: read the tribe, adapt fast, and hope the edit is kind.
+        </p>
+
+        <h4>How to play along</h4>
+        <ul>
+          <li><strong>Step 1:</strong> Set your lineup with confidence. (What could go wrong?)</li>
+          <li><strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve all been there.)</li>
+          <li><strong>Step 3:</strong> Post your recap: what happened, your bold takes, and the <em>one tiny decision</em> that changed everything.</li>
+          <li><strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.</li>
+        </ul>
+
+        <h4>House rules</h4>
+        <ul>
+          <li>Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.</li>
+          <li>Screenshots welcome. Bonus points for dramatic “before/after” energy.</li>
+          <li>Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”</li>
+        </ul>
+      </div>
+    </section>
+  );
 }
 
 export default async function CwsIndexPage() {
-  const recaps = await fetchAllRecapsDetailed();
-
-  if (!recaps.length) {
-    return (
-      <div className="container mx-auto max-w-5xl px-4 py-10">
-        <h1 className="text-3xl font-bold mb-2">Weekly Recap</h1>
-        <p className="text-white/70 mb-6">
-          Our Coulda/Woulda/Shoulda corner: weekly reflections and what we’d tweak next time.
-        </p>
-        <div className="text-white/60">No recaps yet. Check back soon!</div>
-      </div>
-    );
-  }
-
-  const [featured, ...older] = recaps;
+  const recaps = await fetchPublishedRecaps();
+  const [latest, ...older] = recaps;
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-10 space-y-10">
-      <header>
-        <h1 className="text-3xl font-bold">Weekly Recap</h1>
-        <p className="text-white/70 mt-2">
-          Your weekly Coulda/Woulda/Shoulda. The latest recap is featured below; past weeks are listed after.
-        </p>
-      </header>
+    <div className="container max-w-5xl py-10 space-y-10">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">Weekly Recap</h1>
+        <Link href="/cws/archive" className="text-white/70 hover:text-white">
+          View archive →
+        </Link>
+      </div>
 
-      {/* Featured (latest) recap rendered in full */}
-      <section className="card p-6 space-y-4">
-        <div className="text-xs uppercase tracking-wide text-white/60">This Week’s Recap</div>
-        <h2 className="text-2xl font-semibold">{featured.title}</h2>
-        {featured.date && <div className="text-white/60 text-sm">{featured.date}</div>}
-
-        <article className="prose prose-invert max-w-none">
-          <ReactMarkdown>{featured.content}</ReactMarkdown>
-        </article>
-
-        <div className="flex items-center gap-3 pt-2">
-          <Link
-            href={`/cws/${encodeURIComponent(featured.slug)}`}
-            className="px-3 py-1.5 rounded border border-white/20 text-white hover:bg-white/10"
-          >
-            Open comments & reactions
-          </Link>
-          {featured.excerpt && (
-            <div className="text-white/60 text-sm line-clamp-1">Summary: {featured.excerpt}</div>
-          )}
-        </div>
-      </section>
-
-      {/* Older recaps as tiles */}
-      <section>
-        <h3 className="text-xl font-semibold mb-3">Previous Weeks</h3>
-        {older.length === 0 ? (
-          <div className="text-white/60">No earlier recaps yet.</div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {older.map((r) => (
+      {!latest ? (
+        <>
+          <div className="text-white/70">No recaps yet. Check back soon!</div>
+          <CwsExplainer />
+        </>
+      ) : (
+        <>
+          {/* Latest full */}
+          <article className="card p-5 space-y-3">
+            <div className="text-sm text-white/60">{latest.date}</div>
+            <h2 className="text-xl font-semibold">{latest.title}</h2>
+            {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
+            <div className="prose prose-invert max-w-none">
+              <ReactMarkdown>{latest.content}</ReactMarkdown>
+            </div>
+            <div>
               <Link
-                key={r.slug}
-                href={`/cws/${encodeURIComponent(r.slug)}`}
-                className="card p-5 hover:bg-white/5 transition-colors"
+                href={`/cws/${encodeURIComponent(latest.slug)}`}
+                className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
               >
-                <div className="text-sm text-white/50">{r.date || "Undated"}</div>
-                <div className="text-lg font-semibold mt-1 line-clamp-2">{r.title}</div>
-                {r.excerpt && <div className="text-white/70 text-sm mt-2 line-clamp-3">{r.excerpt}</div>}
+                Open comments & reactions →
               </Link>
-            ))}
-          </div>
-        )}
-      </section>
+            </div>
+          </article>
+
+          {/* Explainer */}
+          <CwsExplainer />
+
+          {/* Older tiles */}
+          {older.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Previous Weeks</h3>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {older.map((r) => (
+                  <Link
+                    key={r.slug}
+                    href={`/cws/${encodeURIComponent(r.slug)}`}
+                    className="card p-4 block hover:bg-white/5"
+                  >
+                    <div className="text-xs text-white/50">{r.date}</div>
+                    <div className="font-medium">{r.title}</div>
+                    {r.excerpt && (
+                      <div className="text-sm text-white/70 mt-1">{r.excerpt}</div>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
