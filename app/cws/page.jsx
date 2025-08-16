@@ -47,7 +47,8 @@ function CwsExplainer() {
           love fantasy because it’s the same game: read the tribe, adapt fast, and hope the edit is kind.
         </p>
 
-        <h4>How to play along</h4>
+         <p className="font-semibold">How to play along</p>
+        <ul className="list-disc pl-5 mt-3 space-y-1">
         <ul>
           <li><strong>Step 1:</strong> Set your lineup with confidence. (What could go wrong?)</li>
           <li><strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve all been there.)</li>
@@ -55,7 +56,8 @@ function CwsExplainer() {
           <li><strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.</li>
         </ul>
 
-        <h4>House rules</h4>
+        <p className="font-semibold">House rules</p>
+        <ul className="list-disc pl-5 mt-3 space-y-1">
         <ul>
           <li>Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.</li>
           <li>Screenshots welcome. Bonus points for dramatic “before/after” energy.</li>
