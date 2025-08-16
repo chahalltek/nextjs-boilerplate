@@ -141,7 +141,6 @@ export default function SurvivorClient() {
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-xs text-white/50">slug: {p.slug}</div>
             </button>
           ))}
         </div>
