@@ -8,8 +8,11 @@ export const metadata = {
     "Vote in our weekly Survivor-style poll, watch live results, and join the conversation.",
 };
 
-// IMPORTANT: your client file is app/survivor-client.jsx
-const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
+// If survivor-client.jsx is in the SAME folder as this file:
+const SurvivorClient = dynamic(() => import("./survivor-client"), { ssr: false });
+// If you instead keep survivor-client.jsx at app/survivor-client.jsx,
+// use this path instead:
+// const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
 
 export default function SurvivorPage() {
   return (
@@ -21,11 +24,8 @@ export default function SurvivorPage() {
         </p>
       </header>
 
-      {/* Polls UI (client) */}
       <SurvivorClient />
 
-      {/* ——————————————————————————————————————————————— */}
-      {/* Educational / fun content */}
       <section className="grid gap-6 lg:grid-cols-3">
         <article className="card p-6 space-y-3 lg:col-span-1">
           <h2 className="text-xl font-semibold">Survivor, meet Fantasy</h2>
