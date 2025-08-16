@@ -1,25 +1,31 @@
-// app/survivor/page.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 
 const HYVOR_SITE_ID = 13899;
-function loadHyvor(pageId) {
-  const holder = document.getElementById("hyvor-talk-view");
-  if (holder) holder.innerHTML = "";
 
-  const scriptId = "hyvor-talk-script";
-  const existing = document.getElementById(scriptId);
-  if (existing) existing.remove();
+// Load BOTH Hyvor Reactions + Comments for a given pageId
+function loadHyvorBundles(pageId) {
+  const bundles = [
+    { holderId: "hyvor-reactions-view", scriptId: "hyvor-reactions-script", src: "https://talk.hyvor.com/web-api/reactions.js" },
+    { holderId: "hyvor-talk-view",      scriptId: "hyvor-talk-script",      src: "https://talk.hyvor.com/web-api/embed.js" },
+  ];
 
-  const s = document.createElement("script");
-  s.id = scriptId;
-  s.src = "https://talk.hyvor.com/web-api/embed.js";
-  s.defer = true;
-  s.async = true;
-  s.setAttribute("data-website-id", String(HYVOR_SITE_ID));
-  s.setAttribute("data-page-id", pageId);
-  document.body.appendChild(s);
+  bundles.forEach(({ holderId, scriptId, src }) => {
+    const holder = document.getElementById(holderId);
+    if (holder) holder.innerHTML = "";
+    const existing = document.getElementById(scriptId);
+    if (existing) existing.remove();
+
+    const s = document.createElement("script");
+    s.id = scriptId;
+    s.src = src;
+    s.defer = true;
+    s.async = true;
+    s.setAttribute("data-website-id", String(HYVOR_SITE_ID));
+    s.setAttribute("data-page-id", pageId);
+    document.body.appendChild(s);
+  });
 }
 
 function getVoteCookie(slug) {
@@ -36,7 +42,7 @@ export default function SurvivorPage() {
   const [choice, setChoice] = useState(-1);
   const [status, setStatus] = useState("");
 
-  // load list
+  // Load list of active polls
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -44,15 +50,13 @@ export default function SurvivorPage() {
       const j = await r.json().catch(() => ({}));
       if (!cancelled && j?.ok) {
         setPolls(j.polls || []);
-        if (!selectedSlug && j.polls?.length) {
-          setSelectedSlug(j.polls[0].slug);
-        }
+        if (!selectedSlug && j.polls?.length) setSelectedSlug(j.polls[0].slug);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // load selected poll
+  // Load one poll + its results
   useEffect(() => {
     if (!selectedSlug) return;
     let cancelled = false;
@@ -65,7 +69,8 @@ export default function SurvivorPage() {
         setChoice(-1);
         const voted = getVoteCookie(j.poll?.slug);
         setHasVoted(voted);
-        loadHyvor(`poll:${j.poll?.slug}`);
+        // Only load embeds after we know which poll is selected
+        loadHyvorBundles(`poll:${j.poll?.slug}`);
       }
     })();
     return () => { cancelled = true; };
@@ -92,6 +97,8 @@ export default function SurvivorPage() {
       setSelected((old) => old ? { ...old, results: data.results } : old);
       setHasVoted(true);
       setStatus("Thanks for voting!");
+      // Ensure embeds are bound to this poll pageId
+      loadHyvorBundles(`poll:${selected.poll.slug}`);
     } catch (err) {
       setStatus(String(err?.message || err));
     }
@@ -100,9 +107,7 @@ export default function SurvivorPage() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-4xl font-bold text-white mb-2">Survivor</h1>
-      <p className="text-white/70 mb-8">
-        Vote in the weekly poll and see live results.
-      </p>
+      <p className="text-white/70 mb-8">Vote in the weekly poll and see live results.</p>
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Left: all active polls */}
@@ -143,7 +148,7 @@ export default function SurvivorPage() {
             <>
               <h2 className="text-xl font-semibold mb-4">{selected.poll.question}</h2>
 
-              {/* If not voted yet: show voting form */}
+              {/* Show voting form until they've voted */}
               {!hasVoted ? (
                 <form onSubmit={onVote} className="space-y-4">
                   <div className="flex flex-col gap-3">
@@ -165,19 +170,16 @@ export default function SurvivorPage() {
                     ))}
                   </div>
 
-                  <button type="submit" className="btn-gold">
-                    Submit vote
-                  </button>
-
+                  <button type="submit" className="btn-gold">Submit vote</button>
                   {status && <div className="text-sm text-white/70">{status}</div>}
 
                   <div className="text-xs text-white/40">
-                    Results will show after you vote.
+                    Comments & reactions unlock after you vote.
                   </div>
                 </form>
               ) : (
                 <>
-                  {/* Results (visible after voting) */}
+                  {/* Results */}
                   <div className="flex flex-col gap-4">
                     {selected.poll.options?.map((opt, idx) => {
                       const total = selected?.results?.total || 0;
@@ -200,8 +202,11 @@ export default function SurvivorPage() {
                     Total votes: {selected?.results?.total || 0}
                   </div>
 
-                  {/* Hyvor reactions + comments */}
+                  {/* Reactions + Comments (Hyvor) */}
                   <div className="mt-8">
+                    <div id="hyvor-reactions-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
+                  </div>
+                  <div className="mt-6">
                     <div id="hyvor-talk-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
                   </div>
                 </>
