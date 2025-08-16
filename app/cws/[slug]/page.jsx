@@ -1,50 +1,62 @@
-import React from "react";
-import { notFound } from "next/navigation";
+// app/cws/[slug]/page.jsx
 import { getFile } from "@/lib/github";
 import matter from "gray-matter";
 import ReactMarkdown from "react-markdown";
-import dynamic from "next/dynamic";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import NextDynamic from "next/dynamic";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const HyvorComments = dynamic(() => import("@/components/HyvorComments"), { ssr: false });
+const HyvorComments = NextDynamic(
+  () => import("@/components/HyvorComments"),
+  { ssr: false }
+);
 
-async function fetchRecap(slug) {
-  const path = `content/recaps/${slug}.md`;
-  const f = await getFile(path);
-  if (!f?.contentBase64) return null;
-  const text = Buffer.from(f.contentBase64, "base64").toString("utf8");
-  return matter(text);
-}
+export default async function CwsEntryPage({ params }) {
+  const slug = params?.slug;
+  if (!slug) return notFound();
 
-export default async function RecapPage({ params }) {
-  const slug = params?.slug?.toString();
-  const parsed = await fetchRecap(slug);
-  if (!parsed) return notFound();
+  const path = `content/cws/${encodeURIComponent(slug)}.md`;
 
-  const fm = parsed.data || {};
-  const title = fm.title || slug;
-  const date = fm.date || null;
+  try {
+    const file = await getFile(path);
+    if (!file) return notFound();
 
-  const pageId = `recap:${slug}`;
+    const md = Buffer.from(file.contentBase64, "base64").toString("utf8");
+    const { content, data } = matter(md);
+    const title = data?.title || slug.replace(/-/g, " ");
+    const date = data?.date ? new Date(data.date) : null;
 
-  return (
-    <div className="container mx-auto max-w-3xl px-4 py-10 space-y-8">
-      <header className="space-y-1">
-        <h1 className="text-3xl font-bold">{title}</h1>
-        {date && <div className="text-white/60 text-sm">{date}</div>}
-      </header>
+    return (
+      <div className="container mx-auto max-w-3xl py-10">
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <h1 className="text-3xl font-bold">{title}</h1>
+          <Link
+            href="/cws"
+            className="px-3 py-2 rounded border border-white/20 text-white hover:bg-white/10"
+          >
+            ← Weekly Recaps
+          </Link>
+        </div>
 
-      <article className="prose prose-invert max-w-none">
-        <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
-      </article>
+        {date && (
+          <p className="text-sm text-white/60 mb-4">
+            {date.toLocaleDateString()}
+          </p>
+        )}
 
-      {/* Comments & reactions */}
-      <section className="card p-5">
-        <h2 className="text-lg font-semibold mb-3">Join the conversation</h2>
-        <HyvorComments pageId={pageId} />
-      </section>
-    </div>
-  );
+        <article className="prose prose-invert">
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </article>
+
+        <div className="mt-10">
+          <HyvorComments pageId={`cws/${slug}`} />
+        </div>
+      </div>
+    );
+  } catch {
+    return notFound();
+  }
 }
