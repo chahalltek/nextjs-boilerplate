@@ -27,7 +27,7 @@ export default function Header() {
       <div className="container mx-auto max-w-6xl px-4 h-14 flex items-center gap-4">
         <Link href="/" className="flex items-center gap-2 text-white font-semibold">
           <Logo size={28} />
-          <span className="hidden sm:inline">The Skol Sisters</span>
+          <span className="hidden sm:inline">Hey Skol Sister</span>
         </Link>
 
         {/* Desktop nav */}
