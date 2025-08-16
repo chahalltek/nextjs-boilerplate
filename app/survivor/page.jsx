@@ -3,14 +3,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-/** Hyvor setup */
-const HYVOR_SITE_ID = 13899; // keep your real site id here
+const HYVOR_SITE_ID = 13899;
 function loadHyvor(pageId) {
-  // Remove any existing embed to reset when switching polls
   const holder = document.getElementById("hyvor-talk-view");
   if (holder) holder.innerHTML = "";
 
-  // (Re)inject script with the correct page-id
   const scriptId = "hyvor-talk-script";
   const existing = document.getElementById(scriptId);
   if (existing) existing.remove();
@@ -25,12 +22,21 @@ function loadHyvor(pageId) {
   document.body.appendChild(s);
 }
 
+function getVoteCookie(slug) {
+  if (typeof document === "undefined") return false;
+  const name = `sv_voted_${slug}=`;
+  return document.cookie.split("; ").some((c) => c.startsWith(name));
+}
+
 export default function SurvivorPage() {
-  const [polls, setPolls] = useState([]); // [{slug, question, active, updatedAt}]
+  const [polls, setPolls] = useState([]);
   const [selectedSlug, setSelectedSlug] = useState("");
   const [selected, setSelected] = useState(null); // { poll, results }
+  const [hasVoted, setHasVoted] = useState(false);
+  const [choice, setChoice] = useState(-1);
+  const [status, setStatus] = useState("");
 
-  // Load list of active polls
+  // load list
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -43,36 +49,53 @@ export default function SurvivorPage() {
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []); // once
+    return () => { cancelled = true; };
+  }, []);
 
-  // Load a specific poll when slug changes
+  // load selected poll
   useEffect(() => {
     if (!selectedSlug) return;
     let cancelled = false;
     (async () => {
-      const r = await fetch(`/api/poll?slug=${encodeURIComponent(selectedSlug)}`, {
-        cache: "no-store",
-      });
+      setStatus("");
+      const r = await fetch(`/api/poll?slug=${encodeURIComponent(selectedSlug)}`, { cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       if (!cancelled && j?.ok) {
         setSelected(j);
-        // Initialize Hyvor with this poll's page id
-        const pageId = `poll:${j.poll?.slug}`;
-        loadHyvor(pageId);
+        setChoice(-1);
+        const voted = getVoteCookie(j.poll?.slug);
+        setHasVoted(voted);
+        loadHyvor(`poll:${j.poll?.slug}`);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [selectedSlug]);
 
   const selectedPageId = useMemo(
     () => (selected?.poll?.slug ? `poll:${selected.poll.slug}` : ""),
     [selected],
   );
+
+  async function onVote(e) {
+    e.preventDefault();
+    if (!selected?.poll) return;
+    if (choice < 0) { setStatus("Please select an option."); return; }
+    setStatus("Submitting…");
+    try {
+      const res = await fetch("/api/poll/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: selected.poll.slug, choice }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || `Vote failed (${res.status})`);
+      setSelected((old) => old ? { ...old, results: data.results } : old);
+      setHasVoted(true);
+      setStatus("Thanks for voting!");
+    } catch (err) {
+      setStatus(String(err?.message || err));
+    }
+  }
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-10">
@@ -85,11 +108,7 @@ export default function SurvivorPage() {
         {/* Left: all active polls */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <h2 className="text-xl font-semibold mb-4">All polls</h2>
-
-          {polls.length === 0 && (
-            <p className="text-white/60">No polls yet.</p>
-          )}
-
+          {polls.length === 0 && <p className="text-white/60">No polls yet.</p>}
           <div className="flex flex-col gap-3">
             {polls.map((p) => {
               const active = p.slug === selectedSlug;
@@ -118,48 +137,76 @@ export default function SurvivorPage() {
 
         {/* Right: selected poll */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          {selected?.poll ? (
+          {!selected?.poll ? (
+            <p className="text-white/70">Select a poll from the list.</p>
+          ) : (
             <>
               <h2 className="text-xl font-semibold mb-4">{selected.poll.question}</h2>
 
-              <div className="flex flex-col gap-4">
-                {selected.poll.options?.map((opt, idx) => {
-                  const total = selected?.results?.total || 0;
-                  const count = selected?.results?.counts?.[idx] || 0;
-                  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                  return (
-                    <div
-                      key={`${selected.poll.slug}-${idx}`}
-                      className="rounded-xl border border-white/10 bg-white/5 p-3"
-                    >
-                      <div className="text-white mb-2">{opt.label}</div>
-                      <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
-                        <div
-                          className="h-2 bg-white/70"
-                          style={{ width: `${pct}%` }}
-                          aria-hidden
+              {/* If not voted yet: show voting form */}
+              {!hasVoted ? (
+                <form onSubmit={onVote} className="space-y-4">
+                  <div className="flex flex-col gap-3">
+                    {selected.poll.options?.map((opt, idx) => (
+                      <label
+                        key={`${selected.poll.slug}-${idx}`}
+                        className={`rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer
+                          ${choice === idx ? "ring-2 ring-white/60" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="choice"
+                          className="mr-3"
+                          checked={choice === idx}
+                          onChange={() => setChoice(idx)}
                         />
-                      </div>
-                      <div className="text-xs text-white/50 mt-2">
-                        {count} votes ({pct}%)
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                        <span className="text-white">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
 
-              <div className="text-white/80 mt-4">
-                Total votes: {selected?.results?.total || 0}
-              </div>
+                  <button type="submit" className="btn-gold">
+                    Submit vote
+                  </button>
 
-              {/* Hyvor reactions+comments */}
-              <div className="mt-8 grid gap-6">
-                <div className="text-white/70">{/* reactions header removed (Hyvor handles) */}</div>
-                <div id="hyvor-talk-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
-              </div>
+                  {status && <div className="text-sm text-white/70">{status}</div>}
+
+                  <div className="text-xs text-white/40">
+                    Results will show after you vote.
+                  </div>
+                </form>
+              ) : (
+                <>
+                  {/* Results (visible after voting) */}
+                  <div className="flex flex-col gap-4">
+                    {selected.poll.options?.map((opt, idx) => {
+                      const total = selected?.results?.total || 0;
+                      const count = selected?.results?.counts?.[idx] || 0;
+                      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                      return (
+                        <div key={`${selected.poll.slug}-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-white mb-2">{opt.label}</div>
+                          <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
+                            <div className="h-2 bg-white/70" style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="text-xs text-white/50 mt-2">
+                            {count} votes ({pct}%)
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-white/80 mt-4">
+                    Total votes: {selected?.results?.total || 0}
+                  </div>
+
+                  {/* Hyvor reactions + comments */}
+                  <div className="mt-8">
+                    <div id="hyvor-talk-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
+                  </div>
+                </>
+              )}
             </>
-          ) : (
-            <p className="text-white/70">Select a poll from the list.</p>
           )}
         </div>
       </div>
