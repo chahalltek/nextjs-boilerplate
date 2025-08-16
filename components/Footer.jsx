@@ -22,7 +22,7 @@ export default function SiteFooter() {
           {/* Brand */}
           <Link href="/" className="flex items-center gap-2">
             <Logo size={18} />
-            <span className="font-semibold">The Skol Sisters</span>
+            <span className="font-semibold">Hey Skol Sister</span>
           </Link>
 
           {/* Links + Facebook icon together */}
@@ -55,7 +55,7 @@ export default function SiteFooter() {
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">
-            © {year} The Skol Sisters. All rights reserved.
+            © {year} Hey Skol Sister. All rights reserved.
           </div>
         </div>
       </div>
