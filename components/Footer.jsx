@@ -9,7 +9,7 @@ export default function SiteFooter() {
     { href: "/blog", label: "Blog" },
      // { href: "/episodes", label: "Episodes" }, //
     { href: "/start-sit", label: "Start/Sit" },
-    { href: "/cws", label: "CWS" },
+    { href: "/cws", label: "Weekly Recap" },
     { href: "/survivor", label: "Survivor" },
     { href: "/contact", label: "Contact" },
   ];
