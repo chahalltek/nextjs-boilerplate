@@ -1,0 +1,15 @@
+{
+  "slug": "third-poll",
+  "question": "third poll test",
+  "options": [
+    {
+      "label": "3 rd"
+    },
+    {
+      "label": "3rd "
+    }
+  ],
+  "active": true,
+  "closesAt": null,
+  "updatedAt": "2025-08-16T14:49:33.140Z"
+}
