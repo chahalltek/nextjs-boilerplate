@@ -1,22 +1,23 @@
-import { Suspense } from "react";
-import Poll from "@/components/Poll";
+import SurvivorClient from "./survivor-client";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata = {
   title: "Survivor — Skol Sisters",
   description: "Weekly poll + comments.",
 };
 
-export default function SurvivorPage() {
-  return (
-    <div className="container py-10 max-w-3xl space-y-6">
-      <h1 className="text-3xl font-bold">Survivor</h1>
-      <p className="text-white/70">Vote in the weekly poll and see live results.</p>
+async function getPollList() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/polls`, { cache: "no-store" })
+                .catch(() => null);
+  const j = await res?.json().catch(() => null);
+  return j?.polls ?? [];
+}
 
-      <Suspense fallback={<div className="card p-6">Loading poll…</div>}>
-        <Poll />
-      </Suspense>
-    </div>
-  );
+export default async function SurvivorPage() {
+  const polls = await getPollList();
+  const first = polls.find(p => p.active) || polls[0] || null;
+  return <SurvivorClient polls={polls} initialSlug={first?.slug ?? null} />;
 }
