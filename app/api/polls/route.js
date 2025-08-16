@@ -5,47 +5,56 @@ import { listDir, getFile } from "@/lib/github";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function readJSON(path) {
-  const f = await getFile(path);
-  if (!f) return null;
-  const json = Buffer.from(f.contentBase64, "base64").toString("utf8");
+// small helper
+const b64ToJson = (b64) => {
   try {
-    return JSON.parse(json);
+    return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
   } catch {
     return null;
   }
-}
+};
 
 export async function GET() {
   try {
-    // All poll files live here, written by the admin routes
-    const dir = await listDir("data/polls"); // [{name, path, type}, ...] or []
-    const files = (dir || []).filter(
-      (it) => it?.type === "file" && typeof it?.name === "string" && it.name.endsWith(".json")
-    );
-
-    const polls = [];
-    for (const it of files) {
-      const p = await readJSON(it.path || `data/polls/${it.name}`);
-      if (p?.slug && Array.isArray(p?.options)) {
-        polls.push(p);
-      }
+    // If the folder doesn't exist yet, return empty list instead of 500
+    let entries = [];
+    try {
+      entries = await listDir("data/polls");
+    } catch {
+      return NextResponse.json({ ok: true, polls: [] });
     }
 
-    // Current active poll pointer (if present)
-    const activePtr = await readJSON("data/active-poll.json");
-    const activeSlug =
-      activePtr?.slug || polls.find((p) => p.active)?.slug || null;
+    const polls = [];
+    for (const e of entries) {
+      if (e.type !== "file" || !e.name.endsWith(".json")) continue;
+      const file = await getFile(e.path);
+      if (!file?.contentBase64) continue;
 
-    // Sort newest first if updatedAt exists, otherwise by slug
+      const json = b64ToJson(file.contentBase64);
+      if (!json || !json.slug || !json.question || !Array.isArray(json.options)) {
+        // skip malformed files instead of failing the whole request
+        continue;
+      }
+
+      polls.push({
+        slug: json.slug,
+        question: json.question,
+        options: json.options,
+        active: !!json.active,                // allow multiple active polls
+        closesAt: json.closesAt || null,
+        createdAt: json.createdAt || null,
+        updatedAt: json.updatedAt || json.createdAt || null,
+      });
+    }
+
+    // newest first
     polls.sort((a, b) => {
-      const da = a.updatedAt ? Date.parse(a.updatedAt) : 0;
-      const db = b.updatedAt ? Date.parse(b.updatedAt) : 0;
-      if (db !== da) return db - da;
-      return String(a.slug).localeCompare(String(b.slug));
+      const ad = a.updatedAt || a.createdAt || "1970-01-01";
+      const bd = b.updatedAt || b.createdAt || "1970-01-01";
+      return new Date(bd) - new Date(ad);
     });
 
-    return NextResponse.json({ ok: true, polls, activeSlug });
+    return NextResponse.json({ ok: true, polls });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: String(e?.message || e) },
