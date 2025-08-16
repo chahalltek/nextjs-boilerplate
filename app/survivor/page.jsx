@@ -1,4 +1,4 @@
-// app/survivor/page.jsx
+// app/survivor/page.jsx (Server Component)
 import Link from "next/link";
 import Poll from "@/components/Poll";
 
@@ -10,87 +10,74 @@ export const metadata = {
   description: "Vote in the weekly poll and see live results.",
 };
 
-async function loadPolls() {
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "";
-  const res = await fetch(`${base}/api/polls`, { cache: "no-store" });
+async function fetchPolls() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/api/polls`, {
+    cache: "no-store",
+    next: { revalidate: 0 },
+  }).catch(() => null);
+
+  if (!res || !res.ok) return [];
   const data = await res.json().catch(() => ({}));
-  return data;
+  return Array.isArray(data.polls) ? data.polls : [];
 }
 
 export default async function SurvivorPage({ searchParams }) {
-  const { ok, polls = [], activeSlug = null, error } = await loadPolls();
-
-  // Pick selected poll: ?slug=, else active, else first
-  const selectedSlug =
-    searchParams?.slug || activeSlug || (polls[0]?.slug ?? null);
-  const selected = polls.find((p) => p.slug === selectedSlug) || null;
+  const polls = await fetchPolls();
+  const selectedSlug = searchParams?.slug;
+  const selected =
+    (selectedSlug && polls.find((p) => p.slug === selectedSlug)) || polls[0];
 
   return (
-    <div className="container max-w-5xl py-10">
-      <h1 className="text-4xl font-bold text-white mb-2">Survivor</h1>
+    <div className="container mx-auto max-w-6xl px-4 py-10">
+      <h1 className="text-4xl font-bold text-white mb-3">Survivor</h1>
       <p className="text-white/70 mb-8">
         Vote in the weekly poll and see live results.
       </p>
 
-      {!ok && (
-        <div className="text-red-400">
-          Failed to load polls{error ? `: ${error}` : ""}.
-        </div>
-      )}
-
-      {ok && polls.length === 0 && (
-        <div className="text-white/70">No polls yet.</div>
-      )}
-
-      {ok && polls.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {polls.length === 0 ? (
+        <p className="text-white/60">No polls yet.</p>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-6">
           {/* Left: list of polls */}
-          <aside className="lg:col-span-1">
-            <div className="card p-4">
-              <h2 className="text-lg font-semibold mb-3">All polls</h2>
-              <ul className="space-y-2">
-                {polls.map((p) => {
-                  const isActive = p.slug === selectedSlug;
-                  return (
-                    <li key={p.slug}>
-                      <Link
-                        href={`/survivor?slug=${encodeURIComponent(p.slug)}`}
-                        className={`block rounded px-3 py-2 border transition ${
-                          isActive
-                            ? "border-white/40 bg-white/10 text-white"
-                            : "border-white/10 text-white/80 hover:text-white hover:border-white/20 hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="font-medium">
-                          {p.question || p.slug}
-                        </div>
-                        <div className="text-xs text-white/50">
-                          slug: {p.slug}
-                          {p.active ? " • active" : ""}
-                          {p.closesAt ? ` • closes ${p.closesAt}` : ""}
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <h2 className="text-xl font-semibold mb-3">All polls</h2>
+            <div className="grid gap-3">
+              {polls.map((p) => (
+                <Link
+                  key={p.slug}
+                  href={`/survivor?slug=${encodeURIComponent(p.slug)}`}
+                  className={`block rounded-xl border p-3 transition-colors ${
+                    selected?.slug === p.slug
+                      ? "border-white/40 bg-white/10"
+                      : "border-white/10 hover:border-white/30 hover:bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-white">{p.question}</span>
+                    {p.active && (
+                      <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                        active
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-white/50">
+                    slug: {p.slug}
+                    {p.closesAt ? ` • closes ${new Date(p.closesAt).toLocaleString()}` : ""}
+                  </div>
+                </Link>
+              ))}
             </div>
-          </aside>
+          </div>
 
           {/* Right: selected poll */}
-          <section className="lg:col-span-2">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             {selected ? (
-              <div className="card p-5">
-                {/* Poll is a Client Component; we pass plain data only */}
-                <Poll poll={selected} />
-              </div>
+              <Poll key={selected.slug} poll={selected} />
             ) : (
-              <div className="card p-5 text-white/70">
-                Select a poll from the list.
-              </div>
+              <div className="text-white/70">Select a poll from the list.</div>
             )}
-          </section>
+          </div>
         </div>
       )}
     </div>
