@@ -3,32 +3,34 @@
 
 import { useEffect } from "react";
 
-const HYVOR_SITE_ID = 13899; // same site ID you use on the blog
+// Optional: set NEXT_PUBLIC_HYVOR_SITE_ID in Vercel; falls back to your current ID.
+const HYVOR_SITE_ID = Number(process.env.NEXT_PUBLIC_HYVOR_SITE_ID || 13899);
 
 /**
- * Minimal Hyvor Talk embed, identical method to blog:
- * - Uses window._hyvor_talk
- * - Loads the official 'embed.js' (module) script
- * - Re-initializes when pageId changes
+ * Minimal Hyvor Talk embed (same method your blog uses)
+ * - uses window._hyvor_talk
+ * - loads official embed.js (module)
+ * - re-inits when pageId changes
  */
-export default function HyvorComments({ pageId }: { pageId: string }) {
+export default function HyvorComments({ pageId }) {
   useEffect(() => {
     if (!pageId) return;
 
-    // Clear previous mount (if any)
+    // Clear any previous mount
     const holder = document.getElementById("hyvor-talk-view");
     if (holder) holder.innerHTML = "";
 
-    // Remove previously injected script to force a clean init
+    // Remove previous script so Hyvor re-initializes cleanly
     const old = document.getElementById("hyvor-talk-script");
     if (old) old.remove();
 
-    // Hyvor config (same as blog)
-    (window as any)._hyvor_talk = {
+    // Configure page
+    window._hyvor_talk = {
       website: HYVOR_SITE_ID,
       page_id: pageId,
     };
 
+    // Inject script
     const s = document.createElement("script");
     s.id = "hyvor-talk-script";
     s.src = "https://talk.hyvor.com/embed/embed.js";
@@ -39,4 +41,5 @@ export default function HyvorComments({ pageId }: { pageId: string }) {
 
   return <div id="hyvor-talk-view" />;
 }
+
 
