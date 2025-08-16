@@ -39,55 +39,50 @@ async function fetchPublishedRecaps() {
 function CwsExplainer() {
   return (
     <section className="card p-6 mb-8">
-  <h2 className="text-xl font-bold mb-3">What is “Weekly Recap” (aka CWS)?</h2>
-  <p className="text-white/80">
-    CWS stands for <em>Coulda, Woulda, Shoulda</em> — the spiritual cousin of
-    Survivor confessionals and the official diary of fantasy football regret.
-  </p>
+      <h2 className="text-xl font-bold mb-3">What is “Weekly Recap” (aka CWS)?</h2>
+      <p className="text-white/80">
+        CWS stands for <em>Coulda, Woulda, Shoulda</em> — the spiritual cousin of Survivor
+        confessionals and the official diary of fantasy football regret. Survivor fans
+        tend to love fantasy because it’s the same game: read the tribe, adapt fast, and
+        hope the edit is kind.
+      </p>
 
-  <div className="mt-5 space-y-4 text-white/80">
-    <div>
-      <p className="font-semibold">How to play along</p>
-      <ul className="list-disc pl-5 mt-3 space-y-1">
-        <li>
-          <strong>Step 1:</strong> Set your lineup with confidence. (What could go wrong?)
-        </li>
-        <li>
-          <strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve all been there.)
-        </li>
-        <li>
-          <strong>Step 3:</strong> Post your recap: what happened, your bold takes, and the
-          <em> one tiny decision</em> that changed everything.
-        </li>
-        <li>
-          <strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.
-        </li>
-      </ul> {/* ← this closes the first list */}
-    </div>
+      <div className="mt-5 space-y-4 text-white/80">
+        <div>
+          <p className="font-semibold">How to play along</p>
+          {/* blank line for readability */}
+          <div className="h-2" aria-hidden="true" />
+          <ul className="list-disc pl-5 mt-1 space-y-1">
+            <li>
+              <strong>Step 1:</strong> Set your lineup with confidence. (What could go wrong?)
+            </li>
+            <li>
+              <strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve all been there.)
+            </li>
+            <li>
+              <strong>Step 3:</strong> Post your recap: what happened, your bold takes, and the
+              <em> one tiny decision</em> that changed everything.
+            </li>
+            <li>
+              <strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.
+            </li>
+          </ul>
+        </div>
 
-    <div>
-      <p className="font-semibold">House rules</p>
-      <ul className="list-disc pl-5 mt-3 space-y-1">
-        <li>
-          Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.
-        </li>
-        <li>Screenshots welcome. Bonus points for dramatic “before/after” energy.</li>
-        <li>
-          Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”
-        </li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-
-        <p className="font-semibold">House rules</p>
-        <ul className="list-disc pl-5 mt-3 space-y-1">
-        <ul>
-          <li>Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.</li>
-          <li>Screenshots welcome. Bonus points for dramatic “before/after” energy.</li>
-          <li>Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”</li>
-        </ul>
+        <div>
+          <p className="font-semibold">House rules</p>
+          {/* blank line for readability */}
+          <div className="h-2" aria-hidden="true" />
+          <ul className="list-disc pl-5 mt-1 space-y-1">
+            <li>
+              Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.
+            </li>
+            <li>Screenshots welcome. Bonus points for dramatic “before/after” energy.</li>
+            <li>
+              Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”
+            </li>
+          </ul>
+        </div>
       </div>
     </section>
   );
@@ -126,7 +121,7 @@ export default async function CwsIndexPage() {
                 href={`/cws/${encodeURIComponent(latest.slug)}`}
                 className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
               >
-                Open comments & reactions →
+                Open comments &amp; reactions →
               </Link>
             </div>
           </article>
@@ -160,3 +155,4 @@ export default async function CwsIndexPage() {
     </div>
   );
 }
+
