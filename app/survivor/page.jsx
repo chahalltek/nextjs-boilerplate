@@ -1,188 +1,24 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-import HyvorComments from "@/components/HyvorComments";
-
-function getVoteCookie(slug) {
-  if (typeof document === "undefined") return false;
-  const name = `sv_voted_${slug}=`;
-  return document.cookie.split("; ").some((c) => c.startsWith(name));
-}
+// app/survivor/page.jsx
+export const metadata = {
+  title: "Survivor — Skol Sisters",
+  description: "Vote in the weekly poll, see live results, and join the conversation.",
+};
 
 export default function SurvivorPage() {
-  const [polls, setPolls] = useState([]);
-  const [selectedSlug, setSelectedSlug] = useState("");
-  const [selected, setSelected] = useState(null); // { poll, results }
-  const [hasVoted, setHasVoted] = useState(false);
-  const [choice, setChoice] = useState(-1);
-  const [status, setStatus] = useState("");
-
-  // Load list of active polls
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const r = await fetch("/api/poll", { cache: "no-store" });
-      const j = await r.json().catch(() => ({}));
-      if (!cancelled && j?.ok) {
-        setPolls(j.polls || []);
-        if (!selectedSlug && j.polls?.length) setSelectedSlug(j.polls[0].slug);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Load one poll + its results
-  useEffect(() => {
-    if (!selectedSlug) return;
-    let cancelled = false;
-    (async () => {
-      setStatus("");
-      const r = await fetch(`/api/poll?slug=${encodeURIComponent(selectedSlug)}`, { cache: "no-store" });
-      const j = await r.json().catch(() => ({}));
-      if (!cancelled && j?.ok) {
-        setSelected(j);
-        setChoice(-1);
-        setHasVoted(getVoteCookie(j.poll?.slug));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedSlug]);
-
-  const selectedPageId = useMemo(
-    () => (selected?.poll?.slug ? `poll:${selected.poll.slug}` : ""),
-    [selected],
-  );
-
-  async function onVote(e) {
-    e.preventDefault();
-    if (!selected?.poll) return;
-    if (choice < 0) { setStatus("Please select an option."); return; }
-    setStatus("Submitting…");
-    try {
-      const res = await fetch("/api/poll/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: selected.poll.slug, choice }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.error || `Vote failed (${res.status})`);
-
-      setSelected((old) => old ? { ...old, results: data.results } : old);
-      setHasVoted(true);
-      setStatus("Thanks for voting!");
-    } catch (err) {
-      setStatus(String(err?.message || err));
-    }
-  }
-
+  // Keep the page a server component and load interactivity in the client child.
   return (
     <div className="container mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-4xl font-bold text-white mb-2">Survivor</h1>
-      <p className="text-white/70 mb-8">Vote in the weekly poll and see live results.</p>
+      <h1 className="text-4xl font-extrabold tracking-tight text-white">Survivor</h1>
+      <p className="mt-2 text-lg text-white/70">
+        Vote in the weekly poll and see live results.
+      </p>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Left: all active polls */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <h2 className="text-xl font-semibold mb-4">All polls</h2>
-          {polls.length === 0 && <p className="text-white/60">No polls yet.</p>}
-          <div className="flex flex-col gap-3">
-            {polls.map((p) => {
-              const active = p.slug === selectedSlug;
-              return (
-                <button
-                  key={p.slug}
-                  onClick={() => setSelectedSlug(p.slug)}
-                  className={`w-full text-left rounded-xl border px-4 py-3 transition
-                    ${active ? "border-white/30 bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-white">{p.question}</div>
-                    {p.active && (
-                      <span className="flex items-center gap-1 text-emerald-400 text-sm">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                        active
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-xs text-white/50">slug: {p.slug}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: selected poll */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          {!selected?.poll ? (
-            <p className="text-white/70">Select a poll from the list.</p>
-          ) : (
-            <>
-              <h2 className="text-xl font-semibold mb-4">{selected.poll.question}</h2>
-
-              {/* Show voting form until they've voted */}
-              {!hasVoted ? (
-                <form onSubmit={onVote} className="space-y-4">
-                  <div className="flex flex-col gap-3">
-                    {selected.poll.options?.map((opt, idx) => (
-                      <label
-                        key={`${selected.poll.slug}-${idx}`}
-                        className={`rounded-xl border border-white/10 bg-white/5 p-3 cursor-pointer
-                          ${choice === idx ? "ring-2 ring-white/60" : ""}`}
-                      >
-                        <input
-                          type="radio"
-                          name="choice"
-                          className="mr-3"
-                          checked={choice === idx}
-                          onChange={() => setChoice(idx)}
-                        />
-                        <span className="text-white">{opt.label}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <button type="submit" className="btn-gold">Submit vote</button>
-                  {status && <div className="text-sm text-white/70">{status}</div>}
-
-                  <div className="text-xs text-white/40">
-                    Comments unlock after you vote.
-                  </div>
-                </form>
-              ) : (
-                <>
-                  {/* Results */}
-                  <div className="flex flex-col gap-4">
-                    {selected.poll.options?.map((opt, idx) => {
-                      const total = selected?.results?.total || 0;
-                      const count = selected?.results?.counts?.[idx] || 0;
-                      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                      return (
-                        <div key={`${selected.poll.slug}-${idx}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                          <div className="text-white mb-2">{opt.label}</div>
-                          <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
-                            <div className="h-2 bg-white/70" style={{ width: `${pct}%` }} />
-                          </div>
-                          <div className="text-xs text-white/50 mt-2">
-                            {count} votes ({pct}%)
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="text-white/80 mt-4">
-                    Total votes: {selected?.results?.total || 0}
-                  </div>
-
-                  {/* Comments (same embed behavior as Blog) */}
-                  <div className="mt-10">
-                    <HyvorComments pageId={selectedPageId} />
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      {/* Client-side UI */}
+      <SurvivorClient />
     </div>
   );
 }
+
+/* ---- Lazy import of client component to keep this file server-only ---- */
+import dynamic from "next/dynamic";
+const SurvivorClient = dynamic(() => import("./SurvivorClient"), { ssr: false });
