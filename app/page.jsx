@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export default function HomePage() {
   return (
     <section className="container py-16">
-      <h1 className="text-4xl md:text-6xl font-extrabold">Skol Sisters</h1>
+      <h1 className="text-4xl md:text-6xl font-extrabold">Hey Skol Sister</h1>
       <p className="text-white/80 mt-4 text-lg">
         Smart, sisterly fantasy football advice—with Skol spirit.
       </p>

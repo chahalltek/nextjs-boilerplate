@@ -2,7 +2,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "About — The Skol Sisters",
+  title: "About — Hey Skol Sister",
   description:
     "Women-led, judgment-free fantasy football guidance. 30 years of playing, 15 years commissioning women-only leagues. Skol!",
   alternates: { canonical: "/about" },
@@ -98,7 +98,7 @@ export default function AboutPage() {
       {/* Hero */}
       <section className="grid items-center gap-6 md:grid-cols-2">
         <div>
-          <h1 className="text-3xl md:text-5xl font-extrabold leading-tight">About The Skol Sisters</h1>
+          <h1 className="text-3xl md:text-5xl font-extrabold leading-tight">About Hey Skol Sister</h1>
           <p className="mt-4 text-white/80">
             Hi! I’ve played fantasy football for <strong>30 years</strong> and I’ve been the
             commissioner of <strong>women-only leagues for 15 years</strong>. If you’re brand new

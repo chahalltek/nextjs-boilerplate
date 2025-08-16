@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 
 export const runtime = "nodejs";
 export const metadata = {
-  title: "Survivor — Skol Sisters",
+  title: "Survivor — Hey Skol Sister",
   description:
     "Vote in our weekly Survivor-style poll, watch live results, and join the conversation.",
 };

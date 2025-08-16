@@ -2,7 +2,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Start/Sit — Skol Sisters",
+  title: "Start/Sit — Hey Skol Sister",
   description: "Weekly Start/Sit calls. Preseason mode: stretching, hydration, and wild optimism.",
 };
 

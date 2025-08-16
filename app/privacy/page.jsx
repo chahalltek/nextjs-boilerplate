@@ -1,7 +1,7 @@
 // app/privacy/page.jsx
 export const runtime = "nodejs";
 export const metadata = {
-  title: "Privacy Policy — Skol Sisters",
+  title: "Privacy Policy — Hey Skol Sister",
   description: "How we handle your data.",
 };
 
