@@ -40,7 +40,7 @@ export default function SiteFooter() {
               href="https://www.facebook.com/profile.php?id=61578258645337"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="The Skol Sisters on Facebook"
+              aria-label="Hey Skol Sister on Facebook"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
               title="Facebook"
             >

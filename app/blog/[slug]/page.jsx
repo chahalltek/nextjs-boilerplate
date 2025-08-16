@@ -9,9 +9,9 @@ import HyvorComments from "@/components/HyvorComments";
 
 export async function generateMetadata({ params }) {
   const post = getPostBySlug(params.slug);
-  if (!post) return { title: "Not found — Skol Sisters" };
+  if (!post) return { title: "Not found — Hey Skol Sister" };
   return {
-    title: `${post.title} — Skol Sisters`,
+    title: `${post.title} — Hey Skol Sister`,
     description: post.excerpt || "",
   };
 }

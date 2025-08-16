@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Fantasy Football 101 — The Skol Sisters",
+  title: "Fantasy Football 101 — Hey Skol Sister",
   description:
     "A warm, beginner-friendly guide: history, how drafts work, scoring (incl. PPR), waivers, trades, and weekly strategy.",
   alternates: { canonical: "/101" },

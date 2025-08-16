@@ -3,8 +3,8 @@ import Link from "next/link";
 import SubscribeClient from "./SubscribeClient";
 
 export const metadata = {
-  title: "Subscribe — Skol Sisters",
-  description: "Get Skol Sisters updates in your inbox.",
+  title: "Subscribe — Hey Skol Sister",
+  description: "Get Hey Skol Sister updates in your inbox.",
 };
 
 export const revalidate = 0; // keep it simple

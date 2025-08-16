@@ -3,7 +3,7 @@ import { getAllPosts } from "@/lib/posts";
 
 export const runtime = "nodejs";
 export const metadata = {
-  title: "Blog — Skol Sisters",
+  title: "Blog — Hey Skol Sister",
   description: "Fantasy football strategy, Start/Sit tiers, Waiver Wire gems, and Survivor talk."
 };
 
