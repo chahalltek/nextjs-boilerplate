@@ -13,13 +13,13 @@ const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { 
 export const metadata = {
   title: "Hold ’em / Fold ’em — Hey Skol Sister",
   description:
-    "Weekly stash-or-trash advice with a dash of sass. Who to hold, who to fold, and why your bench is crying.",
+    "Fantasy football stash-or-trash advice: injuries, usage trends, upcoming matchups, and when it’s time to let go.",
 };
 
 const DIR = "content/holdfold";
 
 async function loadAll() {
-  const entries = await listDir(DIR); // [{name, path, type, sha, size}...]
+  const entries = await listDir(DIR);
   const files = entries
     .filter((e) => e.type === "file" && e.name.endsWith(".md"))
     .map((e) => e.path);
@@ -39,7 +39,7 @@ async function loadAll() {
     });
   }
 
-  // newest first (by date if present, otherwise filename)
+  // newest first (by date if present, else filename)
   result.sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
     const db = b.date ? new Date(b.date).getTime() : 0;
@@ -59,12 +59,37 @@ export default async function HoldFoldIndexPage() {
       <header className="space-y-3">
         <h1 className="text-3xl font-bold">Hold ’em / Fold ’em</h1>
         <p className="text-white/70 max-w-2xl">
-          Welcome to the weekly stash-or-trash rodeo. We tell you who to{" "}
-          <span className="font-semibold">hold</span> (stay patient, greatness
-          pending) and who to <span className="font-semibold">fold</span> (let it
-          go like a bad karaoke night). It’s Survivor energy meets fantasy football
-          pragmatism—with fewer torches and more waiver wire drama.
+          Weekly fantasy football reality check. We weigh{" "}
+          <span className="font-semibold">injuries</span>,{" "}
+          <span className="font-semibold">usage & snap share</span>,{" "}
+          <span className="font-semibold">upcoming matchups</span>, and good old{" "}
+          <span className="font-semibold">“trust your eyes”</span> to decide who to{" "}
+          <span className="font-semibold">hold</span> (patience!) and who to{" "}
+          <span className="font-semibold">fold</span> (free the roster spot).
         </p>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">Injuries & Role</div>
+            <p className="text-sm text-white/70">
+              If a player’s role is shrinking (or they’re not right physically), the name
+              on the jersey can’t save your matchup.
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">Matchups & Schedule</div>
+            <p className="text-sm text-white/70">
+              We consider defensive tendencies and short-term schedules (bye weeks count!).
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/10 p-4 bg-white/5">
+            <div className="text-sm font-semibold mb-1">When to Let Go</div>
+            <p className="text-sm text-white/70">
+              Draft capital is a sunk cost. If the data says bail, we say thanks for the
+              memories and hit “Drop”.
+            </p>
+          </div>
+        </div>
       </header>
 
       {latest ? (
@@ -82,10 +107,10 @@ export default async function HoldFoldIndexPage() {
             <ReactMarkdown>{latest.content}</ReactMarkdown>
           </article>
 
-          <div className="rounded-xl border border-white/10 p-4 bg-white/5">
+          <div id="comments" className="rounded-xl border border-white/10 p-4 bg-white/5">
             <h3 className="text-lg font-semibold mb-1">Comments & Reactions</h3>
             <p className="text-white/60 text-sm mb-3">
-              Agree? Disagree? Tell us who you’re holding or folding this week.
+              Got a contrarian take? Drop it below—bonus points for injury/usage receipts.
             </p>
             <HyvorComments pageId={`hef:${latest.slug}`} />
           </div>
@@ -111,7 +136,6 @@ export default async function HoldFoldIndexPage() {
                   </div>
                 )}
                 <div className="text-sm text-white/60 mt-2 line-clamp-3">
-                  {/* tiny snippet from content */}
                   {p.content.replace(/\s+/g, " ").slice(0, 140)}…
                 </div>
               </Link>
