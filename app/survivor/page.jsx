@@ -1,6 +1,7 @@
-// app/survivor/page.jsx (Server Component)
+// app/survivor/page.jsx
 import Link from "next/link";
 import Poll from "@/components/Poll";
+import Comments from "@/components/Comments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,22 +11,27 @@ export const metadata = {
   description: "Vote in the weekly poll and see live results.",
 };
 
-async function fetchPolls() {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/api/polls`, {
-    cache: "no-store",
-    next: { revalidate: 0 },
-  }).catch(() => null);
+function siteOrigin() {
+  // Prefer explicit env when deployed, fall back to Vercel URL, then relative fetch in dev
+  const env = process.env.NEXT_PUBLIC_SITE_URL;
+  if (env) return env.replace(/\/$/, "");
+  const vercel = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
+  return vercel;
+}
 
+async function fetchActivePolls() {
+  const origin = siteOrigin();
+  const url = (origin ? `${origin}` : "") + `/api/polls?active=1`;
+  const res = await fetch(url, { cache: "no-store", next: { revalidate: 0 } }).catch(() => null);
   if (!res || !res.ok) return [];
   const data = await res.json().catch(() => ({}));
   return Array.isArray(data.polls) ? data.polls : [];
 }
 
 export default async function SurvivorPage({ searchParams }) {
-  const polls = await fetchPolls();
+  const polls = await fetchActivePolls();
   const selectedSlug = searchParams?.slug;
-  const selected =
-    (selectedSlug && polls.find((p) => p.slug === selectedSlug)) || polls[0];
+  const selected = polls.find((p) => p.slug === selectedSlug) || polls[0];
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-10">
@@ -35,10 +41,12 @@ export default async function SurvivorPage({ searchParams }) {
       </p>
 
       {polls.length === 0 ? (
-        <p className="text-white/60">No polls yet.</p>
+        <p className="text-white/60">
+          No active polls. Mark at least one poll as <em>active</em> in Admin → Polls.
+        </p>
       ) : (
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Left: list of polls */}
+          {/* Left: active polls list */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <h2 className="text-xl font-semibold mb-3">All polls</h2>
             <div className="grid gap-3">
@@ -54,26 +62,26 @@ export default async function SurvivorPage({ searchParams }) {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-white">{p.question}</span>
-                    {p.active && (
-                      <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                        active
-                      </span>
-                    )}
+                    <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                      active
+                    </span>
                   </div>
-                  <div className="mt-1 text-xs text-white/50">
-                    slug: {p.slug}
-                    {p.closesAt ? ` • closes ${new Date(p.closesAt).toLocaleString()}` : ""}
-                  </div>
+                  <div className="mt-1 text-xs text-white/50">slug: {p.slug}</div>
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* Right: selected poll */}
+          {/* Right: selected poll + comments */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             {selected ? (
-              <Poll key={selected.slug} poll={selected} />
+              <>
+                <Poll key={selected.slug} poll={selected} />
+                <div className="mt-8">
+                  <Comments pageId={`poll:${selected.slug}`} title={selected.question} />
+                </div>
+              </>
             ) : (
               <div className="text-white/70">Select a poll from the list.</div>
             )}

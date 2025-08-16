@@ -5,7 +5,6 @@ import { listDir, getFile } from "@/lib/github";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// small helper
 const b64ToJson = (b64) => {
   try {
     return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
@@ -14,36 +13,38 @@ const b64ToJson = (b64) => {
   }
 };
 
-export async function GET() {
+export async function GET(request) {
+  const url = new URL(request.url);
+  const onlyActive = url.searchParams.get("active");
+
   try {
-    // If the folder doesn't exist yet, return empty list instead of 500
     let entries = [];
     try {
       entries = await listDir("data/polls");
     } catch {
+      // no folder yet
       return NextResponse.json({ ok: true, polls: [] });
     }
 
     const polls = [];
     for (const e of entries) {
       if (e.type !== "file" || !e.name.endsWith(".json")) continue;
+
       const file = await getFile(e.path);
       if (!file?.contentBase64) continue;
 
-      const json = b64ToJson(file.contentBase64);
-      if (!json || !json.slug || !json.question || !Array.isArray(json.options)) {
-        // skip malformed files instead of failing the whole request
+      const data = b64ToJson(file.contentBase64);
+      if (!data || !data.slug || !data.question || !Array.isArray(data.options))
         continue;
-      }
 
       polls.push({
-        slug: json.slug,
-        question: json.question,
-        options: json.options,
-        active: !!json.active,                // allow multiple active polls
-        closesAt: json.closesAt || null,
-        createdAt: json.createdAt || null,
-        updatedAt: json.updatedAt || json.createdAt || null,
+        slug: data.slug,
+        question: data.question,
+        options: data.options,
+        active: !!data.active,
+        closesAt: data.closesAt || null,
+        createdAt: data.createdAt || null,
+        updatedAt: data.updatedAt || data.createdAt || null,
       });
     }
 
@@ -54,7 +55,8 @@ export async function GET() {
       return new Date(bd) - new Date(ad);
     });
 
-    return NextResponse.json({ ok: true, polls });
+    const filtered = onlyActive ? polls.filter((p) => p.active) : polls;
+    return NextResponse.json({ ok: true, polls: filtered });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: String(e?.message || e) },
