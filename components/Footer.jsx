@@ -6,12 +6,11 @@ export default function SiteFooter() {
   const year = new Date().getFullYear();
   const nav = [
     { href: "/about", label: "About" },
-    { href: "/blog", label: "Blog" },
-     // { href: "/episodes", label: "Episodes" }, //
-    { href: "/start-sit", label: "Start/Sit" },
-    { href: "/cws", label: "Weekly Recap" },
-    { href: "/survivor", label: "Survivor" },
-    { href: "/contact", label: "Contact" },
+  { href: "/101", label: "101", title: "Fantasy Football 101" },
+  { href: "/start-sit", label: "Start/Sit" },
+  { href: "/blog", label: "Blog" },
+  { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
+  { href: "/survivor", label: "Survivor" },
   ];
 
   return (
