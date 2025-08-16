@@ -1,32 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-
-const HYVOR_SITE_ID = 13899;
-
-// Load BOTH Hyvor Reactions + Comments for a given pageId
-function loadHyvorBundles(pageId) {
-  const bundles = [
-    { holderId: "hyvor-reactions-view", scriptId: "hyvor-reactions-script", src: "https://talk.hyvor.com/web-api/reactions.js" },
-    { holderId: "hyvor-talk-view",      scriptId: "hyvor-talk-script",      src: "https://talk.hyvor.com/web-api/embed.js" },
-  ];
-
-  bundles.forEach(({ holderId, scriptId, src }) => {
-    const holder = document.getElementById(holderId);
-    if (holder) holder.innerHTML = "";
-    const existing = document.getElementById(scriptId);
-    if (existing) existing.remove();
-
-    const s = document.createElement("script");
-    s.id = scriptId;
-    s.src = src;
-    s.defer = true;
-    s.async = true;
-    s.setAttribute("data-website-id", String(HYVOR_SITE_ID));
-    s.setAttribute("data-page-id", pageId);
-    document.body.appendChild(s);
-  });
-}
+import HyvorComments from "@/components/HyvorComments";
 
 function getVoteCookie(slug) {
   if (typeof document === "undefined") return false;
@@ -67,10 +42,7 @@ export default function SurvivorPage() {
       if (!cancelled && j?.ok) {
         setSelected(j);
         setChoice(-1);
-        const voted = getVoteCookie(j.poll?.slug);
-        setHasVoted(voted);
-        // Only load embeds after we know which poll is selected
-        loadHyvorBundles(`poll:${j.poll?.slug}`);
+        setHasVoted(getVoteCookie(j.poll?.slug));
       }
     })();
     return () => { cancelled = true; };
@@ -94,11 +66,10 @@ export default function SurvivorPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || `Vote failed (${res.status})`);
+
       setSelected((old) => old ? { ...old, results: data.results } : old);
       setHasVoted(true);
       setStatus("Thanks for voting!");
-      // Ensure embeds are bound to this poll pageId
-      loadHyvorBundles(`poll:${selected.poll.slug}`);
     } catch (err) {
       setStatus(String(err?.message || err));
     }
@@ -174,7 +145,7 @@ export default function SurvivorPage() {
                   {status && <div className="text-sm text-white/70">{status}</div>}
 
                   <div className="text-xs text-white/40">
-                    Comments & reactions unlock after you vote.
+                    Comments unlock after you vote.
                   </div>
                 </form>
               ) : (
@@ -202,12 +173,9 @@ export default function SurvivorPage() {
                     Total votes: {selected?.results?.total || 0}
                   </div>
 
-                  {/* Reactions + Comments (Hyvor) */}
-                  <div className="mt-8">
-                    <div id="hyvor-reactions-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
-                  </div>
-                  <div className="mt-6">
-                    <div id="hyvor-talk-view" data-website-id={HYVOR_SITE_ID} data-page-id={selectedPageId} />
+                  {/* Comments (same embed behavior as Blog) */}
+                  <div className="mt-10">
+                    <HyvorComments pageId={selectedPageId} />
                   </div>
                 </>
               )}
