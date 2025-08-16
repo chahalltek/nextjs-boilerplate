@@ -1,19 +1,27 @@
-// app/admin/page.jsx
-export const dynamic = "force-dynamic";
+"use client";
+
+import Link from "next/link";
 
 export default function AdminHome() {
   return (
-    <div className="container py-10">
-      <h1 className="text-3xl font-bold mb-6">Admin</h1>
+    <div className="container mx-auto max-w-4xl px-4 py-10">
+      <h1 className="text-2xl font-bold mb-6">Admin</h1>
+
       <div className="grid sm:grid-cols-2 gap-4">
-        <a className="cta-card" href="/admin/posts">
-          <div className="cta-title">Manage Blog Posts</div>
-          <div className="cta-sub">Create, edit, upload images</div>
-        </a>
-        <a className="cta-card" href="/admin/polls">
-          <div className="cta-title">Manage Polls</div>
-          <div className="cta-sub">Create polls and options</div>
-        </a>
+        <Link href="/admin/posts" className="card p-5 hover:bg-white/5">
+          <div className="text-xl font-semibold">Blog</div>
+          <div className="text-white/70 text-sm">Create/edit posts, upload images</div>
+        </Link>
+
+        <Link href="/admin/polls" className="card p-5 hover:bg-white/5">
+          <div className="text-xl font-semibold">Polls</div>
+          <div className="text-white/70 text-sm">Create/hide polls and manage results</div>
+        </Link>
+
+        <Link href="/admin/recaps" className="card p-5 hover:bg-white/5">
+          <div className="text-xl font-semibold">Weekly Recap</div>
+          <div className="text-white/70 text-sm">Post weekly CWS write-ups</div>
+        </Link>
       </div>
     </div>
   );

@@ -1,47 +1,123 @@
-export const metadata = {
-  title: "CWS — Coulda, Woulda, Shoulda · The Skol Sisters",
-  description:
-    "Vent zone for last week’s fantasy decisions. Laugh, cry, heal, repeat.",
-};
+import React from "react";
+import Link from "next/link";
+import matter from "gray-matter";
+import ReactMarkdown from "react-markdown";
+import { listDir, getFile } from "@/lib/github";
 
-export default function CWSPage() {
-  return (
-    <section className="container py-12 max-w-3xl">
-      <h1 className="text-3xl md:text-4xl font-extrabold">
-        CWS <span className="text-white/60 text-xl">— Coulda, Woulda, Shoulda</span>
-      </h1>
-      <p className="mt-3 text-white/80">
-        Welcome to the weekly confessional. This is the safe place to admit you
-        benched a 30-burger for a “gut feel,” forgot a 9:30am London kickoff, or
-        traded away the guy who immediately turned into Jerry Rice.
-      </p>
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-      <div className="mt-8 grid gap-4">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-          <h2 className="font-semibold">How it works</h2>
-          <ol className="list-decimal ml-5 mt-2 space-y-1 text-white/80">
-            <li>Share your CWS moment from last week (be dramatic, we support it).</li>
-            <li>Tell us what you <em>woulda</em> done differently.</li>
-            <li>Get a little empathy and a little roast. Both are healing. 💜</li>
-          </ol>
-        </div>
+const RECAPS_DIR = "content/recaps";
 
-        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-          <h3 className="font-semibold">Prompts to get you going</h3>
-          <ul className="list-disc ml-5 mt-2 space-y-1 text-white/80">
-            <li>“Started the ‘safe’ RB. Watched my bench RB score twice. Send thoughts & prayers.”</li>
-            <li>“Dropped a sleeper on Saturday. He became Sunday’s headline.”</li>
-            <li>“Traded upside for ‘floor’. Floor collapsed.”</li>
-          </ul>
-        </div>
+function safeDateValue(d) {
+  // Prefer YYYY-MM-DD; if missing/invalid, return empty so sort falls back.
+  if (!d) return "";
+  // basic guard to avoid "Invalid Date" issues
+  return /^\d{4}-\d{2}-\d{2}/.test(d) ? d : "";
+}
 
-        <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-5">
-          <p className="text-sm">
-            Pro tip: Turn CWS into FYW—<strong>Fix Your Week</strong>. Note one takeaway
-            you’ll actually apply before waivers lock.
-          </p>
-        </div>
+async function fetchAllRecapsDetailed() {
+  const entries = await listDir(RECAPS_DIR).catch(() => []);
+  const files = (entries || []).filter(e => e.type === "file" && e.name.endsWith(".md"));
+
+  const items = [];
+  for (const f of files) {
+    try {
+      const got = await getFile(f.path);
+      if (!got?.contentBase64) continue;
+      const text = Buffer.from(got.contentBase64, "base64").toString("utf8");
+      const { data, content } = matter(text);
+      const slug = f.name.replace(/\.md$/, "");
+      items.push({
+        slug,
+        title: data.title || slug,
+        date: safeDateValue(data.date),
+        excerpt: data.excerpt || "",
+        content: content || "",
+      });
+    } catch {
+      // ignore an individual bad file and continue
+    }
+  }
+
+  // Newest first by date; if equal/missing, fall back to slug desc (recently named usually last)
+  items.sort((a, b) =>
+    String(b.date).localeCompare(String(a.date)) || b.slug.localeCompare(a.slug)
+  );
+
+  return items;
+}
+
+export default async function CwsIndexPage() {
+  const recaps = await fetchAllRecapsDetailed();
+
+  if (!recaps.length) {
+    return (
+      <div className="container mx-auto max-w-5xl px-4 py-10">
+        <h1 className="text-3xl font-bold mb-2">Weekly Recap</h1>
+        <p className="text-white/70 mb-6">
+          Our Coulda/Woulda/Shoulda corner: weekly reflections and what we’d tweak next time.
+        </p>
+        <div className="text-white/60">No recaps yet. Check back soon!</div>
       </div>
-    </section>
+    );
+  }
+
+  const [featured, ...older] = recaps;
+
+  return (
+    <div className="container mx-auto max-w-5xl px-4 py-10 space-y-10">
+      <header>
+        <h1 className="text-3xl font-bold">Weekly Recap</h1>
+        <p className="text-white/70 mt-2">
+          Your weekly Coulda/Woulda/Shoulda. The latest recap is featured below; past weeks are listed after.
+        </p>
+      </header>
+
+      {/* Featured (latest) recap rendered in full */}
+      <section className="card p-6 space-y-4">
+        <div className="text-xs uppercase tracking-wide text-white/60">This Week’s Recap</div>
+        <h2 className="text-2xl font-semibold">{featured.title}</h2>
+        {featured.date && <div className="text-white/60 text-sm">{featured.date}</div>}
+
+        <article className="prose prose-invert max-w-none">
+          <ReactMarkdown>{featured.content}</ReactMarkdown>
+        </article>
+
+        <div className="flex items-center gap-3 pt-2">
+          <Link
+            href={`/cws/${encodeURIComponent(featured.slug)}`}
+            className="px-3 py-1.5 rounded border border-white/20 text-white hover:bg-white/10"
+          >
+            Open comments & reactions
+          </Link>
+          {featured.excerpt && (
+            <div className="text-white/60 text-sm line-clamp-1">Summary: {featured.excerpt}</div>
+          )}
+        </div>
+      </section>
+
+      {/* Older recaps as tiles */}
+      <section>
+        <h3 className="text-xl font-semibold mb-3">Previous Weeks</h3>
+        {older.length === 0 ? (
+          <div className="text-white/60">No earlier recaps yet.</div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {older.map((r) => (
+              <Link
+                key={r.slug}
+                href={`/cws/${encodeURIComponent(r.slug)}`}
+                className="card p-5 hover:bg-white/5 transition-colors"
+              >
+                <div className="text-sm text-white/50">{r.date || "Undated"}</div>
+                <div className="text-lg font-semibold mt-1 line-clamp-2">{r.title}</div>
+                {r.excerpt && <div className="text-white/70 text-sm mt-2 line-clamp-3">{r.excerpt}</div>}
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
