@@ -8,7 +8,11 @@ export default async function TrendingTicker() {
     <div className="ticker" aria-label="Trending fantasy players">
       <ul className="ticker-track" tabIndex={0}>
         {items.map((p, i) => (
-          <li key={`${p.player_id}-${i}`} className="flex-shrink-0 mr-8">
+          <li
+            key={`${p.player_id}-${i}`}
+            className="flex-shrink-0"
+            aria-hidden={i >= players.length}
+          >
             <span className="font-semibold">{p.full_name}</span>{" "}
             {p.team ? (
               <span className="text-white/60 text-sm">
