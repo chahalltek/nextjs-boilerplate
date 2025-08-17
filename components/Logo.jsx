@@ -1,6 +1,6 @@
 // components/Logo.jsx
 import Image from "next/image";
-export default function Logo({ size = 28 }) {
+export default function Logo({ size = 36 }) {
   return (
      <Image
       src="/brand/logo.png"

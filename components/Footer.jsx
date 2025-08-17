@@ -22,7 +22,7 @@ export default function SiteFooter() {
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           {/* Brand */}
           <Link href="/" className="flex items-center gap-2">
-            <Logo size={18} />
+            <Logo size={24} />
             <span className="font-semibold">Hey Skol Sister</span>
           </Link>
 
