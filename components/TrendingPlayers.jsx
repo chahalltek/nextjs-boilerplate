@@ -1,7 +1,7 @@
-import { getTrendingPlayers, SleeperPlayer } from "@/lib/sleeper";
+import { getTrendingPlayers } from "@/lib/sleeper";
 
 export default async function TrendingPlayers() {
-  const players: (SleeperPlayer & { count: number })[] = await getTrendingPlayers();
+   const players = await getTrendingPlayers();
 
   return (
     <section className="container mt-16">
