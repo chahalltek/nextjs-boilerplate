@@ -4,6 +4,7 @@ export const dynamic = "error"; // build-time render
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
+import TrendingPlayers from "@/components/TrendingPlayers";
 
 export default function HomePage() {
   const posts =
@@ -55,6 +56,8 @@ export default function HomePage() {
           </p>
         </div>
       </section>
+      {/* TRENDING PLAYERS */}
+      <TrendingPlayers />
 
       {/* VALUE PROPS */}
       <section className="container grid md:grid-cols-3 gap-4">
