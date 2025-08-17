@@ -18,3 +18,21 @@ body {
 .prose :where(code):not(:where([class~="not-prose"] *)) {
   @apply bg-white/10 px-1.5 py-0.5 rounded;
 }
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker {
+  @apply overflow-hidden border-y border-white/10;
+}
+
+.ticker-track {
+  @apply flex gap-8 py-2 whitespace-nowrap w-max;
+  animation: ticker 30s linear infinite;
+}
+
+.ticker:hover .ticker-track,
+.ticker:focus-within .ticker-track {
+  animation-play-state: paused;
+}
