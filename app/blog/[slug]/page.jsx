@@ -3,80 +3,42 @@ import { getFile } from "@/lib/github";
 import matter from "gray-matter";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
+import { notFound } from "next/navigation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const HyvorComments = dynamic(() => import("@/components/HyvorComments"), { ssr: false });
-
-const DIR = "content/posts";
-
-function normTags(tags) {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags.map(String).map((t) => t.trim()).filter(Boolean);
-  if (typeof tags === "string") return tags.split(",").map((t) => t.trim()).filter(Boolean);
-  return [];
-}
-
-export async function generateMetadata({ params }) {
-  const slug = params.slug;
-  const file = await getFile(`${DIR}/${slug}.md`);
-  if (!file?.contentBase64) return { title: "Post — Hey Skol Sister" };
-  const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
-  const { data } = matter(raw);
-  return {
-    title: `${data.title || slug} — Hey Skol Sister`,
-    description: data.excerpt || "",
-  };
-}
+const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { ssr: false });
 
 export default async function BlogPostPage({ params }) {
-  const slug = params.slug;
-  const file = await getFile(`${DIR}/${slug}.md`);
-  if (!file?.contentBase64) return <div className="container py-10">Not found.</div>;
+  const path = `content/posts/${params.slug}.md`;
+  const file = await getFile(path);
+  if (!file?.contentBase64) return notFound();
 
   const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
   const parsed = matter(raw);
   const fm = parsed.data || {};
-  const tags = normTags(fm.tags);
+  if (fm.draft) return notFound();
 
-  const canonical = `https://www.theskolsisters.com/blog/${encodeURIComponent(slug)}`;
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Article",
-    headline: fm.title || slug,
-    datePublished: fm.date || undefined,
-    dateModified: fm.date || undefined,
-    description: fm.excerpt || undefined,
-    keywords: tags.join(", "),
-    mainEntityOfPage: canonical,
-  };
+  const pageId = `blog:${params.slug}`;
 
   return (
     <div className="container max-w-3xl py-10 space-y-6">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <div className="text-sm text-white/60">{fm.date}</div>
-      <h1 className="text-3xl font-bold">{fm.title || slug}</h1>
-      {fm.excerpt && <p className="text-white/80">{fm.excerpt}</p>}
+      <Link href="/blog" className="text-white/70 hover:text-white">← Back to Blog</Link>
 
-      {tags.length > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {tags.map((t) => (
-            <li key={t}>
-              <Link href={`/tags/${encodeURIComponent(t)}`} className="text-xs rounded-full border border-white/20 px-2 py-0.5 text-white/70 hover:text-white">
-                #{t}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <article className="prose prose-invert max-w-none">
-        <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
+      <article className="space-y-3">
+        <div className="text-sm text-white/60">{fm.date}</div>
+        <h1 className="text-3xl font-bold">{fm.title || params.slug}</h1>
+        {fm.excerpt && <p className="text-white/80">{fm.excerpt}</p>}
+        <div className="prose prose-invert max-w-none">
+          <ReactMarkdown>{parsed.content}</ReactMarkdown>
+        </div>
       </article>
 
-      <HyvorComments pageId={`blog:${slug}`} />
+      <div className="card p-4">
+        <HyvorComments pageId={pageId} />
+      </div>
     </div>
   );
 }
