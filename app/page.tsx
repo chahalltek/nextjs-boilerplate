@@ -26,7 +26,7 @@ export default function HomePage() {
           </div>
 
           <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">
-            The Skol Sisters
+            Hey Skol Sister
           </h1>
 
           <p className="mt-4 text-white/80 max-w-2xl mx-auto text-lg">

@@ -4,7 +4,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "The Skol Sisters",
+  title: "Hey Skol Sister",
   description: "Smart, sisterly fantasy football advice—with Skol spirit.",
   metadataBase: new URL("https://www.theskolsisters.com"),
   alternates: { canonical: "/" },
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: "@SkolSisters",
     images: ["/og/default-og.png"],
-    title: "The Skol Sisters",
+    title: "Hey Skol Sister",
     description: "Smart, sisterly fantasy football advice—with Skol spirit.",
   },
 };
