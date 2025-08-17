@@ -23,8 +23,7 @@ export default function HomePage() {
 
         <div className="container">
           <div className="mx-auto flex items-center justify-center gap-3">
-            <Logo size={70} />
-            <span className="uppercase tracking-widest text-white/70 text-xs">Fantasy Football</span>
+            <Logo size={100} />
           </div>
 
           <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">
@@ -32,7 +31,7 @@ export default function HomePage() {
           </h1>
 
           <p className="mt-4 text-white/80 max-w-2xl mx-auto text-lg">
-            Smart, sisterly fantasy football advice—with Skol spirit.
+            Nobody cares about your fantasy team - Except Us!!
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3">
