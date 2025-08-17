@@ -17,6 +17,15 @@ const SITE_ID = Number(process.env.NEXT_PUBLIC_HYVOR_SITE_ID || 13899);
 export default function HyvorComments({ pageId }) {
   useEffect(() => {
     if (!pageId) return;
+     // Configure (Hyvor reads these globals). Do this before loading the script
+    // to ensure the embed picks up the correct values on first load.
+    // eslint-disable-next-line no-undef
+    window.HYVOR_TALK_WEBSITE = SITE_ID;
+    // eslint-disable-next-line no-undef
+    window.HYVOR_TALK_CONFIG = {
+      id: pageId, // stable thread id per poll
+      url: window.location.href, // best-effort; Hyvor updates on navigation
+    };
 
     // Insert the script once
     const SCRIPT_ID = "hyvor-talk-script";
@@ -27,16 +36,11 @@ export default function HyvorComments({ pageId }) {
       s.type = "module";
       s.async = true;
       document.body.appendChild(s);
-    }
+     } else {
+      // If already loaded, ask Hyvor to re-render with the new config
+      // eslint-disable-next-line no-undef
+      window.HYVOR_TALK?.reload?.();
 
-    // Configure (Hyvor reads these globals)
-    // eslint-disable-next-line no-undef
-    window.HYVOR_TALK_WEBSITE = SITE_ID;
-    // eslint-disable-next-line no-undef
-    window.HYVOR_TALK_CONFIG = {
-      id: pageId,                 // stable thread id per poll
-      url: window.location.href,  // best-effort; Hyvor updates on navigation
-    };
   }, [pageId]);
 
   return (
