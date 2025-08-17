@@ -8,6 +8,7 @@ export default function SiteFooter() {
     { href: "/about", label: "About" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
   { href: "/start-sit", label: "Start/Sit" },
+  { href: "/stats", label: "Stats" },
   { href: "/holdem-foldem", label: "Hold ’em / Fold ’em", title: "Who to stash, who to trash" },
   { href: "/blog", label: "Blog" },
   { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
