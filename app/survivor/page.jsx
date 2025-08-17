@@ -12,6 +12,10 @@ export const metadata = {
 const SurvivorClient = nextDynamic(() => import("./survivor-client"), {
   ssr: false,
 });
+const PlayerStats = nextDynamic(
+  () => import("./survivor-client").then((m) => m.PlayerStats),
+  { ssr: false }
+);
 const SurvivorTimeline = nextDynamic(
   () => import("./survivor-client").then((m) => m.SurvivorTimeline),
   { ssr: false }
@@ -36,6 +40,11 @@ export default function SurvivorPage() {
       </section>
 
       <SurvivorClient />
+
+      <section className="card p-4 md:p-6">
+        <h2 className="text-2xl font-semibold mb-4">Player stats</h2>
+        <PlayerStats />
+      </section>
 
       <SurvivorTimeline />
 

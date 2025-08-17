@@ -6,6 +6,88 @@ import HyvorComments from "@/components/HyvorComments";
 
 const keyFor = (slug) => `poll:${slug}:voted`;
 
+export function PlayerStats() {
+  const [stats, setStats] = useState({});
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_SURVIVOR_API ||
+        "https://example.com/api/survivor";
+      const res = await fetch(
+        `${base}/episodes?fields=challenge_results,advantages,hidden_idols`,
+        { cache: "no-store" }
+      );
+      const data = await res.json().catch(() => ({}));
+      const episodes = data.episodes || [];
+      const totals = {};
+      episodes.forEach((ep) => {
+        (ep.challenge_results || []).forEach((cr) => {
+          (cr.winners || []).forEach((name) => {
+            totals[name] ??= { wins: 0, idols: 0 };
+            totals[name].wins += 1;
+          });
+        });
+        const logIdol = (player) => {
+          if (!player) return;
+          totals[player] ??= { wins: 0, idols: 0 };
+          totals[player].idols += 1;
+        };
+        (ep.advantages || []).forEach((a) =>
+          logIdol(a.played_by || a.player)
+        );
+        (ep.hidden_idols || []).forEach((h) =>
+          logIdol(h.played_by || h.player)
+        );
+      });
+      setStats(totals);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const id = setInterval(fetchStats, 60000);
+    return () => clearInterval(id);
+  }, [fetchStats]);
+
+  const entries = Object.entries(stats);
+  if (!entries.length) {
+    return <div className="text-white/60">No stats yet.</div>;
+  }
+
+  const maxWins = Math.max(...entries.map(([, s]) => s.wins));
+
+  return (
+    <ul className="space-y-3">
+      {entries.map(([name, { wins, idols }]) => (
+        <li key={name} className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">{name}</span>
+            {idols > 0 && (
+              <span className="ml-2 inline-block rounded bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-400">
+                🗿 {idols}
+              </span>
+            )}
+          </div>
+          <div className="h-2 rounded bg-white/10">
+            <div
+              className="h-full bg-emerald-400"
+              style={{ width: `${(wins / maxWins) * 100}%` }}
+            />
+          </div>
+          <div className="text-xs text-white/60">
+            {wins} challenge win{wins === 1 ? "" : "s"}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+
+
 export default function SurvivorClient() {
   const [polls, setPolls] = useState([]);        // [{ slug, question, options: [{label}], active, results? }]
   const [selected, setSelected] = useState(null); // slug
