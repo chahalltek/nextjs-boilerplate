@@ -1,6 +1,6 @@
 // app/start-sit/page.jsx
 import Link from "next/link";
-import { getInjuredPlayers } from "@/lib/sleeper";
+import { getInjuredPlayers } from "@/lib/sleeper.js";
 
 export const metadata = {
   title: "Start/Sit — Hey Skol Sister",

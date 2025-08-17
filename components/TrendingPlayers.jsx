@@ -1,4 +1,4 @@
-import { getTrendingPlayers } from "@/lib/sleeper";
+import { getTrendingPlayers } from "@/lib/sleeper.js";
 
 export default async function TrendingPlayers() {
    const players = await getTrendingPlayers();
