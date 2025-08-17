@@ -6,7 +6,7 @@ import matter from "gray-matter";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SITE_URL = (process.env.SITE_URL || "https://www.theskolsisters.com").replace(/\/+$/,"");
+const SITE_URL = (process.env.SITE_URL || "https://www.heyskolsister.com").replace(/\/+$/,"");
 const DIR = "content/posts";
 
 // Utility

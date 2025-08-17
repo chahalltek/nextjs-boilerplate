@@ -2,7 +2,7 @@
 import { listDir, getFile } from "@/lib/github";
 import matter from "gray-matter";
 
-const SITE_URL = (process.env.SITE_URL || "https://www.theskolsisters.com").replace(/\/+$/,"");
+const SITE_URL = (process.env.SITE_URL || "https://www.heyskolsister.com").replace(/\/+$/,"");
 
 // Directories in the repo
 const POSTS_DIR   = "content/posts";

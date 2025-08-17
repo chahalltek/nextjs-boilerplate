@@ -6,7 +6,7 @@ import Footer from "@/components/Footer";
 export const metadata: Metadata = {
   title: "Hey Skol Sister",
   description: "Smart, sisterly fantasy football advice—with Skol spirit.",
-  metadataBase: new URL("https://www.theskolsisters.com"),
+  metadataBase: new URL("https://www.heyskolsister.com"),
   alternates: { canonical: "/" },
   openGraph: { images: ["/og/default-og.png"] },
   twitter: {

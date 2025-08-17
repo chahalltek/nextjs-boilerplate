@@ -42,7 +42,7 @@ export default function PrivacyPage() {
 
       <h2>Contact</h2>
       <p>
-        Questions? Email us at <a href="mailto:hello@theskolsisters.com">hello@theskolsisters.com</a>.
+        Questions? Email us at <a href="mailto:admin@theskolsisters.com">admin@heyskolsister.com</a>.
       </p>
     </div>
   );
