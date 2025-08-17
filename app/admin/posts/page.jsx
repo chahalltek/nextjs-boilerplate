@@ -13,6 +13,7 @@ export default function AdminPostsPage() {
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [excerpt, setExcerpt] = useState("");
+  const [tags, setTags] = useState(""); // comma-separated
   const [date, setDate] = useState("");
   const [content, setContent] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
@@ -103,6 +104,10 @@ export default function AdminPostsPage() {
           excerpt,
           content: coverUrl ? `![cover image](${coverUrl})\n\n${content}` : content,
           date: date || undefined,
+          tags: tags
+           .split(",")
+           .map((t) => t.trim())
+           .filter(Boolean),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -331,7 +336,16 @@ export default function AdminPostsPage() {
               />
             </div>
           </div>
-
+      <div>
+       <label className="block text-sm text-white/70 mb-1">Tags</label>
+       <input
+         className="input w-full"
+         placeholder="draft, waivers, strategy"
+         value={tags}
+         onChange={(e) => setTags(e.target.value)}
+       />
+       <p className="text-xs text-white/50 mt-1">Comma-separated. Powers tag pages & related content.</p>
+     </div>
           <div className="flex items-center gap-3">
             <button
               type="submit"

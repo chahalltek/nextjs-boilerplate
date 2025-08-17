@@ -4,6 +4,8 @@ import matter from "gray-matter";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
+import TagChips from "@/components/TagChips";
+import RelatedByTags from "@/components/RelatedByTags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +51,7 @@ export default async function RecapDetailPage({ params }) {
       <article className="space-y-3">
         <div className="text-sm text-white/60">{fm.date}</div>
         <h1 className="text-2xl font-bold">{fm.title || slug}</h1>
+        {Array.isArray(fm.tags) && <TagChips tags={fm.tags} />}
         {fm.excerpt && <p className="text-white/80">{fm.excerpt}</p>}
         <div className="prose prose-invert max-w-none">
           <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
@@ -62,3 +65,11 @@ export default async function RecapDetailPage({ params }) {
     </div>
   );
 }
+ {Array.isArray(fm.tags) && fm.tags.length > 0 && (
+   <RelatedByTags
+     dir="content/recaps"
+     base="/cws"
+     currentSlug={slug}
+     currentTags={fm.tags}
+   />
+ )}

@@ -6,6 +6,8 @@ import remarkGfm from "remark-gfm";
 
 import { getAllPosts, getPostBySlug } from "@/lib/posts";
 import HyvorComments from "@/components/HyvorComments";
+import TagChips from "@/components/TagChips";
+import RelatedByTags from "@/components/RelatedByTags";
 
 export async function generateMetadata({ params }) {
   const post = getPostBySlug(params.slug);
@@ -33,6 +35,7 @@ export default async function BlogPostPage({ params }) {
           {post.content}
         </ReactMarkdown>
       </article>
+      {Array.isArray(frontmatter.tags) && <TagChips tags={frontmatter.tags} />}
 
       <section className="container max-w-3xl mt-10 mb-16">
         <h2 className="text-xl font-semibold mb-3">Join the conversation</h2>
@@ -52,3 +55,11 @@ export async function generateStaticParams() {
   const posts = getAllPosts();
   return posts.map((p) => ({ slug: p.slug }));
 }
+{Array.isArray(frontmatter.tags) && frontmatter.tags.length > 0 && (
+   <RelatedByTags
+     dir="content/posts"
+     base="/blog"
+     currentSlug={slug}
+     currentTags={frontmatter.tags}
+   />
+ )}

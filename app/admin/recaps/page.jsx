@@ -13,6 +13,7 @@ export default function RecapsAdminPage() {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [excerpt, setExcerpt] = useState("");
+  const [tags, setTags] = useState("");
   const [content, setContent] = useState("");
   const [published, setPublished] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -217,6 +218,15 @@ export default function RecapsAdminPage() {
             <p className="text-xs text-white/50 mt-1">
               Saved as <code>content/recaps/&lt;slug&gt;.md</code>
             </p>
+          </div>
+          <div>
+           <label className="block text-sm text-white/70 mb-1">Tags</label>
+           <input
+           className="input w-full"
+           placeholder="week-1, recap, injuries"
+           value={tags}
+           onChange={(e) => setTags(e.target.value)}
+        />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>

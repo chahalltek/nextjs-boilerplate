@@ -16,18 +16,33 @@ function fromBase64(b64) {
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
-function buildMarkdown({ title, excerpt, content, date, draft }) {
-  // Keep front-matter tidy
+/** Normalize tags from string | string[] -> string[] */
+function normalizeTags(t) {
+  if (!t) return [];
+  if (Array.isArray(t)) {
+    return t.map(String).map((x) => x.trim()).filter(Boolean);
+  }
+  if (typeof t === "string") {
+    return t
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function buildMarkdown({ title, excerpt, content, date, draft, tags }) {
   const data = {
     ...(title ? { title } : {}),
     ...(excerpt ? { excerpt } : {}),
     ...(date ? { date } : {}),
     ...(typeof draft === "boolean" ? { draft } : {}),
+    ...(Array.isArray(tags) && tags.length ? { tags } : {}),
   };
   return matter.stringify(content || "", data);
 }
 
-// GET (optional) – returns raw markdown (used by editor preview if you need it)
+// GET – returns raw markdown
 export async function GET(_req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
@@ -43,14 +58,14 @@ export async function GET(_req, { params }) {
   return NextResponse.json({ ok: true, content: md });
 }
 
-// PUT – create/update a post
+// PUT – create/update a post (now with tags)
 export async function PUT(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
   const { slug } = params;
   const body = await request.json().catch(() => ({}));
-  const { title, excerpt, content, date, draft } = body || {};
+  const { title, excerpt, content, date, draft, tags: rawTags } = body || {};
 
   if (!slug || !title || !content) {
     return NextResponse.json(
@@ -59,7 +74,8 @@ export async function PUT(request, { params }) {
     );
   }
 
-  const markdown = buildMarkdown({ title, excerpt, content, date, draft });
+  const tags = normalizeTags(rawTags);
+  const markdown = buildMarkdown({ title, excerpt, content, date, draft, tags });
   const path = `${POSTS_DIR}/${slug}.md`;
 
   try {

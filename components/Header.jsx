@@ -16,6 +16,8 @@ const nav = [
   { href: "/blog", label: "Blog" },
   { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
   { href: "/survivor", label: "Survivor" },
+  { href: "/search", label: "Search" },
+];
 ];
 
 export default function Header() {
