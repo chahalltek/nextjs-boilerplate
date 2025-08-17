@@ -22,6 +22,29 @@ export const metadata = {
   },
   themeColor: "#4F2683",
 };
+export const metadata = {
+    openGraph: {
+    title: "Hey Skol Sister",
+    description: "Fantasy football + Survivor energy.",
+    url: process.env.SITE_URL || "https://www.theskolsisters.com",
+    siteName: "Hey Skol Sister",
+    images: [
+      {
+        url: `/og?t=${encodeURIComponent("Hey Skol Sister")}`,
+        width: 1200,
+        height: 630,
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Hey Skol Sister",
+    description: "Fantasy football + Survivor energy.",
+    images: [`/og?t=${encodeURIComponent("Hey Skol Sister")}`],
+  },
+};
 
 export default function RootLayout({ children }) {
   return (
