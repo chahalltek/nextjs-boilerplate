@@ -23,7 +23,7 @@ export default function HomePage() {
 
         <div className="container">
           <div className="mx-auto flex items-center justify-center gap-3">
-            <Logo size={60} />
+            <Logo size={70} />
             <span className="uppercase tracking-widest text-white/70 text-xs">Fantasy Football</span>
           </div>
 
