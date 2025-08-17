@@ -166,8 +166,9 @@ export default async function CwsIndexPage() {
                 >
                   Open comments & reactions →
                 </Link>
-               </article>
-
+              </div>
+              </article>
+              
             {/* Explainer */}
             <CwsExplainer />
 
