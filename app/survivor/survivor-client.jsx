@@ -209,6 +209,62 @@ export default function SurvivorClient() {
     </div>
   );
 }
+
+export function CastGrid({ season = 46 }) {
+  const [cast, setCast] = useState([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(
+          `https://www.doehm.io/survivor/api/v1/castaways?season=${season}`,
+          { cache: "no-store" }
+        );
+        const data = await res.json().catch(() => ({}));
+        setCast(Array.isArray(data.castaways) ? data.castaways : data);
+      } catch (e) {
+        console.error("Failed to load castaways", e);
+      }
+    }
+    load();
+  }, [season]);
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      {cast.map((p) => {
+        const name = p.name || p.full_name || p.castaway;
+        const tribe = p.tribe || p.tribe_name || p.original_tribe;
+        const avatar = p.image || p.image_url;
+        const eliminated = p.is_eliminated || p.voted_out || p.result === "Eliminated";
+
+        return (
+          <div
+            key={p.castaway_id || p.id || name}
+            className={`card p-4 text-center ${eliminated ? "opacity-50" : ""}`}
+          >
+            {avatar && (
+              <img
+                src={avatar}
+                alt={name}
+                className="mx-auto mb-2 h-24 w-24 rounded-full object-cover"
+              />
+            )}
+            <div className="font-semibold">{name}</div>
+            {tribe && (
+              <div className="text-sm text-white/70">{tribe}</div>
+            )}
+            {eliminated && (
+              <span className="mt-2 inline-block rounded bg-red-600 px-2 py-0.5 text-xs text-white">
+                Voted out
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Timeline component showing episode history
 export function SurvivorTimeline() {
   const [episodes, setEpisodes] = useState([]);
