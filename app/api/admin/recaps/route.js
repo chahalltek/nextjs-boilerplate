@@ -9,24 +9,24 @@ export const dynamic = "force-dynamic";
 
 const DIR = "content/recaps";
 
-/** Normalize tags from string | string[] -> string[] */
-function normalizeTags(t) {
-  if (!t) return [];
-  if (Array.isArray(t)) return t.map(String).map((x) => x.trim()).filter(Boolean);
-  if (typeof t === "string") {
-    return t.split(",").map((x) => x.trim()).filter(Boolean);
+function normTags(tags) {
+  if (!tags) return undefined;
+  if (Array.isArray(tags)) return tags.map(String).map((t) => t.trim()).filter(Boolean);
+  if (typeof tags === "string") {
+    const arr = tags.split(",").map((t) => t.trim()).filter(Boolean);
+    return arr.length ? arr : undefined;
   }
-  return [];
+  return undefined;
 }
 
-/** Build MD with front-matter */
-function buildMarkdown({ title, date, excerpt, published, content, tags }) {
+function buildMarkdown({ title, date, excerpt, published, publishAt, tags, content }) {
   const fm = {
     title: title || "",
     date: date || new Date().toISOString().slice(0, 10),
     excerpt: excerpt || "",
     published: !!published,
-    ...(Array.isArray(tags) && tags.length ? { tags } : {}),
+    ...(publishAt ? { publishAt } : {}),
+    ...(normTags(tags) ? { tags: normTags(tags) } : {}),
   };
   return matter.stringify(content || "", fm);
 }
@@ -36,35 +36,28 @@ export async function GET() {
   if (denied) return denied;
 
   try {
-    const items = await listDir(DIR); // [{name, path, type, sha, ...}]
+    const items = await listDir(DIR);
     const mdFiles = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
 
     const recaps = [];
     for (const f of mdFiles) {
       const file = await getFile(f.path);
       if (!file?.contentBase64) continue;
-
       const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
       const parsed = matter(raw);
       const fm = parsed.data || {};
       const slug = f.name.replace(/\.md$/, "");
-
-      // ensure tags is array<string>
-      const tags = Array.isArray(fm.tags)
-        ? fm.tags.map(String).map((x) => x.trim()).filter(Boolean)
-        : normalizeTags(fm.tags);
-
       recaps.push({
         slug,
         title: fm.title || slug,
         date: fm.date || "",
         excerpt: fm.excerpt || "",
         published: !!fm.published,
-        tags,
+        publishAt: fm.publishAt || "",
+        tags: Array.isArray(fm.tags) ? fm.tags : [],
       });
     }
 
-    // newest first by date (fallback slug)
     recaps.sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
     return NextResponse.json({ ok: true, recaps });
   } catch (e) {
@@ -78,13 +71,12 @@ export async function POST(request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { slug, title, date, excerpt, published, content, tags: rawTags } = body || {};
+    const { slug, title, date, excerpt, published, publishAt, tags, content } = body || {};
     if (!slug || !title) {
       return NextResponse.json({ ok: false, error: "Missing slug or title" }, { status: 400 });
     }
 
-    const tags = normalizeTags(rawTags);
-    const md = buildMarkdown({ title, date, excerpt, published, content, tags });
+    const md = buildMarkdown({ title, date, excerpt, published, publishAt, tags, content });
     const base64 = Buffer.from(md, "utf8").toString("base64");
     const path = `${DIR}/${slug}.md`;
 

@@ -1,31 +1,76 @@
+// app/blog/page.jsx
+import { listDir, getFile } from "@/lib/github";
+import matter from "gray-matter";
 import Link from "next/link";
-import { getAllPosts } from "@/lib/posts";
 
 export const runtime = "nodejs";
-export const metadata = {
-  title: "Blog — Hey Skol Sister",
-  description: "Fantasy football strategy, Start/Sit tiers, Waiver Wire gems, and Survivor talk."
-};
+export const dynamic = "force-dynamic";
 
-export default function BlogIndex() {
-  const posts = getAllPosts();
+const DIR = "content/posts";
+
+function normTags(tags) {
+  if (!tags) return [];
+  if (Array.isArray(tags)) return tags.map(String).map((t) => t.trim()).filter(Boolean);
+  if (typeof tags === "string") return tags.split(",").map((t) => t.trim()).filter(Boolean);
+  return [];
+}
+
+async function fetchPosts() {
+  const items = await listDir(DIR);
+  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
+  const out = [];
+
+  for (const f of files) {
+    const file = await getFile(f.path);
+    if (!file?.contentBase64) continue;
+    const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
+    const parsed = matter(raw);
+    const fm = parsed.data || {};
+    if (fm.draft === true) continue;
+
+    out.push({
+      slug: f.name.replace(/\.md$/, ""),
+      title: fm.title || f.name,
+      date: fm.date || "",
+      excerpt: fm.excerpt || "",
+      tags: normTags(fm.tags),
+    });
+  }
+  out.sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
+  return out;
+}
+
+export default async function BlogIndexPage() {
+  const posts = await fetchPosts();
+
   return (
-    <div className="container py-12">
-      <h1 className="text-3xl md:text-4xl font-bold">Blog</h1>
-      <p className="text-white/80 mt-2">Waivers, trades, tiers, and Survivor talk.</p>
+    <div className="container max-w-5xl py-10 space-y-6">
+      <h1 className="text-2xl font-bold">Blog</h1>
 
-      <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {posts.map((p) => (
-          <article key={p.slug} className="bg-white/5 border border-white/10 rounded-xl p-6">
-            <h2 className="font-semibold text-lg">
-              <Link href={`/blog/${p.slug}`} className="hover:underline">{p.title}</Link>
-            </h2>
-            {p.date && <p className="text-white/60 text-sm mt-1">{new Date(p.date).toLocaleDateString()}</p>}
-            {p.excerpt && <p className="text-white/80 mt-3">{p.excerpt}</p>}
-            <Link href={`/blog/${p.slug}`} className="inline-block mt-4 px-3 py-2 border border-white/20 rounded hover:bg-white/10">Read</Link>
-          </article>
-        ))}
-      </div>
+      {posts.length === 0 ? (
+        <div className="text-white/70">No posts yet.</div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {posts.map((p) => (
+            <Link key={p.slug} href={`/blog/${encodeURIComponent(p.slug)}`} className="card p-4 block hover:bg-white/5">
+              <div className="text-xs text-white/50">{p.date}</div>
+              <div className="font-medium">{p.title}</div>
+              {p.excerpt && <div className="text-sm text-white/70 mt-1">{p.excerpt}</div>}
+              {p.tags.length > 0 && (
+                <ul className="mt-2 flex flex-wrap gap-1">
+                  {p.tags.map((t) => (
+                    <li key={t}>
+                      <span className="text-[11px] rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        <Link href={`/tags/${encodeURIComponent(t)}`}>#{t}</Link>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// app/cws/[slug]/page.jsx
+// app/holdem-foldem/[slug]/page.jsx
 import { getFile } from "@/lib/github";
 import matter from "gray-matter";
 import dynamic from "next/dynamic";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const HyvorComments = dynamic(() => import("@/components/HyvorComments"), { ssr: false });
-const DIR = "content/recaps";
+const DIR = "content/holdem";
 
 function normTags(tags) {
   if (!tags) return [];
@@ -19,7 +19,7 @@ function normTags(tags) {
   return [];
 }
 
-export default async function CwsDetailPage({ params }) {
+export default async function HoldemDetailPage({ params }) {
   const slug = params.slug;
   const file = await getFile(`${DIR}/${slug}.md`);
   if (!file?.contentBase64) return notFound();
@@ -27,10 +27,10 @@ export default async function CwsDetailPage({ params }) {
   const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
   const parsed = matter(raw);
   const fm = parsed.data || {};
-  if (fm.published !== true) return notFound();
+  if (!fm.published) return notFound();
 
   const tags = normTags(fm.tags);
-  const canonical = `https://www.theskolsisters.com/cws/${encodeURIComponent(slug)}`;
+  const canonical = `https://www.theskolsisters.com/holdem-foldem/${encodeURIComponent(slug)}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -65,7 +65,7 @@ export default async function CwsDetailPage({ params }) {
         <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
       </article>
 
-      <HyvorComments pageId={`cws:${slug}`} />
+      <HyvorComments pageId={`holdem:${slug}`} />
     </div>
   );
 }
