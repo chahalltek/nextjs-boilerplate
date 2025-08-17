@@ -1,3 +1,4 @@
+// components/Header.jsx
 'use client';
 
 import Link from "next/link";
@@ -6,18 +7,15 @@ import { useState } from "react";
 import Logo from "@/components/Logo";
 
 const nav = [
-   // { href: "/episodes", label: "Episodes" }, //
-  
-  
+  // { href: "/episodes", label: "Episodes" }, // hidden for now
+  { href: "/start-sit", label: "Start/Sit" },
+  { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
-  { href: "/start-sit", label: "Start/Sit" },
-  { href: "/holdem-foldem", label: "Hold ’em / Fold ’em", title: "Who to stash, who to trash" },
-  { href: "/blog", label: "Blog" },
   { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
   { href: "/survivor", label: "Survivor" },
+  { href: "/holdem-foldem", label: "Hold ’em / Fold ’em" },
   { href: "/search", label: "Search" },
-];
 ];
 
 export default function Header() {
@@ -88,7 +86,7 @@ export default function Header() {
             ))}
             <Link
               href="/subscribe"
-              className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-black"
+              className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white"
               onClick={() => setOpen(false)}
             >
               Subscribe
