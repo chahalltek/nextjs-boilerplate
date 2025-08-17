@@ -23,7 +23,7 @@ export default function HomePage() {
 
         <div className="container">
           <div className="mx-auto flex items-center justify-center gap-3">
-            <Logo size={100} />
+            <Logo size={120} />
           </div>
 
           <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">
