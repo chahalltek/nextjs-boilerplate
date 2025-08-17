@@ -6,9 +6,8 @@ export const metadata = {
 };
 
 export default function PrivacyPage() {
-    const lastUpdated = new Date().toLocaleDateString();
+  const lastUpdated = new Date().toLocaleDateString();  
   const contactEmail = "admin@heyskolsister.com";
-
 
   return (
     <div className="container max-w-3xl py-12 prose prose-invert">
@@ -24,14 +23,13 @@ export default function PrivacyPage() {
             <strong>Email address</strong> if you subscribe to updates.
           </li>
           <li>
-            Basic usage data that our hosting provider or analytics tools
-            record (e.g., pages viewed, approximate region, device).
+          Basic usage data that our hosting provider or analytics tools record
+            (e.g., pages viewed, approximate region, device).
           </li>
         </ul>
       </section>
 
       <section>
-        <section>
         <h2>How we store it</h2>
         <p>
           Subscriber emails are stored securely with our email service or in our
@@ -43,11 +41,6 @@ export default function PrivacyPage() {
         <h2>How long we keep it</h2>
         <p>We keep your email until you unsubscribe or ask us to remove it.</p>
       </section>
-
-      <h2>How long we keep it</h2>
-      <p>
-        We keep your email until you unsubscribe or ask us to remove it.
-      </p>
 
        <section>
         <h2>Your choices</h2>

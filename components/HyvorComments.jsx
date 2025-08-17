@@ -36,11 +36,12 @@ export default function HyvorComments({ pageId }) {
       s.type = "module";
       s.async = true;
       document.body.appendChild(s);
-     } else {
+    } else {
       // If already loaded, ask Hyvor to re-render with the new config
       // eslint-disable-next-line no-undef
       window.HYVOR_TALK?.reload?.();
-
+    }
+    
   }, [pageId]);
 
   return (
