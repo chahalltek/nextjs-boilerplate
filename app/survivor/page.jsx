@@ -24,6 +24,10 @@ const CastGrid = nextDynamic(
   () => import("./survivor-client").then((m) => m.CastGrid),
   { ssr: false }
 );
+const SurvivorTicker = nextDynamic(
+  () => import("./survivor-client").then((m) => m.SurvivorTicker),
+  { ssr: false }
+);
 
 export default function SurvivorPage() {
   return (
@@ -34,6 +38,7 @@ export default function SurvivorPage() {
           Vote in the weekly poll and see live results.
         </p>
       </header>
+        <SurvivorTicker />
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">Cast</h2>
         <CastGrid />

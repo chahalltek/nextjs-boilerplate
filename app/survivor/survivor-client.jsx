@@ -347,6 +347,91 @@ export function CastGrid({ season = 46 }) {
   );
 }
 
+// Scrolling ticker summarizing eliminations
+export function SurvivorTicker({ season = 46 }) {
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [castRes, epsRes] = await Promise.all([
+          fetch(
+            `https://www.doehm.io/survivor/api/v1/castaways?season=${season}`,
+            { cache: "no-store" }
+          ),
+          fetch("https://skolsisters-survivor.fly.dev/api/episodes", {
+            cache: "no-store",
+          }),
+        ]);
+
+        const castData = await castRes.json().catch(() => ({}));
+        const castList = Array.isArray(castData.castaways)
+          ? castData.castaways
+          : castData;
+        let remaining = Array.isArray(castList) ? castList.length : 0;
+
+        const epsData = await epsRes.json().catch(() => ({}));
+        const eps = Array.isArray(epsData.episodes) ? epsData.episodes : [];
+        const tribals = Array.isArray(epsData.tribal_results)
+          ? epsData.tribal_results
+          : [];
+        const merged = eps
+          .map((ep) => ({
+            ...ep,
+            tribal:
+              tribals.find(
+                (t) =>
+                  t.episode === ep.episode ||
+                  t.episode === ep.id ||
+                  t.id === ep.episode
+              ) || null,
+          }))
+          .sort(
+            (a, b) => (a.episode || a.id || 0) - (b.episode || b.id || 0)
+          );
+
+        const list = [];
+        merged.forEach((ep) => {
+          const out = ep.tribal?.voted_out;
+          if (out) {
+            remaining = Math.max(0, remaining - 1);
+            list.push({
+              ep: ep.episode || ep.id,
+              name: out,
+              remaining,
+            });
+          }
+        });
+
+        setItems(list);
+      } catch (e) {
+        console.error("Failed to load ticker data", e);
+      }
+    }
+    load();
+  }, [season]);
+
+  if (!items.length) return null;
+
+  const loop = items.concat(items);
+
+  return (
+    <div className="ticker">
+      <div className="ticker-track">
+        {loop.map((item, i) => (
+          <span
+            key={i}
+            className="flex items-center gap-2 flex-shrink-0"
+          >
+            <span className="font-semibold">Week {item.ep}:</span>
+            {item.name}'s torch snuffed — {item.remaining} left
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Timeline component showing episode history
 export function SurvivorTimeline() {
   const [episodes, setEpisodes] = useState([]);
