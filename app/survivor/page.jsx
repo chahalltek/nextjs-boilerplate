@@ -16,9 +16,10 @@ const SurvivorTimeline = nextDynamic(
   () => import("./survivor-client").then((m) => m.SurvivorTimeline),
   { ssr: false }
 );
-// If you instead keep survivor-client.jsx at app/survivor-client.jsx,
-// use this path instead:
-// const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
+const CastGrid = nextDynamic(
+  () => import("./survivor-client").then((m) => m.CastGrid),
+  { ssr: false }
+);
 
 export default function SurvivorPage() {
   return (
@@ -29,6 +30,10 @@ export default function SurvivorPage() {
           Vote in the weekly poll and see live results.
         </p>
       </header>
+      <section className="space-y-4">
+        <h2 className="text-2xl font-semibold">Cast</h2>
+        <CastGrid />
+      </section>
 
       <SurvivorClient />
 
