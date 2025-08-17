@@ -9,6 +9,7 @@ import Logo from "@/components/Logo";
 const nav = [
   // { href: "/episodes", label: "Episodes" }, // hidden for now
   { href: "/start-sit", label: "Start/Sit" },
+  { href: "/stats", label: "Stats" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
