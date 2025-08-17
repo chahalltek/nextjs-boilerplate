@@ -209,3 +209,103 @@ export default function SurvivorClient() {
     </div>
   );
 }
+// Timeline component showing episode history
+export function SurvivorTimeline() {
+  const [episodes, setEpisodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          "https://skolsisters-survivor.fly.dev/api/episodes",
+          { cache: "no-store" }
+        );
+        const data = await res.json().catch(() => ({}));
+        const eps = Array.isArray(data.episodes) ? data.episodes : [];
+        const tribals = Array.isArray(data.tribal_results)
+          ? data.tribal_results
+          : [];
+        const merged = eps
+          .map((ep) => ({
+            ...ep,
+            tribal:
+              tribals.find(
+                (t) =>
+                  t.episode === ep.episode ||
+                  t.episode === ep.id ||
+                  t.id === ep.episode
+              ) || null,
+          }))
+          .sort(
+            (a, b) =>
+              (a.episode || a.id || 0) - (b.episode || b.id || 0)
+          );
+        setEpisodes(merged);
+      } catch {
+        setEpisodes([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <section className="space-y-4">
+        <h2 className="text-2xl font-semibold">Episode timeline</h2>
+        <div className="text-white/60">Loading…</div>
+      </section>
+    );
+  }
+
+  if (!loading && episodes.length === 0) {
+    return (
+      <section className="space-y-4">
+        <h2 className="text-2xl font-semibold">Episode timeline</h2>
+        <div className="text-white/60">No episodes yet.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-2xl font-semibold">Episode timeline</h2>
+      <ul className="space-y-3">
+        {episodes.map((ep) => (
+          <li
+            key={ep.id || ep.episode}
+            className="card p-4 md:p-6"
+          >
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <div className="font-medium">
+                  Episode {ep.episode || ep.id}: {ep.title}
+                </div>
+                {ep.air_date && (
+                  <div className="text-sm text-white/60">
+                    {new Date(ep.air_date).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </div>
+                )}
+              </div>
+              {ep.tribal?.voted_out && (
+                <div className="text-sm text-white/80">
+                  Voted out: <span className="font-semibold">{ep.tribal.voted_out}</span>
+                </div>
+              )}
+            </div>
+            {ep.description && (
+              <p className="mt-2 text-sm text-white/70">{ep.description}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

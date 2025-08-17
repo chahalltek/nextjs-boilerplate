@@ -9,7 +9,13 @@ export const metadata = {
 };
 
 // If survivor-client.jsx is in the SAME folder as this file:
-const SurvivorClient = nextDynamic(() => import("./survivor-client"), { ssr: false });
+const SurvivorClient = nextDynamic(() => import("./survivor-client"), {
+  ssr: false,
+});
+const SurvivorTimeline = nextDynamic(
+  () => import("./survivor-client").then((m) => m.SurvivorTimeline),
+  { ssr: false }
+);
 // If you instead keep survivor-client.jsx at app/survivor-client.jsx,
 // use this path instead:
 // const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
@@ -25,6 +31,8 @@ export default function SurvivorPage() {
       </header>
 
       <SurvivorClient />
+
+      <SurvivorTimeline />
 
       <section className="grid gap-6 lg:grid-cols-3">
         <article className="card p-6 space-y-3 lg:col-span-1">
