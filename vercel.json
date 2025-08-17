@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/admin/publish-sweeper",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
