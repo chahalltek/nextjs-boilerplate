@@ -4,7 +4,7 @@ export const dynamic = "error"; // build-time render
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import TrendingPlayers from "@/components/TrendingPlayers";
+import TrendingTicker from "@/components/TrendingTicker";
 
 export default function HomePage() {
   const posts =
@@ -14,6 +14,7 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
+    <TrendingTicker />
       {/* HERO */}
       <section className="pt-10 pb-16 text-center relative">
         <div className="absolute inset-0 -z-10 pointer-events-none [mask-image:radial-gradient(50%_50%_at_50%_0%,#000_0%,transparent_70%)]">
@@ -56,8 +57,6 @@ export default function HomePage() {
           </p>
         </div>
       </section>
-      {/* TRENDING PLAYERS */}
-      <TrendingPlayers />
 
       {/* VALUE PROPS */}
       <section className="container grid md:grid-cols-3 gap-4">
