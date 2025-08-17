@@ -1,75 +1,52 @@
-// app/cws/[slug]/page.jsx
+// app/admin/cws/[slug]/page.jsx
 import { getFile } from "@/lib/github";
 import matter from "gray-matter";
-import ReactMarkdown from "react-markdown";
 import Link from "next/link";
-import nextDynamic from "next/dynamic";
-import TagChips from "@/components/TagChips";
-import RelatedByTags from "@/components/RelatedByTags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { ssr: false });
+const DIR = "content/recaps";
 
-export default async function RecapDetailPage({ params }) {
-  const slug = params?.slug;
-  const path = `content/recaps/${slug}.md`;
+export default async function AdminCwsEditPage({ params }) {
+  const { slug } = params || {};
+  const path = `${DIR}/${slug}.md`;
 
-  const file = await getFile(path);
-  if (!file?.contentBase64) {
-    return (
-      <div className="container max-w-3xl py-10">
-        <h1 className="text-2xl font-bold mb-2">Recap not found</h1>
-        <Link href="/cws" className="text-white/70 hover:text-white">← Back to Weekly Recap</Link>
-      </div>
-    );
-  }
+  let fm = {};
+  let content = "";
 
-  const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
-  const parsed = matter(raw);
-  const fm = parsed.data || {};
-
-  if (!fm.published) {
-    return (
-      <div className="container max-w-3xl py-10">
-        <h1 className="text-2xl font-bold mb-2">This recap is not published</h1>
-        <Link href="/cws" className="text-white/70 hover:text-white">← Back to Weekly Recap</Link>
-      </div>
-    );
+  try {
+    const file = await getFile(path);
+    if (file?.contentBase64) {
+      const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
+      const parsed = matter(raw);
+      fm = parsed?.data || {};
+      content = parsed?.content || "";
+    }
+  } catch {
+    // If the file doesn't exist yet, we just render with empty defaults.
   }
 
   return (
-    <div className="container max-w-3xl py-10 space-y-6">
-      <Link
-        href="/cws"
-        className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
-      >
-        ← All recaps
-      </Link>
+    <div className="container max-w-4xl py-8 space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Edit Recap</h1>
+        <Link
+          href="/admin/cws"
+          className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white hover:bg-white/10"
+        >
+          ← All recaps
+        </Link>
+      </div>
 
-      <article className="space-y-3">
-        <div className="text-sm text-white/60">{fm.date}</div>
-        <h1 className="text-2xl font-bold">{fm.title || slug}</h1>
-        {Array.isArray(fm.tags) && <TagChips tags={fm.tags} />}
+      {/* Read-only preview for now (keeps build green). 
+          If you want inline editing here, we’ll wrap a small client component around this. */}
+      <div className="card p-5 space-y-3">
+        <div className="text-sm text-white/60">{fm.date || ""}</div>
+        <div className="text-xl font-semibold">{fm.title || slug}</div>
         {fm.excerpt && <p className="text-white/80">{fm.excerpt}</p>}
-        <div className="prose prose-invert max-w-none">
-          <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
-        </div>
-      </article>
-
-      {/* Hyvor comments keyed to recap slug */}
-      <div className="card p-4">
-        <HyvorComments pageId={`/cws/${slug}`} />
+        <pre className="whitespace-pre-wrap text-white/80">{content}</pre>
       </div>
     </div>
   );
 }
- {Array.isArray(fm.tags) && fm.tags.length > 0 && (
-   <RelatedByTags
-     dir="content/recaps"
-     base="/cws"
-     currentSlug={slug}
-     currentTags={fm.tags}
-   />
- )}
