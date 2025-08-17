@@ -3,12 +3,12 @@ import { notFound } from "next/navigation";
 import { getFile } from "@/lib/github";
 import matter from "gray-matter";
 import ReactMarkdown from "react-markdown";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic"; // <- renamed to avoid clashing with export below
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"; // Next.js route option – must be named exactly "dynamic"
 
-const HyvorComments = dynamic(() => import("@/components/HyvorComments"), { ssr: false });
+const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { ssr: false });
 
 export default async function BlogPostPage({ params }) {
   const slug = params?.slug;
@@ -36,7 +36,6 @@ export default async function BlogPostPage({ params }) {
         <ReactMarkdown>{parsed.content || ""}</ReactMarkdown>
       </div>
 
-      {/* Hyvor comments (same pattern as elsewhere) */}
       <div className="mt-10">
         <HyvorComments pageId={`blog-${slug}`} />
       </div>
