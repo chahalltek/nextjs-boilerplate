@@ -1,137 +1,110 @@
-// app/search/SearchClient.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-
-const TYPE_LABEL = {
-  blog: "Blog",
-  recap: "Weekly Recap",
-  holdem: "Hold ’em / Fold ’em",
-  poll: "Survivor",
-};
-
-const DEFAULT_FILTERS = { blog: true, recap: true, holdem: true, poll: true };
-
-function norm(s) {
-  return (s || "").toLowerCase();
-}
-
-function tokenize(q) {
-  return norm(q).split(/[\s\-_/.,!?:;]+/).filter(Boolean);
-}
-
-// Tiny fuzzy-ish scorer: token substrings across title+excerpt
-function scoreItem(item, tokens) {
-  if (tokens.length === 0) return 0;
-  const hay = `${item.title} ${item.excerpt}`.toLowerCase();
-  let score = 0;
-  for (const t of tokens) {
-    if (hay.includes(t)) {
-      score += 3;
-      if (item.title.toLowerCase().includes(t)) score += 2;
-      if (hay.startsWith(t)) score += 1;
-    }
-  }
-  return score;
-}
 
 export default function SearchClient() {
-  const [data, setData] = useState([]);
   const [q, setQ] = useState("");
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [loading, setLoading] = useState(true);
+  const [debounced, setDebounced] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState({ items: [], counts: {} });
+  const [error, setError] = useState("");
+
+  // Debounce input
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const r = await fetch("/api/search-index", { cache: "no-store" });
-        const j = await r.json();
-        if (!live) return;
-        setData(Array.isArray(j.index) ? j.index : []);
-      } finally {
-        if (live) setLoading(false);
+    let abort = false;
+    async function run() {
+      setError("");
+      if (!debounced) {
+        setResults({ items: [], counts: {} });
+        return;
       }
-    })();
-    return () => { live = false; };
-  }, []);
-
-  const tokens = useMemo(() => tokenize(q), [q]);
-
-  const results = useMemo(() => {
-    const filtered = data.filter((it) => filters[it.type]);
-    if (tokens.length === 0) {
-      // default sort by date desc if present
-      return [...filtered].sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!abort) {
+          if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+          setResults(data);
+        }
+      } catch (e) {
+        if (!abort) setError(e.message || String(e));
+      } finally {
+        if (!abort) setLoading(false);
+      }
     }
-    const scored = filtered
-      .map((it) => ({ it, s: scoreItem(it, tokens) }))
-      .filter(({ s }) => s > 0)
-      .sort((a, b) => b.s - a.s);
-    return scored.map(({ it }) => it);
-  }, [data, tokens, filters]);
+    run();
+    return () => {
+      abort = true;
+    };
+  }, [debounced]);
 
-  const toggle = (t) => setFilters((f) => ({ ...f, [t]: !f[t] }));
+  const grouped = useMemo(() => {
+    const g = { post: [], recap: [], holdem: [] };
+    for (const it of results.items || []) {
+      if (g[it.type]) g[it.type].push(it);
+    }
+    return g;
+  }, [results]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row gap-3">
+    <div className="space-y-6">
+      <div className="card p-4">
+        <label className="block text-sm text-white/70 mb-1">Search</label>
         <input
           className="input w-full"
-          placeholder="Search posts, recaps, polls…"
+          placeholder="Try: Jefferson, bye week, waiver, Survivor…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           autoFocus
         />
-        <div className="flex flex-wrap gap-2">
-          {["blog","recap","holdem","poll"].map((t) => (
-            <button
-              key={t}
-              onClick={() => toggle(t)}
-              className={`px-3 py-1.5 rounded border text-sm ${
-                filters[t]
-                  ? "border-white/30 text-white bg-white/10"
-                  : "border-white/10 text-white/60 hover:text-white/80"
-              }`}
-              title={TYPE_LABEL[t]}
-            >
-              {TYPE_LABEL[t]}
-            </button>
-          ))}
+        <div className="mt-2 text-xs text-white/50">
+          {loading ? "Searching…" : debounced ? `Results for “${debounced}”` : "Type to search"}
         </div>
+        {error && <div className="mt-2 text-sm text-red-400">Error: {error}</div>}
       </div>
 
-      {loading ? (
-        <div className="text-white/60">Loading index…</div>
-      ) : results.length === 0 ? (
-        <div className="text-white/60">No results. Try a different term.</div>
-      ) : (
-        <ul className="grid gap-3">
-          {results.map((r) => (
-            <li key={`${r.type}:${r.slug}`} className="card p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-white/50">
-                  <span className="inline-block rounded-full px-2 py-0.5 bg-white/10 border border-white/10">
-                    {TYPE_LABEL[r.type]}
-                  </span>
-                  {r.date ? <span className="ml-2">{r.date}</span> : null}
-                </div>
-                <Link
-                  href={r.url}
-                  className="text-sm text-white/70 hover:text-white"
-                >
-                  Open →
-                </Link>
-              </div>
-              <div className="mt-1 font-semibold">{r.title}</div>
-              {r.excerpt ? (
-                <div className="mt-1 text-sm text-white/70">{r.excerpt}</div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+      {/* Results */}
+      {!!debounced && !loading && results.items?.length === 0 && (
+        <div className="text-white/70">No matches. Try another term.</div>
       )}
+
+      {["post", "recap", "holdem"].map((type) => {
+        const label =
+          type === "post" ? "Blog Posts" : type === "recap" ? "Weekly Recaps" : "Hold ’em / Fold ’em";
+        const items = grouped[type] || [];
+        if (items.length === 0) return null;
+        return (
+          <section key={type} className="space-y-3">
+            <h2 className="text-lg font-semibold">{label}</h2>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {items.map((it) => (
+                <li key={it.url} className="card p-4 hover:bg-white/5">
+                  <a href={it.url} className="block">
+                    <div className="text-xs text-white/50">{it.date}</div>
+                    <div className="font-medium">{it.title}</div>
+                    {it.excerpt && (
+                      <div className="text-sm text-white/70 mt-1 line-clamp-3">{it.excerpt}</div>
+                    )}
+                    {it.match && (
+                      <div className="text-xs text-white/50 mt-2">
+                        Match in: {it.match.in} — <span className="italic">“…{it.match.snippet}…”</span>
+                      </div>
+                    )}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
