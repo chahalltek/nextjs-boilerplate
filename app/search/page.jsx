@@ -1,12 +1,12 @@
 // app/search/page.jsx
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 
 export const metadata = {
   title: "Search — Hey Skol Sister",
   description: "Find posts, weekly recaps, Hold ’em / Fold ’em, and polls.",
 };
 
-const SearchClient = dynamic(() => import("./SearchClient"), { ssr: false });
+const SearchClient = nextDynamic(() => import("./search-client"), { ssr: false });
 
 export default function SearchPage() {
   return (

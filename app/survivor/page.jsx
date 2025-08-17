@@ -1,5 +1,5 @@
 // app/survivor/page.jsx
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 
 export const runtime = "nodejs";
 export const metadata = {
@@ -9,7 +9,7 @@ export const metadata = {
 };
 
 // If survivor-client.jsx is in the SAME folder as this file:
-const SurvivorClient = dynamic(() => import("./survivor-client"), { ssr: false });
+const SurvivorClient = nextDynamic(() => import("./survivor-client"), { ssr: false });
 // If you instead keep survivor-client.jsx at app/survivor-client.jsx,
 // use this path instead:
 // const SurvivorClient = dynamic(() => import("../survivor-client"), { ssr: false });
