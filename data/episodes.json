@@ -1,16 +1,98 @@
 [
   {
-    "id": 1,
     "slug": "draft-like-a-queen",
     "title": "Draft Like a Queen",
-    "teaser": "Sleepers, stacks, and avoiding draft-day traps\u2014made simple.",
     "description": "Round-by-round strategy, how to read the draft room, and when to stack or fade.",
-    "date": "2025-08-10",
-    "audio": "",
-    "notes": [
-      "Anchor RB vs. Elite WR",
-      "QB tiers timing",
-      "TE cliffs"
-    ]
   }
 ]
+"audioUrl": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    "publishedAt": "2025-08-10",
+    "tags": ["draft", "strategy"],
+    "guests": [
+      {
+        "name": "Jane Doe",
+        "title": "Fantasy Analyst",
+        "avatarUrl": "https://via.placeholder.com/64",
+        "bio": "Jane drops draft gems.",
+        "link": "https://example.com/jane"
+      }
+    ],
+    "showNotesHtml": "<h3>Key takeaways</h3><p>We discuss anchor RB strategy and early WR value.</p>",
+    "chapters": [
+      { "label": "Intro", "timeSec": 0 },
+      { "label": "Draft Strategy", "timeSec": 42 },
+      { "label": "Mailbag", "timeSec": 120 }
+    ],
+    "coverImage": "/og/default-og.png",
+    "transcriptHtml": "<p><a href=\"#\" data-time=\"0\">[00:00]</a> Welcome to the show.</p><p><a href=\"#\" data-time=\"42\">[00:42]</a> Strategy talk starts here.</p><p><a href=\"#\" data-time=\"120\">[02:00]</a> Listener questions.</p>"
+  },
+  {
+    "slug": "waiver-wire-queens",
+    "title": "Waiver Wire Queens",
+    "description": "Week 2 adds to save your season before it starts.",
+    "audioUrl": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    "publishedAt": "2025-08-17",
+    "tags": ["waiver", "strategy"],
+    "guests": [
+      {
+        "name": "Kelly Smith",
+        "title": "Waiver Wizard",
+        "avatarUrl": "https://via.placeholder.com/64",
+        "bio": "Kelly finds value in the scrap heap."
+      }
+    ],
+    "showNotesHtml": "<h3>Pickup priorities</h3><p>Running backs and wideouts on the rise.</p>",
+    "chapters": [
+      { "label": "News", "timeSec": 0 },
+      { "label": "Top Adds", "timeSec": 60 },
+      { "label": "Deep Stashes", "timeSec": 180 }
+    ],
+    "coverImage": "/og/default-og.png",
+    "transcriptHtml": "<p><a href=\"#\" data-time=\"0\">[00:00]</a> Welcome back.</p><p><a href=\"#\" data-time=\"60\">[01:00]</a> Top adds segment.</p><p><a href=\"#\" data-time=\"180\">[03:00]</a> Deep stashes wrap up.</p>"
+  },
+  {
+    "slug": "bye-week-ballers",
+    "title": "Bye Week Ballers",
+    "description": "How to navigate bye weeks without tanking your lineup.",
+    "audioUrl": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+    "publishedAt": "2025-08-24",
+    "tags": ["strategy"],
+    "guests": [
+      {
+        "name": "Sam Lee",
+        "avatarUrl": "https://via.placeholder.com/64",
+        "bio": "Sam loves schedule gymnastics."
+      }
+    ],
+    "showNotesHtml": "<h3>Plan ahead</h3><p>Why bye weeks matter more than you think.</p>",
+    "chapters": [
+      { "label": "Opening", "timeSec": 0 },
+      { "label": "Bye Week Planning", "timeSec": 90 },
+      { "label": "Q&A", "timeSec": 210 }
+    ],
+    "coverImage": "/og/default-og.png",
+    "transcriptHtml": "<p><a href=\"#\" data-time=\"0\">[00:00]</a> Hello friends.</p><p><a href=\"#\" data-time=\"90\">[01:30]</a> Planning for bye weeks.</p><p><a href=\"#\" data-time=\"210\">[03:30]</a> Listener questions.</p>"
+  },
+  {
+    "slug": "mock-draft-mayhem",
+    "title": "Mock Draft Mayhem",
+    "description": "Practicing draft chaos so you stay calm when it counts.",
+    "audioUrl": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+    "publishedAt": "2025-08-31",
+    "tags": ["draft", "strategy"],
+    "guests": [
+      {
+        "name": "Riley Tran",
+        "avatarUrl": "https://via.placeholder.com/64",
+        "bio": "Mocks more drafts than anyone we know."
+      }
+    ],
+    "showNotesHtml": "<h3>Stay flexible</h3><p>Mock drafts teach us to pivot.</p>",
+    "chapters": [
+      { "label": "Warm Up", "timeSec": 0 },
+      { "label": "Mock Draft", "timeSec": 50 },
+      { "label": "Lessons", "timeSec": 200 }
+    ],
+    "coverImage": "/og/default-og.png",
+    "transcriptHtml": "<p><a href=\"#\" data-time=\"0\">[00:00]</a> Let the mock begin.</p><p><a href=\"#\" data-time=\"50\">[00:50]</a> Drafting live.</p><p><a href=\"#\" data-time=\"200\">[03:20]</a> Takeaways.</p>"
+  }
