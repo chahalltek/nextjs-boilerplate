@@ -40,15 +40,15 @@ export async function upsertEntry(
   await kv.set(kEntry(season.id, id), entry);
   await kv.sadd(kEntries(season.id), id);
 
-  // ✅ correct param order
-  const score = scoreEntry(season, entry);
+  const score = scoreEntry(season, entry); // correct param order
   await kv.zadd(kLB(season.id), { member: id, score });
 
   return entry;
 }
 
 export async function getEntries(seasonId: string): Promise<Entry[]> {
-  const ids = (await kv.smembers<string>(kEntries(seasonId))) ?? [];
+  // NOTE: smembers<T> expects the full array type, e.g. string[].
+  const ids = (await kv.smembers<string[]>(kEntries(seasonId))) ?? [];
   if (!ids.length) return [];
   const out: Entry[] = [];
   for (const id of ids) {
@@ -70,8 +70,7 @@ export async function recomputeLeaderboard(seasonId: string): Promise<number> {
   }
 
   for (const e of entries) {
-    // ✅ correct param order
-    const score = scoreEntry(season, e);
+    const score = scoreEntry(season, e); // correct param order
     await kv.zadd(kLB(seasonId), { member: e.id, score });
   }
   return entries.length;
@@ -88,8 +87,7 @@ export async function topLeaderboard(
   const rows = entries.map((e) => ({
     id: e.id,
     name: e.name,
-    // ✅ correct param order
-    score: scoreEntry(season, e),
+    score: scoreEntry(season, e), // correct param order
   }));
   rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   return rows.slice(0, limit);
