@@ -1,5 +1,6 @@
 // app/survivor/page.jsx
 import nextDynamic from "next/dynamic";
+import HyvorComments from "@/components/HyvorComments";
 
 export const runtime = "nodejs";
 export const metadata = {
@@ -99,6 +100,10 @@ export default function SurvivorPage() {
           </p>
         </article>
       </section>
+
+        <div className="card p-4 md:p-6">
+        <HyvorComments pageId="survivor" />
+      </div>
     </div>
   );
 }

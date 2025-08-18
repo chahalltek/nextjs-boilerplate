@@ -3,13 +3,11 @@ import { getFile } from "@/lib/github";
 import matter from "gray-matter";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
-import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
+import HyvorComments from "@/components/HyvorComments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const HyvorComments = nextDynamic(() => import("@/components/HyvorComments"), { ssr: false });
 
 export default async function BlogPostPage({ params }) {
   const path = `content/posts/${params.slug}.md`;
@@ -20,8 +18,6 @@ export default async function BlogPostPage({ params }) {
   const parsed = matter(raw);
   const fm = parsed.data || {};
   if (fm.draft) return notFound();
-
-  const pageId = `blog:${params.slug}`;
 
   return (
     <div className="container max-w-3xl py-10 space-y-6">
@@ -37,7 +33,7 @@ export default async function BlogPostPage({ params }) {
       </article>
 
       <div className="card p-4">
-        <HyvorComments pageId={pageId} />
+       <HyvorComments pageId={params.slug} />
       </div>
     </div>
   );

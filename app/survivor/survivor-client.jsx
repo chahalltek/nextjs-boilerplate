@@ -2,7 +2,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import HyvorComments from "@/components/HyvorComments";
 
 const keyFor = (slug) => `poll:${slug}:voted`;
 
@@ -279,10 +278,6 @@ export default function SurvivorClient() {
               Total votes: {total}
             </div>
 
-            {/* Comments */}
-            <div className="mt-10">
-              <HyvorComments pageId={`poll:${selectedPoll.slug}`} />
-            </div>
           </>
         ) : (
           <div className="text-white/60">Select a poll from the list.</div>
