@@ -24,6 +24,7 @@ export default async function SurvivorLanding() {
 
   return (
     <main className="container max-w-3xl py-10 space-y-8">
+      {/* Header */}
       <header>
         <h1 className="text-3xl font-bold">Survivor Bracket Challenge</h1>
         <p className="text-white/70">
@@ -104,10 +105,9 @@ export default async function SurvivorLanding() {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">Scoring</h2>
 
-        <div className="text-sm text-white/80">
-          For each contestant, you earn points based on how close your predicted boot position is to the
-          actual boot position:
-        </div>
+        <p className="text-sm text-white/80">
+          For each contestant, you earn points based on how close your predicted boot position is to the actual:
+        </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
           <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
@@ -124,3 +124,57 @@ export default async function SurvivorLanding() {
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
             <div className="text-2xl font-semibold">0</div>
+            <div className="text-white/70">Off by 4+</div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/20 p-4 text-sm">
+          <div className="font-medium mb-1">Finale bonuses</div>
+          <ul className="list-disc pl-5 space-y-1 text-white/80">
+            <li>
+              Correct winner: <span className="font-semibold text-white">+10</span>
+            </li>
+            <li>
+              Final 3 in exact order (Winner → Second → Third):{" "}
+              <span className="font-semibold text-white">+6</span>
+            </li>
+          </ul>
+        </div>
+
+        <p className="text-xs text-white/60">
+          Notes: Double boots and medevacs count as separate positions in the order they occur. If a twist
+          changes the number of finalists, we’ll adapt the scoring as closely as possible to the rules above.
+        </p>
+      </section>
+
+      {/* Tiebreaker & edits */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Tiebreakers & edits</h2>
+        <ul className="list-disc pl-5 text-white/80 space-y-1 text-sm">
+          <li>
+            <span className="font-medium text-white">Tiebreaker:</span> predict the winner’s jury vote
+            count. Closest wins; if still tied, earliest submitted entry wins.
+          </li>
+          <li>
+            <span className="font-medium text-white">Edits:</span> you may update your bracket until the
+            lock time. After lock, no changes.
+          </li>
+          <li>
+            <span className="font-medium text-white">Fair play:</span> one entry per person; obvious
+            duplicates may be removed.
+          </li>
+        </ul>
+      </section>
+
+      {/* Quick rules (recap) */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <h2 className="font-semibold mb-2">Rules (quick)</h2>
+        <ul className="list-disc pl-5 text-white/80 space-y-1 text-sm">
+          <li>Exact boot correct: +5; off by 1: +2; off by 2–3: +1.</li>
+          <li>Finale bonuses: Winner +10; Final 3 in exact order +6.</li>
+          <li>Tiebreaker: winner’s jury vote count (closest wins).</li>
+        </ul>
+      </section>
+    </main>
+  );
+}
