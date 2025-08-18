@@ -1,6 +1,7 @@
 // app/sitemap.js
 import { listDir, getFile } from "@/lib/github";
 import matter from "gray-matter";
+import { getAllEpisodes } from "@/lib/episodes";
 
 const SITE_URL = (process.env.SITE_URL || "https://www.heyskolsister.com").replace(/\/+$/,"");
 
@@ -35,6 +36,11 @@ export default async function sitemap() {
   ].map((p) => ({ url: `${SITE_URL}${p}`, lastModified: new Date().toISOString() }));
 
   const out = [...staticRoutes];
+
+  const episodes = await getAllEpisodes();
+  episodes.forEach((e) => {
+    out.push({ url: `${SITE_URL}/episodes/${encodeURIComponent(e.slug)}`, lastModified: e.date || new Date().toISOString() });
+  });
 
   // Blog posts
   const postFiles = (await safeList(POSTS_DIR))
