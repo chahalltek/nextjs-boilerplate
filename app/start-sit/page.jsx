@@ -4,26 +4,31 @@ import InjuryTicker from "@/components/InjuryTicker";
 
 export const metadata = {
   title: "Start/Sit — Hey Skol Sister",
- description: "Weekly Start/Sit calls with injury updates and matchup notes.",
+  description: "Weekly Start/Sit calls with injury updates and matchup notes.",
 };
 
 export default function StartSitPage() {
   return (
-    <div className="container py-12">
-      <header className="mb-8">
+    <div className="container py-12 space-y-8">
+      {/* Ticker at the very top */}
+      <section aria-labelledby="injury-report-heading">
+        <h2 id="injury-report-heading" className="text-xl font-semibold mb-3">
+          Injury Report
+        </h2>
+        <InjuryTicker />
+      </section>
+
+      {/* Page header below the ticker */}
+      <header>
         <h1 className="text-4xl font-bold">Start / Sit</h1>
         <p className="mt-2 text-white/70">
           Latest injury report to help with your start/sit decisions.
         </p>
       </header>
 
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Injury Report</h2>
-       <InjuryTicker />
-      </section>
-
-        <div className="flex flex-wrap gap-3">
-        <Link href="/subscribe" className="btn-gold">
+      {/* CTAs */}
+      <div className="flex flex-wrap gap-3">
+        <Link href="/subscribe" className="btn-gold inline-flex items-center justify-center">
           Notify me when weekly picks drop
         </Link>
         <Link href="/101" className="cta-card">
