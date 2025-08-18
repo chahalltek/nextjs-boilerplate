@@ -5,7 +5,7 @@ import { getPosts, getRecaps, getHoldem } from "@/lib/contentIndex";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SITE_URL = process.env.SITE_URL || "https://www.theskolsisters.com";
+const SITE_URL = process.env.SITE_URL || "https://www.heyskolsister.com";
 
 function urlTag(loc, lastmod) {
   return `
