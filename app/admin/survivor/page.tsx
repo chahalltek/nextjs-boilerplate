@@ -4,6 +4,7 @@ import { getSeason, setSeason, appendBoot, recomputeLeaderboard } from "@/lib/su
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// ----------------- helpers -----------------
 function slugify(s: string) {
   return s
     .toLowerCase()
@@ -12,63 +13,64 @@ function slugify(s: string) {
     .slice(0, 40);
 }
 
-async function actionSeed(formData: FormData) {
+// ----------------- server actions -----------------
+export async function seedSeason(formData: FormData) {
   "use server";
-  const id = String(formData.get("seasonId") || "").trim();
-  const lockAtRaw = String(formData.get("lockAt") || "").trim(); // from <input type="datetime-local">
-  const namesRaw = String(formData.get("contestants") || "").trim();
+  const seasonId = String(formData.get("seasonId") || "").trim();
+  const lockAtLocal = String(formData.get("lockAt") || "").trim();
+  const contestantsRaw = String(formData.get("contestants") || "").trim();
 
-  if (!id) throw new Error("Missing season id");
-  if (!lockAtRaw) throw new Error("Missing lock time");
-  if (!namesRaw) throw new Error("Missing contestants");
+  if (!seasonId || !lockAtLocal || !contestantsRaw) return;
 
-  const lockAt = new Date(lockAtRaw);
-  const contestants = namesRaw
+  const lockAt = new Date(lockAtLocal);
+
+  const contestants = contestantsRaw
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
     .map((line) => {
-      // allow "Name | custom-id"
       const [name, custom] = line.split("|").map((v) => v.trim());
       return { id: custom || slugify(name), name };
     });
 
-  // Ensure unique ids
+  // ensure unique ids
   const seen = new Set<string>();
   for (const c of contestants) {
-    if (seen.has(c.id)) {
-      c.id = `${c.id}-${Math.random().toString(36).slice(2, 6)}`;
+    let base = c.id;
+    let n = 1;
+    while (seen.has(c.id)) {
+      n += 1;
+      c.id = `${base}-${n}`;
     }
     seen.add(c.id);
   }
 
-  const season = {
-    id,
+  await setSeason({
+    id: seasonId,
     lockAt: lockAt.toISOString(),
     contestants,
-    actualBootOrder: [] as string[],
-  };
-
-  await setSeason(season);
+    actualBootOrder: [],
+  });
 }
 
-async function actionAppendBoot(formData: FormData) {
+export async function addBoot(formData: FormData) {
   "use server";
-  const sid = String(formData.get("seasonId") || "");
-  const cid = String(formData.get("contestantId") || "");
-  if (!sid || !cid) throw new Error("Season and contestant are required");
-  await appendBoot(sid, cid);
+  const seasonId = String(formData.get("seasonId") || "").trim();
+  const contestantId = String(formData.get("contestantId") || "").trim();
+  if (!seasonId || !contestantId) return;
+  await appendBoot(seasonId, contestantId);
 }
 
-async function actionRecompute(formData: FormData) {
+export async function rescore(formData: FormData) {
   "use server";
-  const sid = String(formData.get("seasonId") || "");
-  if (!sid) throw new Error("Season is required");
-  await recomputeLeaderboard(sid);
+  const seasonId = String(formData.get("seasonId") || "").trim();
+  if (!seasonId) return;
+  await recomputeLeaderboard(seasonId);
 }
 
-export default async function SurvivorAdmin() {
-  const currentSeasonId = "S47"; // change if needed
+// ----------------- page -----------------
+export default async function SurvivorAdminPage() {
+  const currentSeasonId = "S47"; // adjust if you use route params later
   const season = await getSeason(currentSeasonId);
 
   return (
@@ -85,17 +87,104 @@ export default async function SurvivorAdmin() {
           <p className="text-sm text-white/70">No season found in KV.</p>
         ) : (
           <div className="text-sm text-white/80 space-y-1">
-            <div>ID: <span className="font-mono">{season.id}</span></div>
+            <div>
+              ID: <span className="font-mono">{season.id}</span>
+            </div>
             <div>Lock at: {new Date(season.lockAt).toLocaleString()}</div>
             <div>Contestants: {season.contestants.length}</div>
-            {!!season.actualBootOrder?.length && (
-              <div>Recorded boots: {season.actualBootOrder.length}</div>
-            )}
+            <div>Recorded boots: {season.actualBootOrder?.length ?? 0}</div>
           </div>
         )}
       </section>
 
-      {/* Seed / Replace season */}
+      {/* Seed season */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">Seed (or replace) season</h2>
-        <form action={actionSeed} className="grid gap-
+        <form action={seedSeason} className="grid gap-3">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="grid gap-1 text-sm">
+              <span className="text-white/80">Season ID</span>
+              <input
+                name="seasonId"
+                defaultValue={currentSeasonId}
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-white/80">Lock time (local)</span>
+              <input
+                type="datetime-local"
+                name="lockAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/80">
+              Contestants (one per line, optional “| custom-id”)
+            </span>
+            <textarea
+              name="contestants"
+              rows={10}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
+              placeholder={`Mariah | mariah
+Ben
+Kira`}
+            />
+          </label>
+
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
+            Save Season
+          </button>
+        </form>
+      </section>
+
+      {/* Weekly results */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Record weekly boot</h2>
+        <form action={addBoot} className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/80">Season ID</span>
+            <input
+              name="seasonId"
+              defaultValue={currentSeasonId}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/80">Contestant ID</span>
+            <input
+              name="contestantId"
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              placeholder="mariah"
+            />
+          </label>
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+            Append &amp; Re-score
+          </button>
+        </form>
+
+        <form action={rescore}>
+          <input type="hidden" name="seasonId" value={currentSeasonId} />
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+            Recompute Leaderboard
+          </button>
+        </form>
+
+        {season && (
+          <div className="text-xs text-white/60">
+            Contestant IDs:
+            <div className="mt-2 grid sm:grid-cols-2 gap-x-8 gap-y-1">
+              {season.contestants.map((c) => (
+                <div key={c.id} className="font-mono">
+                  {c.id} — <span className="text-white/80">{c.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
