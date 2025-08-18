@@ -14,7 +14,12 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
-    <TrendingTicker />
+   <div className="space-y-2">
+        <p className="text-center text-sm text-white/60">
+          Trending (hot) players
+        </p>
+        <TrendingTicker />
+      </div>
       {/* HERO */}
       <section className="pt-10 pb-16 text-center relative">
         <div className="absolute inset-0 -z-10 pointer-events-none [mask-image:radial-gradient(50%_50%_at_50%_0%,#000_0%,transparent_70%)]">
