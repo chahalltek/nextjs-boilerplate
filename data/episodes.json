@@ -9,10 +9,6 @@
     "audio": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
     "notes": ["Key takeaways will be added soon."],
     "coverImage": "/og/default-og.png"
-    "date": "2025-08-10",
-    "audio": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    "notes": ["Key takeaways will be added soon."],
-    "coverImage": "/og/default-og.png"
   },
   {
     "id": 2,
@@ -20,7 +16,7 @@
     "title": "Waiver Wire Queens",
     "teaser": "Week 2 adds to save your season before it starts.",
     "description": "Week 2 adds to save your season before it starts.",
-     "date": "2025-08-17",
+    "date": "2025-08-17",
     "audio": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
     "notes": ["Pickup priorities and deep stashes."],
     "coverImage": "/og/default-og.png"
