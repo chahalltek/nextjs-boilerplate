@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import Logo from "@/components/Logo";
-import ListenCtas from "@/components/ListenCtas";
 
 const nav = [
   { href: "/start-sit", label: "Start/Sit" },
@@ -55,20 +54,32 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* Compact Listen dropdown on md–lg; full pills on xl+ */}
-          <details className="relative hidden md:block xl:hidden">
+          {/* Listen: message only (md and up; no outbound links) */}
+          <details className="relative hidden md:block">
             <summary className="cursor-pointer rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white whitespace-nowrap">
               Listen
             </summary>
-            <div className="absolute right-0 mt-2 w-64 rounded-xl border border-white/10 bg-[#120F1E]/95 p-3 shadow-lg">
-              <ListenCtas className="flex flex-col gap-2" />
+            <div className="absolute right-0 mt-2 w-72 rounded-xl border border-white/10 bg-[#120F1E]/95 p-4 shadow-lg">
+              <p className="text-sm text-white/80">
+                Podcast launching in <strong>2026</strong>. Follow along and{" "}
+                <Link href="/subscribe" className="underline">
+                  subscribe for updates
+                </Link>
+                .
+              </p>
             </div>
           </details>
 
-          <div className="hidden xl:flex">
-            <ListenCtas />
-          </div>
+          {/* Admin link (subtle) */}
+          <Link
+            href="/admin"
+            className="hidden xl:inline-flex items-center rounded-lg px-2 py-1 text-xs text-white/60 hover:text-white/90 border border-white/10 whitespace-nowrap"
+            title="Admin"
+          >
+            Admin
+          </Link>
 
+          {/* Subscribe */}
           <Link
             href="/subscribe"
             className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--skol-gold)] whitespace-nowrap"
@@ -103,6 +114,27 @@ export default function Header() {
                 {item.label}
               </Link>
             ))}
+
+            {/* Listen message for mobile */}
+            <div className="mt-2 rounded-xl border border-white/10 p-3 text-sm text-white/80">
+              Podcast launching in <strong>2026</strong>.{" "}
+              <Link href="/subscribe" className="underline" onClick={() => setOpen(false)}>
+                Subscribe for updates
+              </Link>
+              .
+            </div>
+
+            {/* Admin link on mobile */}
+            <Link
+              href="/admin"
+              className="inline-flex w-fit items-center rounded-lg px-2 py-1 text-xs text-white/60 hover:text-white/90 border border-white/10 mt-2"
+              onClick={() => setOpen(false)}
+              title="Admin"
+            >
+              Admin
+            </Link>
+
+            {/* Subscribe button on mobile */}
             <Link
               href="/subscribe"
               className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white"
@@ -110,7 +142,6 @@ export default function Header() {
             >
               Subscribe
             </Link>
-            <ListenCtas className="mt-4" />
           </div>
         </div>
       )}

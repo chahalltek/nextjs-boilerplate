@@ -5,6 +5,7 @@ import ListenCtas from "./ListenCtas";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
+  const SHOW_LISTEN = process.env.NEXT_PUBLIC_SHOW_LISTEN === "1"; // toggle on later
 
   // Match header order:
   // Start/Sit → Weekly Recap → Survivor → Hold ’em Fold ’em → Stats → Blog → 101 → About → Search
@@ -60,7 +61,8 @@ export default function SiteFooter() {
             </a>
           </nav>
 
-          <ListenCtas />
+          {/* Listen CTAs (hidden by default; enable with NEXT_PUBLIC_SHOW_LISTEN=1) */}
+          {SHOW_LISTEN ? <ListenCtas /> : null}
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">
