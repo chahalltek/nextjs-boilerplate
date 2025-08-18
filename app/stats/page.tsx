@@ -93,15 +93,29 @@ export default function StatsPage() {
 
   return (
     <main className="container mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Weekly Stats - will go live when season starts</h1>
+      {/* Header + subtle note */}
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold">Weekly Stats</h1>
+        <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/60" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2m0 14a1 1 0 1 1 0 2h-.01a1 1 0 1 1 .01-2m1-8h-2a1 1 0 0 0-1 1v1a1 1 0 1 0 2 0V9h1v5a1 1 0 1 0 2 0V9a2 2 0 0 0-2-2"
+            />
+          </svg>
+          <p className="text-xs leading-relaxed text-white/70">
+            Stats will go live when the season starts. Until then, this page is a preview.
+          </p>
+        </div>
+      </header>
 
       <div className="mb-8 flex items-center gap-2">
-        <label htmlFor="week" className="font-medium">
+        <label htmlFor="week" className="text-sm text-white/70">
           Week:
         </label>
         <select
           id="week"
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1"
+          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
           value={week}
           onChange={(e) => setWeek(Number(e.target.value))}
         >
@@ -111,7 +125,7 @@ export default function StatsPage() {
             </option>
           ))}
         </select>
-        {loading && <span className="text-white/60">Loading…</span>}
+        {loading && <span className="text-xs text-white/60">Loading…</span>}
       </div>
 
       <section className="mb-10">
@@ -139,7 +153,7 @@ export default function StatsPage() {
 
 function StatTable({ data }: { data: CombinedEntry[] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-white/10">
       <table className="min-w-full text-sm text-left">
         <thead>
           <tr className="border-b border-white/10 text-white/70">
@@ -151,15 +165,23 @@ function StatTable({ data }: { data: CombinedEntry[] }) {
           </tr>
         </thead>
         <tbody>
-          {data.map((p) => (
-            <tr key={p.id} className="border-b border-white/5">
-              <td className="py-2 px-3 whitespace-nowrap">{p.name}</td>
-              <td className="py-2 px-3">{p.team || "-"}</td>
-              <td className="py-2 px-3">{p.position || "-"}</td>
-              <td className="py-2 px-3">{p.points.toFixed(1)}</td>
-              <td className="py-2 px-3">{p.injury || "-"}</td>
+          {data.length === 0 ? (
+            <tr>
+              <td className="py-4 px-3 text-white/60" colSpan={5}>
+                No data yet for the selected week.
+              </td>
             </tr>
-          ))}
+          ) : (
+            data.map((p) => (
+              <tr key={p.id} className="border-b border-white/5">
+                <td className="py-2 px-3 whitespace-nowrap">{p.name}</td>
+                <td className="py-2 px-3">{p.team || "-"}</td>
+                <td className="py-2 px-3">{p.position || "-"}</td>
+                <td className="py-2 px-3">{p.points.toFixed(1)}</td>
+                <td className="py-2 px-3">{p.injury || "-"}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
