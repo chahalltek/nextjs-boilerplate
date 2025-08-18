@@ -1,4 +1,3 @@
-// app/admin/page.jsx
 import Link from "next/link";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -28,8 +27,6 @@ async function actionRevalidate(formData) {
 async function actionRebuildSearchIndex() {
   "use server";
   try {
-    // If your /api/search-index route supports rebuild, this will trigger it.
-    // Adjust method/path as needed.
     const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ""}/api/search-index?rebuild=1`, {
       method: "POST",
       cache: "no-store",
@@ -58,30 +55,12 @@ async function actionWarmCaches() {
 
 // --- UI ----------------------------------------------------------------
 const cards = [
-  {
-    href: "/admin/posts",
-    title: "Blog",
-    desc: "Write posts and upload images. Commits to content/posts/…",
-    emoji: "📝",
-  },
-  {
-    href: "/admin/cws",
-    title: "Weekly Recap",
-    desc: "Post your weekly ‘Coulda, Woulda, Shoulda’ recap.",
-    emoji: "⏪",
-  },
-  {
-    href: "/admin/holdem-foldem",
-    title: "Hold ’em / Fold ’em",
-    desc: "Stash-or-trash advice: injuries, usage, and matchups.",
-    emoji: "🃏",
-  },
-  {
-    href: "/admin/polls",
-    title: "Survivor",
-    desc: "Create/manage polls shown on the Survivor page.",
-    emoji: "🏝️",
-  },
+  { href: "/admin/posts", title: "Blog", desc: "Write posts and upload images. Commits to content/posts/…", emoji: "📝" },
+  { href: "/admin/cws", title: "Weekly Recap", desc: "Post your ‘Coulda, Woulda, Shoulda’ recap.", emoji: "⏪" },
+  { href: "/admin/holdem-foldem", title: "Hold ’em / Fold ’em", desc: "Stash-or-trash: injuries, usage, matchups.", emoji: "🃏" },
+  { href: "/admin/polls", title: "Survivor (Polls)", desc: "Create/manage polls shown on the Survivor page.", emoji: "📊" },
+  // ✅ New: Bracket admin
+  { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
 ];
 
 export default function AdminHome() {
@@ -98,58 +77,25 @@ export default function AdminHome() {
       <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-5">
         <h2 className="text-lg font-semibold">Revalidate (cache)</h2>
 
-        {/* One form; each button submits its own name/value */}
         <form action={actionRevalidate} className="flex flex-wrap gap-2">
-          <button
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-            name="path"
-            value="/"
-          >
-            Revalidate Home
-          </button>
-          <button
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-            name="path"
-            value="/episodes"
-          >
-            Revalidate /episodes
-          </button>
-          <button
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-            name="path"
-            value="/blog"
-          >
-            Revalidate /blog
-          </button>
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10" name="path" value="/">Revalidate Home</button>
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10" name="path" value="/episodes">Revalidate /episodes</button>
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10" name="path" value="/blog">Revalidate /blog</button>
         </form>
 
-        {/* Revalidate specific path */}
         <form action={actionRevalidate} className="grid gap-2">
           <label className="text-sm text-white/80">Revalidate specific path</label>
           <div className="flex gap-2">
-            <input
-              name="path"
-              placeholder="/episodes/some-slug"
-              className="flex-1 rounded-lg border border-white/20 bg-transparent px-3 py-2"
-            />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Revalidate
-            </button>
+            <input name="path" placeholder="/episodes/some-slug" className="flex-1 rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Revalidate</button>
           </div>
         </form>
 
-        {/* Revalidate by tag (if you use fetch({ next: { tags: [...] } })) */}
         <form action={actionRevalidate} className="grid gap-2">
           <label className="text-sm text-white/80">Revalidate by tag</label>
           <div className="flex gap-2">
-            <input
-              name="tag"
-              placeholder="content"
-              className="flex-1 rounded-lg border border-white/20 bg-transparent px-3 py-2"
-            />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Revalidate Tag
-            </button>
+            <input name="tag" placeholder="content" className="flex-1 rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Revalidate Tag</button>
           </div>
         </form>
       </section>
@@ -159,14 +105,10 @@ export default function AdminHome() {
         <h2 className="text-lg font-semibold">Maintenance</h2>
         <div className="flex flex-wrap gap-2">
           <form action={actionRebuildSearchIndex}>
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Rebuild Search Index
-            </button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Rebuild Search Index</button>
           </form>
           <form action={actionWarmCaches}>
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Warm Caches (home, lists, RSS)
-            </button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Warm Caches (home, lists, RSS)</button>
           </form>
         </div>
         <p className="text-sm text-white/60">
@@ -174,16 +116,12 @@ export default function AdminHome() {
         </p>
       </section>
 
-      {/* Existing cards */}
+      {/* Content tools */}
       <section>
         <h2 className="text-lg font-semibold mb-3">Content Tools</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((c) => (
-            <Link
-              key={c.href}
-              href={c.href}
-              className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition"
-            >
+            <Link key={c.href} href={c.href} className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition">
               <div className="text-2xl mb-2">{c.emoji}</div>
               <div className="text-lg font-semibold">{c.title}</div>
               <p className="text-sm text-white/70 mt-1">{c.desc}</p>
@@ -194,4 +132,3 @@ export default function AdminHome() {
     </main>
   );
 }
-
