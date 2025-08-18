@@ -1,79 +1,62 @@
-// app/holdem-foldem/page.jsx
-import { listDir, getFile } from "@/lib/github";
-import matter from "gray-matter";
-import Link from "next/link";
+"use client";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+import { useState } from "react";
 
-const DIR = "content/holdem";
+export default function HEFAdminPage() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [key, setKey] = useState("");
+  const [status, setStatus] = useState<null | string>(null);
 
-function normTags(tags) {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags.map(String).map((t) => t.trim()).filter(Boolean);
-  if (typeof tags === "string") return tags.split(",").map((t) => t.trim()).filter(Boolean);
-  return [];
-}
-
-async function fetchPublished() {
-  const items = await listDir(DIR);
-  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
-  const out = [];
-
-  for (const f of files) {
-    const file = await getFile(f.path);
-    if (!file?.contentBase64) continue;
-    const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
-    const parsed = matter(raw);
-    const fm = parsed.data || {};
-    if (!fm.published) continue;
-
-    out.push({
-      slug: f.name.replace(/\.md$/, ""),
-      title: fm.title || f.name,
-      date: fm.date || "",
-      excerpt: fm.excerpt || "",
-      tags: normTags(fm.tags),
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("Saving…");
+    const res = await fetch("/api/hef/thread", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": key },
+      body: JSON.stringify({ title, body }),
     });
+    const data = await res.json();
+    setStatus(res.ok ? "Published!" : `Error: ${data?.error || "unknown"}`);
+    if (res.ok) { setTitle(""); setBody(""); }
   }
-  out.sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
-  return out;
-}
-
-export default async function HoldemIndexPage() {
-  const posts = await fetchPublished();
 
   return (
-    <div className="container max-w-5xl py-10 space-y-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold">Hold ’em / Fold ’em</h1>
-        <Link href="/tags" className="text-white/70 hover:text-white">Browse tags →</Link>
-      </div>
+    <main className="container max-w-3xl py-10 space-y-6">
+      <header>
+        <h1 className="text-3xl font-bold">Hold ’em Fold ’em — Admin</h1>
+        <p className="text-white/70">Publish this week’s post. The latest post becomes the live thread.</p>
+      </header>
 
-      {posts.length === 0 ? (
-        <div className="text-white/70">Nothing yet.</div>
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {posts.map((p) => (
-            <Link key={p.slug} href={`/holdem-foldem/${encodeURIComponent(p.slug)}`} className="card p-4 block hover:bg-white/5">
-              <div className="text-xs text-white/50">{p.date}</div>
-              <div className="font-medium">{p.title}</div>
-              {p.excerpt && <div className="text-sm text-white/70 mt-1">{p.excerpt}</div>}
-              {p.tags.length > 0 && (
-                <ul className="mt-2 flex flex-wrap gap-1">
-                  {p.tags.map((t) => (
-                    <li key={t}>
-                      <span className="text-[11px] rounded-full border border-white/15 px-2 py-0.5 text-white/70">
-                        <Link href={`/tags/${encodeURIComponent(t)}`}>#{t}</Link>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Link>
-          ))}
+      <form onSubmit={submit} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+        <input
+          className="w-full rounded border border-white/10 bg-transparent px-3 py-2"
+          placeholder="Admin secret (ADMIN_SECRET)"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          type="password"
+          required
+        />
+        <input
+          className="w-full rounded border border-white/10 bg-transparent px-3 py-2"
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+        <textarea
+          className="w-full rounded border border-white/10 bg-transparent px-3 py-2"
+          placeholder="Body (markdown or plain text)"
+          rows={8}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          required
+        />
+        <div className="flex items-center gap-3">
+          <button className="btn-gold px-4 py-2 rounded-xl">Publish</button>
+          {status && <span className="text-sm text-white/70">{status}</span>}
         </div>
-      )}
-    </div>
+      </form>
+    </main>
   );
 }
