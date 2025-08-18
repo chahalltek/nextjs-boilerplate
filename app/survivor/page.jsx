@@ -74,11 +74,29 @@ export default async function SurvivorLanding() {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">How to play</h2>
         <ol className="list-decimal pl-5 text-white/80 space-y-1 text-sm">
-          <li>Open the <Link href="/survivor/bracket" className="underline">Bracket Builder</Link>.</li>
-          <li>Drag contestants into your predicted <span className="font-medium text-white">boot order</span> from first out to winner.</li>
-          <li>Set your <span className="font-medium text-white">Final 3</span> (left → right = Winner, Second, Third).</li>
+          <li>
+            Open the{" "}
+            <Link href="/survivor/bracket" className="underline">
+              Bracket Builder
+            </Link>
+            .
+          </li>
+          <li>
+            Drag contestants into your predicted <span className="font-medium text-white">boot order</span>{" "}
+            from first out to winner.
+          </li>
+          <li>
+            Set your <span className="font-medium text-white">Final 3</span>{" "}
+            (left → right = Winner, Second, Third).
+          </li>
           <li>Enter your display name and submit. You can edit until the lock time above.</li>
-          <li>Come back weekly to check the <Link href="/survivor/leaderboard" className="underline">leaderboard</Link>.</li>
+          <li>
+            Come back weekly to check the{" "}
+            <Link href="/survivor/leaderboard" className="underline">
+              leaderboard
+            </Link>
+            .
+          </li>
         </ol>
       </section>
 
@@ -104,3 +122,5 @@ export default async function SurvivorLanding() {
             <div className="text-2xl font-semibold">+1</div>
             <div className="text-white/70">Off by 2–3</div>
           </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
+            <div className="text-2xl font-semibold">0</div>
