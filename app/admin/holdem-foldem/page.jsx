@@ -1,3 +1,4 @@
+// app/admin/holdem-foldem/page.jsx
 "use client";
 
 import { useState } from "react";
@@ -6,9 +7,9 @@ export default function HEFAdminPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [key, setKey] = useState("");
-  const [status, setStatus] = useState<null | string>(null);
+  const [status, setStatus] = useState(null); // JS: no TS generics
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e) {
     e.preventDefault();
     setStatus("Saving…");
     const res = await fetch("/api/hef/thread", {
@@ -16,9 +17,17 @@ export default function HEFAdminPage() {
       headers: { "Content-Type": "application/json", "x-admin-key": key },
       body: JSON.stringify({ title, body }),
     });
-    const data = await res.json();
-    setStatus(res.ok ? "Published!" : `Error: ${data?.error || "unknown"}`);
-    if (res.ok) { setTitle(""); setBody(""); }
+
+    let data = {};
+    try { data = await res.json(); } catch {}
+
+    if (res.ok) {
+      setStatus("Published!");
+      setTitle("");
+      setBody("");
+    } else {
+      setStatus(`Error: ${data?.error || res.statusText}`);
+    }
   }
 
   return (
