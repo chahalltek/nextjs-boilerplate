@@ -23,7 +23,7 @@ export default async function SurvivorLanding() {
   const locked = new Date() >= new Date(season.lockAt);
 
   return (
-    <main className="container max-w-3xl py-10 space-y-6">
+    <main className="container max-w-3xl py-10 space-y-8">
       <header>
         <h1 className="text-3xl font-bold">Survivor Bracket Challenge</h1>
         <p className="text-white/70">
@@ -34,7 +34,10 @@ export default async function SurvivorLanding() {
       {/* Lock status + countdown */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
         <div className="text-sm text-white/80">
-          Bracket lock: <span className="font-semibold">{new Date(season.lockAt).toLocaleString()}</span>
+          Bracket lock:{" "}
+          <span className="font-semibold">
+            {new Date(season.lockAt).toLocaleString()}
+          </span>
         </div>
         {!locked ? (
           <div className="text-sm text-white/70">
@@ -67,15 +70,37 @@ export default async function SurvivorLanding() {
         </Link>
       </div>
 
-      {/* Quick rules */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <h2 className="font-semibold mb-2">Rules (quick)</h2>
-        <ul className="list-disc pl-5 text-white/80 space-y-1 text-sm">
-          <li>Exact boot correct: +5; off by 1: +2; off by 2–3: +1.</li>
-          <li>Finale bonuses: Winner +10; Final 3 in exact order +6.</li>
-          <li>Tiebreaker optional: winner’s jury vote count.</li>
-        </ul>
+      {/* How to play */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+        <h2 className="text-lg font-semibold">How to play</h2>
+        <ol className="list-decimal pl-5 text-white/80 space-y-1 text-sm">
+          <li>Open the <Link href="/survivor/bracket" className="underline">Bracket Builder</Link>.</li>
+          <li>Drag contestants into your predicted <span className="font-medium text-white">boot order</span> from first out to winner.</li>
+          <li>Set your <span className="font-medium text-white">Final 3</span> (left → right = Winner, Second, Third).</li>
+          <li>Enter your display name and submit. You can edit until the lock time above.</li>
+          <li>Come back weekly to check the <Link href="/survivor/leaderboard" className="underline">leaderboard</Link>.</li>
+        </ol>
       </section>
-    </main>
-  );
-}
+
+      {/* Scoring */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
+        <h2 className="text-lg font-semibold">Scoring</h2>
+
+        <div className="text-sm text-white/80">
+          For each contestant, you earn points based on how close your predicted boot position is to the
+          actual boot position:
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
+            <div className="text-2xl font-semibold">+5</div>
+            <div className="text-white/70">Exact position</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
+            <div className="text-2xl font-semibold">+2</div>
+            <div className="text-white/70">Off by 1</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
+            <div className="text-2xl font-semibold">+1</div>
+            <div className="text-white/70">Off by 2–3</div>
+          </div>
