@@ -29,7 +29,7 @@
     "redis": "^4.1.0",
     "remark-gfm": "^4.0.0",
     "tailwindcss": "^4.0.0",
-    "uuid": "^8.3.2"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
