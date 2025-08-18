@@ -10,7 +10,7 @@ const nav = [
   { href: "/start-sit", label: "Start/Sit" },
   { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
   { href: "/survivor", label: "Survivor" },
-  { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em" },
+  { href: "/holdem-foldem", label: "Hold & Fold" },
   { href: "/stats", label: "Stats" },
   { href: "/blog", label: "Blog" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
