@@ -13,6 +13,7 @@ function slugify(s: string) {
 async function actionSeedSeason(formData: FormData) {
   "use server";
   const seasonId = String(formData.get("seasonId") || "").trim();
+  const seasonName = String(formData.get("seasonName") || "").trim();
   const lockAtLocal = String(formData.get("lockAt") || "").trim();
   const contestantsRaw = String(formData.get("contestants") || "").trim();
   if (!seasonId || !lockAtLocal || !contestantsRaw) return;
@@ -41,6 +42,7 @@ async function actionSeedSeason(formData: FormData) {
 
   await setSeason({
     id: seasonId,
+    name: seasonName || `Survivor ${seasonId}`, // ✅ provide required name
     lockAt: lockAt.toISOString(),
     contestants,
     actualBootOrder: [],
@@ -84,6 +86,11 @@ export default async function SurvivorAdminPage() {
             <div>
               ID: <span className="font-mono">{season.id}</span>
             </div>
+            {"name" in season && (
+              <div>
+                Name: <span className="font-semibold">{(season as any).name}</span>
+              </div>
+            )}
             <div>Lock at: {new Date(season.lockAt).toLocaleString()}</div>
             <div>Contestants: {season.contestants.length}</div>
             <div>Recorded boots: {season.actualBootOrder?.length ?? 0}</div>
@@ -95,7 +102,7 @@ export default async function SurvivorAdminPage() {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">Seed (or replace) season</h2>
         <form action={actionSeedSeason} className="grid gap-3">
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Season ID</span>
               <input
@@ -104,15 +111,24 @@ export default async function SurvivorAdminPage() {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
               />
             </label>
-            <label className="grid gap-1 text-sm">
-              <span className="text-white/80">Lock time (local)</span>
+            <label className="grid gap-1 text-sm sm:col-span-2">
+              <span className="text-white/80">Season name</span>
               <input
-                type="datetime-local"
-                name="lockAt"
+                name="seasonName"
+                placeholder={`Survivor ${currentSeasonId}`}
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
               />
             </label>
           </div>
+
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/80">Lock time (local)</span>
+            <input
+              type="datetime-local"
+              name="lockAt"
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
+          </label>
 
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Contestants (one per line, optional “| custom-id”)</span>
