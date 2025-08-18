@@ -1,5 +1,4 @@
 // lib/survivor/store.ts
-import "@/lib/kv-env-alias";
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type { Season, Entry } from "./types";
