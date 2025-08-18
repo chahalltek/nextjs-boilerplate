@@ -3,8 +3,6 @@ import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type { Season, Entry } from "./types";
 import { scoreEntry } from "./score";
-import "@/lib/kv-env-alias";
-
 
 /* ---------- Key helpers ---------- */
 const kSeason = (sid: string) => `sv:season:${sid}`;
