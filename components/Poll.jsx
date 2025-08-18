@@ -15,6 +15,15 @@ export default function Poll({ slug }) {
     try {
       const res = await fetch(fetchUrl, { cache: "no-store" });
       const j = await res.json().catch(() => ({}));
+
+      // If a specific poll is requested but missing, treat it as no poll rather
+      // than a hard error so pages like /admin don't show an error message when
+      // there is simply no poll for that slug.
+      if (res.status === 404 || (j && !j.ok && /not found/i.test(j.error))) {
+        setState({ loading: false, error: "", data: null });
+        return;
+      }
+
       if (!res.ok || !j.ok) throw new Error(j.error || `Failed (${res.status})`);
       setState({ loading: false, error: "", data: j.active });
     } catch (e) {
