@@ -60,7 +60,7 @@ export default async function SurvivorLanding() {
         </>
       ) : (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          The current season isn’t configured yet. An admin can seed it in <code>/admin/survivor</code>.
+          The current season isn’t configured yet because the season hasn't started. Subscribe to be notified!
         </div>
       )}
 
