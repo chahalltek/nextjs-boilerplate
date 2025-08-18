@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { getAllEpisodes, getEpisodeBySlug } from "@/lib/episodes";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-const EpisodePlayer = dynamic(() => import("@/components/EpisodePlayer"), { ssr: false });
 import EpisodeSearch from "@/components/EpisodeSearch";
 
-export async function generateStaticParams() {
+const EpisodePlayer = dynamic(() => import("@/components/EpisodePlayer"), { ssr: false });
+
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
   const episodes = await getAllEpisodes();
   const tags = Array.from(new Set(episodes.flatMap((e: any) => e.tags || [])));
 
