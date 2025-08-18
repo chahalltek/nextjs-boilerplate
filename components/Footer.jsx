@@ -5,15 +5,19 @@ import ListenCtas from "./ListenCtas";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
+
+  // Match header order:
+  // Start/Sit → Weekly Recap → Survivor → Hold ’em Fold ’em → Stats → Blog → 101 → About → Search
   const nav = [
+    { href: "/start-sit", label: "Start/Sit" },
+    { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
+    { href: "/survivor", label: "Survivor" },
+    { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em", title: "Who to stash, who to trash" },
+    { href: "/stats", label: "Stats" },
+    { href: "/blog", label: "Blog" },
+    { href: "/101", label: "101", title: "Fantasy Football 101" },
     { href: "/about", label: "About" },
-  { href: "/101", label: "101", title: "Fantasy Football 101" },
-  { href: "/start-sit", label: "Start/Sit" },
-  { href: "/stats", label: "Stats" },
-  { href: "/holdem-foldem", label: "Hold ’em / Fold ’em", title: "Who to stash, who to trash" },
-  { href: "/blog", label: "Blog" },
-  { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
-  { href: "/survivor", label: "Survivor" },
+    { href: "/search", label: "Search" },
   ];
 
   return (
@@ -33,6 +37,7 @@ export default function SiteFooter() {
               <Link
                 key={n.href}
                 href={n.href}
+                title={n.title}
                 className="text-white/80 hover:text-white"
               >
                 {n.label}
@@ -54,7 +59,8 @@ export default function SiteFooter() {
               </svg>
             </a>
           </nav>
-           <ListenCtas />
+
+          <ListenCtas />
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">

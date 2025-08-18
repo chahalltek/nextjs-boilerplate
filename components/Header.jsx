@@ -8,15 +8,14 @@ import Logo from "@/components/Logo";
 import ListenCtas from "@/components/ListenCtas";
 
 const nav = [
-  // { href: "/episodes", label: "Episodes" }, // hidden for now
   { href: "/start-sit", label: "Start/Sit" },
+  { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
+  { href: "/survivor", label: "Survivor" },
+  { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em" },
   { href: "/stats", label: "Stats" },
   { href: "/blog", label: "Blog" },
-  { href: "/about", label: "About" },
   { href: "/101", label: "101", title: "Fantasy Football 101" },
-  { href: "/cws", label: "Weekly Recap", title: "Coulda, Woulda, Shoulda" },
-  { href: "/survivor", label: "Survivor" },
-  { href: "/holdem-foldem", label: "Hold ’em / Fold ’em" },
+  { href: "/about", label: "About" },
   { href: "/search", label: "Search" },
 ];
 
@@ -30,13 +29,17 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 bg-[#120F1E]/80 backdrop-blur supports-[backdrop-filter]:bg-[#120F1E]/60 border-b border-white/10">
       <div className="container mx-auto max-w-6xl px-4 h-14 flex items-center gap-4">
-        <Link href="/" className="flex items-center gap-2 text-white font-semibold">
+        {/* BRAND: never wrap */}
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-white font-semibold whitespace-nowrap shrink-0"
+        >
           <Logo size={28} />
-          <span className="hidden sm:inline">Hey Skol Sister</span>
+          <span className="hidden sm:inline">Hey&nbsp;Skol&nbsp;Sister</span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-6 ml-4">
+        {/* Desktop nav: keep on one line */}
+        <nav className="hidden md:flex items-center gap-6 ml-4 whitespace-nowrap">
           {nav.map((item) => (
             <Link
               key={item.href}
@@ -52,10 +55,23 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-        <ListenCtas className="hidden md:flex" />
+          {/* Compact Listen dropdown on md–lg; full pills on xl+ */}
+          <details className="relative hidden md:block xl:hidden">
+            <summary className="cursor-pointer rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white whitespace-nowrap">
+              Listen
+            </summary>
+            <div className="absolute right-0 mt-2 w-64 rounded-xl border border-white/10 bg-[#120F1E]/95 p-3 shadow-lg">
+              <ListenCtas className="flex flex-col gap-2" />
+            </div>
+          </details>
+
+          <div className="hidden xl:flex">
+            <ListenCtas />
+          </div>
+
           <Link
             href="/subscribe"
-            className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--skol-gold)]"
+            className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--skol-gold)] whitespace-nowrap"
           >
             Subscribe
           </Link>
