@@ -17,7 +17,7 @@ export default function PrivacyPage() {
       </p>
 
       <section>
-        <h2>What we collect</h2>
+        <h2><strong>What we collect</strong></h2>
         <ul>
           <li>
             <strong>Email address</strong> if you subscribe to updates.
@@ -30,7 +30,7 @@ export default function PrivacyPage() {
       </section>
 
       <section>
-        <h2>How we store it</h2>
+       <h2><strong>How we store it</strong></h2>
         <p>
           Subscriber emails are stored securely with our email service or in our
           site’s back-end. We do not sell your personal information.
@@ -39,11 +39,11 @@ export default function PrivacyPage() {
 
          <section>
         <h2>How long we keep it</h2>
-        <p>We keep your email until you unsubscribe or ask us to remove it.</p>
+       <h2><strong>How long we keep it</strong></h2>
       </section>
 
        <section>
-        <h2>Your choices</h2>
+        <h2><strong>Your choices</strong></h2>
         <ul>
           <li>You can unsubscribe anytime using the link in our emails.</li>
           <li>You can request deletion of your email by contacting us.</li>
@@ -51,9 +51,11 @@ export default function PrivacyPage() {
       </section>
 
        <section>
-        <h2>Contact</h2>
+       <h2><strong>Contact</strong></h2>
         <p>
-          Questions? Email us at{" "}
+         Questions?
+          <br />
+          Email us at{" "}
           <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.
         </p>
       </section>
