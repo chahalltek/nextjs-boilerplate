@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Image from "next/image";
 import Link from 'next/link';
 
 export type Episode = {
@@ -132,11 +133,7 @@ export default function EpisodeLayout({ episode }: Props) {
             {episode.guests.map((g) => (
               <li key={g.name} className="flex gap-4">
                 {g.avatarUrl && (
-                  <img
-                    src={g.avatarUrl}
-                    alt=""
-                    className="h-16 w-16 rounded-full object-cover"
-                  />
+                  <Image src={g.avatarUrl} alt="" width={64} height={64} className="h-16 w-16 rounded-full object-cover" loading="lazy" />
                 )}
                 <div>
                   <p className="font-semibold">
