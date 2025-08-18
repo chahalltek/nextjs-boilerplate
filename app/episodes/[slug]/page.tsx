@@ -40,7 +40,10 @@ export default async function EpisodePage({ params }: { params: { slug: string }
   const episode = await getEpisodeBySlug(params.slug);
   if (!episode) return notFound();
 
-   const ld = {
+   const episodes = await getAllEpisodes();
+  const tags = Array.from(new Set(episodes.flatMap((e) => e.tags || [])));
+
+  const ld = {
     "@context": "https://schema.org",
     "@type": "PodcastEpisode",
     name: episode.title,
@@ -57,11 +60,10 @@ export default async function EpisodePage({ params }: { params: { slug: string }
     },
     keywords: (episode.tags || []).join(", "),
   };
-   <EpisodeSearch tags={tags} />
 
   return (
     <div className="container py-12 space-y-6">
-    <script
+      <script
         type="application/ld+json"
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
@@ -91,6 +93,7 @@ export default async function EpisodePage({ params }: { params: { slug: string }
           ))}
         </ul>
       )}
+        <EpisodeSearch tags={tags} />
     </div>
   );
 }
