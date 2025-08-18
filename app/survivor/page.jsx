@@ -51,10 +51,9 @@ export default function SurvivorPage() {
         <PlayerStats />
       </section>
 
-      <section className="card p-4 md:p-6">
-        <h2 className="text-2xl font-semibold mb-4">Episodes Timeline</h2>
+        <div className="card p-4 md:p-6">
         <SurvivorTimeline />
-      </section>
+        </div>
 
       <section className="grid gap-6 lg:grid-cols-3">
         <article className="card p-6 space-y-3 lg:col-span-1">
