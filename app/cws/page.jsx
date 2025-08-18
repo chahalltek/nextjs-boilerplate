@@ -135,7 +135,12 @@ export default async function CwsIndexPage() {
 
   return (
     <div className="space-y-10">
-      <NflScheduleTicker />
+    <div className="space-y-2">
+        <p className="text-center text-sm text-white/60">
+          NFL schedule this week
+        </p>
+        <NflScheduleTicker />
+      </div>
       <div className="max-w-5xl mx-auto py-10 space-y-10">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">Weekly Recap</h1>
