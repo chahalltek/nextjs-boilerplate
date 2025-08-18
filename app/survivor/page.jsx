@@ -1,109 +1,81 @@
 // app/survivor/page.jsx
-import nextDynamic from "next/dynamic";
-import HyvorComments from "@/components/HyvorComments";
+import Link from "next/link";
+import Countdown from "@/components/Countdown";
+import { getSeason } from "@/lib/survivor/store";
 
-export const runtime = "nodejs";
-export const metadata = {
-  title: "Survivor — Hey Skol Sister",
-  description:
-    "Vote in our weekly Survivor-style poll, watch live results, and join the conversation.",
-};
+export const dynamic = "force-dynamic";
 
-// If survivor-client.jsx is in the SAME folder as this file:
-const SurvivorClient = nextDynamic(() => import("./survivor-client"), {
-  ssr: false,
-});
-const PlayerStats = nextDynamic(
-  () => import("./survivor-client").then((m) => m.PlayerStats),
-  { ssr: false }
-);
-const SurvivorTimeline = nextDynamic(
-  () => import("./survivor-client").then((m) => m.SurvivorTimeline),
-  { ssr: false }
-);
-const CastGrid = nextDynamic(
-  () => import("./survivor-client").then((m) => m.CastGrid),
-  { ssr: false }
-);
-const SurvivorTicker = nextDynamic(
-  () => import("./survivor-client").then((m) => m.SurvivorTicker),
-  { ssr: false }
-);
+export default async function SurvivorLanding() {
+  const seasonId = "S47"; // change if you use route param later
+  const season = await getSeason(seasonId);
 
-export default function SurvivorPage() {
+  if (!season) {
+    return (
+      <main className="container max-w-3xl py-10 space-y-6">
+        <h1 className="text-3xl font-bold">Survivor Bracket Challenge</h1>
+        <p className="text-white/70">
+          The current season isn’t configured yet. Ask an admin to seed the season in Super Admin.
+        </p>
+      </main>
+    );
+  }
+
+  const locked = new Date() >= new Date(season.lockAt);
+
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-10 space-y-10">
+    <main className="container max-w-3xl py-10 space-y-6">
       <header>
-        <h1 className="text-4xl font-bold">Survivor</h1>
-        <p className="mt-2 text-white/70">
-          Vote in the weekly poll and see live results.
+        <h1 className="text-3xl font-bold">Survivor Bracket Challenge</h1>
+        <p className="text-white/70">
+          Predict the full boot order and Final 3. Scores update weekly after each episode.
         </p>
       </header>
-        <SurvivorTicker />
-      <section className="space-y-4">
-        <h2 className="text-2xl font-semibold">Cast</h2>
-        <CastGrid />
-      </section>
 
-      <SurvivorClient />
-
-      <section className="card p-4 md:p-6">
-        <h2 className="text-2xl font-semibold mb-4">Player stats</h2>
-        <PlayerStats />
-      </section>
-
-        <div className="card p-4 md:p-6">
-        <SurvivorTimeline />
+      {/* Lock status + countdown */}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
+        <div className="text-sm text-white/80">
+          Bracket lock: <span className="font-semibold">{new Date(season.lockAt).toLocaleString()}</span>
         </div>
-
-      <section className="grid gap-6 lg:grid-cols-3">
-        <article className="card p-6 space-y-3 lg:col-span-1">
-          <h2 className="text-xl font-semibold">Survivor, meet Fantasy</h2>
-          <p className="text-white/80">
-            Survivor is basically fantasy football’s chaotic cousin: draftable
-            humans, unpredictable weather, questionable alliances, and one
-            confessional where everyone swears they’re “not here to make
-            friends.” If you like managing rosters, reading vibes, and shouting
-            at the TV, you’ll feel right at home.
-          </p>
-          <ul className="list-disc list-inside text-white/70 space-y-1">
-            <li><span className="text-white">Strategy</span> over luck (mostly 🙃)</li>
-            <li>Hidden advantages = waiver wire with palm fronds</li>
-            <li>Tribal Council = the ultimate start/sit decision</li>
-          </ul>
-        </article>
-
-        <article className="card p-6 space-y-3 lg:col-span-1">
-          <h2 className="text-xl font-semibold">How our polls work</h2>
-          <ol className="list-decimal list-inside text-white/80 space-y-1">
-            <li>Pick a poll on the left.</li>
-            <li>Make your choice — no account required.</li>
-            <li>See live results update instantly.</li>
-          </ol>
-          <p className="text-white/70">
-            We’ll post new polls through the season. Ties are possible; that’s
-            showbiz. Be nice in the comments — we mod like Jeff hosts:
-            relentlessly, but with a smile.
-          </p>
-        </article>
-
-        <article className="card p-6 space-y-3 lg:col-span-1">
-          <h2 className="text-xl font-semibold">Season snapshot</h2>
-          <p className="text-white/80">
-            Each season tweaks the rules a bit — new idols, advantages, and
-            twists that make your fantasy brain tingle. We’ll highlight notable
-            changes in each week’s poll so you’re never blindsided.
-          </p>
-          <p className="text-white/60 text-sm">
-            Premiere date: we’ll update here once CBS posts the official slate.
-            Either way, the torch is lit — let’s play.
-          </p>
-        </article>
-      </section>
-
-        <div className="card p-4 md:p-6">
-        <HyvorComments pageId="survivor" />
+        {!locked ? (
+          <div className="text-sm text-white/70">
+            <Countdown to={season.lockAt} />
+          </div>
+        ) : (
+          <div className="text-sm text-white/70">Locked</div>
+        )}
       </div>
-    </div>
+
+      {/* Primary actions */}
+      <div className="flex flex-wrap gap-3">
+        {!locked ? (
+          <Link href="/survivor/bracket" className="btn-gold inline-flex items-center justify-center">
+            Enter Bracket
+          </Link>
+        ) : (
+          <button
+            disabled
+            className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold bg-white/10 text-white/60 cursor-not-allowed"
+            title="Bracket is locked"
+          >
+            Bracket Locked
+          </button>
+        )}
+
+        <Link href="/survivor/leaderboard" className="cta-card">
+          <span className="cta-title">View Leaderboard →</span>
+          <span className="cta-sub">See who’s leading the season.</span>
+        </Link>
+      </div>
+
+      {/* Quick rules */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <h2 className="font-semibold mb-2">Rules (quick)</h2>
+        <ul className="list-disc pl-5 text-white/80 space-y-1 text-sm">
+          <li>Exact boot correct: +5; off by 1: +2; off by 2–3: +1.</li>
+          <li>Finale bonuses: Winner +10; Final 3 in exact order +6.</li>
+          <li>Tiebreaker optional: winner’s jury vote count.</li>
+        </ul>
+      </section>
+    </main>
   );
 }
