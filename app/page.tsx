@@ -43,7 +43,7 @@ export default function HomePage() {
           <div className="mt-6 flex items-center justify-center gap-3">
             <Link
               href="/start-sit"
-              className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90"
+              className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90"
             >
               Get this week’s sit/starts
             </Link>
@@ -86,7 +86,7 @@ export default function HomePage() {
           </div>
           <Link
             href="/survivor"
-            className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90 whitespace-nowrap"
+            className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 whitespace-nowrap"
           >
             Play Now
           </Link>
