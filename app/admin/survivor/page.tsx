@@ -72,7 +72,7 @@ export default async function SurvivorAdminPage() {
   return (
     <main className="container max-w-4xl py-10 space-y-10">
       <header>
-        <h1 className="text-3xl font-bold">Survivor — Admin</h1>
+        <h1 className="text-3xl font-bold">Survivor (Bracket)</h1>
         <p className="text-white/70">Seed the season and manage weekly results.</p>
       </header>
 
