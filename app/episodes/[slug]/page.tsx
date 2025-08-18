@@ -12,11 +12,17 @@ export async function generateStaticParams() {
   return episodes.map((ep) => ({ slug: ep.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
   const episode = await getEpisodeBySlug(params.slug);
   if (!episode) return {};
   const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-  const og = `${base}/api/og?title=${encodeURIComponent(episode.title)}&cover=${encodeURIComponent(episode.coverImage || "")}`;
+  const og = `${base}/api/og?title=${encodeURIComponent(episode.title)}&cover=${encodeURIComponent(
+    (episode as any).coverImage || ""
+  )}`;
   return {
     title: episode.title,
     description: episode.description,
@@ -37,26 +43,40 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
 export default async function EpisodePage({ params }: { params: { slug: string } }) {
   const episode = await getEpisodeBySlug(params.slug);
-  if (!episode) return notFound();
+  if (!episode) notFound();
 
-  
+  // Safe reads for optional / variant fields
+  const ep: any = episode as any;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+
+  const datePublished: string | undefined = ep.publishedAt ?? ep.date ?? undefined;
+  const durSec: number | undefined =
+    typeof ep.durationSec === "number"
+      ? ep.durationSec
+      : typeof ep.duration === "number"
+      ? ep.duration
+      : undefined;
+  const episodeNumber: number | undefined = ep.episodeNumber ?? undefined;
+  const audioUrl: string | undefined = ep.audioUrl ?? ep.audio ?? undefined;
+  const coverImage: string | undefined = ep.coverImage ?? undefined;
+
   const episodes = await getAllEpisodes();
-  const tags = Array.from(new Set(episodes.flatMap((e) => e.tags || [])));
+  const tags: string[] = Array.from(new Set(episodes.flatMap((e: any) => e.tags || [])));
 
   const ld = {
     "@context": "https://schema.org",
     "@type": "PodcastEpisode",
     name: episode.title,
-    url: `${process.env.NEXT_PUBLIC_SITE_URL}/episodes/${episode.slug}`,
-    datePublished: episode.date,
+    url: `${baseUrl}/episodes/${episode.slug}`,
+    datePublished,
     partOfSeries: { "@type": "PodcastSeries", name: "Hey Skol Sister" },
-    duration: episode.durationSec ? `PT${Math.round(episode.durationSec / 60)}M` : undefined,
-    episodeNumber: episode.episodeNumber ?? undefined,
+    duration: durSec ? `PT${Math.round(durSec / 60)}M` : undefined,
+    episodeNumber,
     description: episode.description,
     author: episode.guests?.map((g: any) => ({ "@type": "Person", name: g.name })),
     associatedMedia: {
       "@type": "AudioObject",
-      contentUrl: episode.audio,
+      contentUrl: audioUrl,
     },
     keywords: (episode.tags || []).join(", "),
   };
@@ -68,9 +88,9 @@ export default async function EpisodePage({ params }: { params: { slug: string }
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
       />
-      {episode.coverImage && (
+      {coverImage && (
         <Image
-          src={episode.coverImage}
+          src={coverImage}
           alt={episode.title}
           priority
           width={1600}
@@ -81,18 +101,21 @@ export default async function EpisodePage({ params }: { params: { slug: string }
       )}
       <h1 className="text-3xl font-bold">{episode.title}</h1>
       <p className="text-white/70">{episode.description}</p>
-      {episode.audio ? (
-        <EpisodePlayer src={episode.audio} slug={episode.slug} title={episode.title} />
+
+      {audioUrl ? (
+        <EpisodePlayer src={audioUrl} slug={episode.slug} title={episode.title} />
       ) : (
         <div className="text-white/60">Audio coming soon.</div>
       )}
-      {episode.notes && (
+
+      {Array.isArray(ep.notes) && ep.notes.length > 0 && (
         <ul className="list-disc pl-5 space-y-1 text-white/80">
-          {episode.notes.map((n: string) => (
+          {ep.notes.map((n: string) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
       )}
+
       <EpisodeSearch tags={tags} />
     </div>
   );
