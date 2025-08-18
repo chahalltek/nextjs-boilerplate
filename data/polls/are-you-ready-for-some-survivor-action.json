@@ -1,0 +1,21 @@
+{
+  "slug": "are-you-ready-for-some-survivor-action",
+  "question": "When the season begins we will start posting in this area. Standby for the season start! In the meantime, how excited are you for this season? ",
+  "options": [
+    {
+      "label": "Very Excited!"
+    },
+    {
+      "label": "Neutral"
+    },
+    {
+      "label": "What is Survivor?"
+    },
+    {
+      "label": "Not Excited at All"
+    }
+  ],
+  "active": true,
+  "closesAt": null,
+  "updatedAt": "2025-08-18T16:26:06.893Z"
+}
