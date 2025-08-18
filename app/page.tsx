@@ -14,12 +14,13 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
-   <div className="space-y-2">
+      <div className="space-y-2">
         <p className="text-center text-sm text-white/60">
           Trending (hot) players
         </p>
         <TrendingTicker />
       </div>
+
       {/* HERO */}
       <section className="pt-10 pb-16 text-center relative">
         <div className="absolute inset-0 -z-10 pointer-events-none [mask-image:radial-gradient(50%_50%_at_50%_0%,#000_0%,transparent_70%)]">
@@ -44,9 +45,7 @@ export default function HomePage() {
               href="/start-sit"
               className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90"
             >
-             <p className="mt-6 text-xl font-semibold text-white">
-        Get this week’s sit/starts
-      </p>
+              Get this week’s sit/starts
             </Link>
             <Link
               href="/subscribe"
@@ -76,6 +75,22 @@ export default function HomePage() {
           title="Vikings Vibes"
           desc="Data-driven—but with plenty of purple. Skol!"
         />
+      </section>
+
+      {/* SURVIVOR PROMO (inserted here) */}
+      <section className="container">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:p-6 flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold">Survivor Bracket Challenge</div>
+            <div className="text-sm text-white/70">Make your picks before the lock!</div>
+          </div>
+          <Link
+            href="/survivor"
+            className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-black font-semibold hover:opacity-90 whitespace-nowrap"
+          >
+            Play Now
+          </Link>
+        </div>
       </section>
 
       {/* LATEST BLOG */}
