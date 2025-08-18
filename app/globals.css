@@ -23,6 +23,11 @@ body {
               linear-gradient(#0E0916, #151022 40%, #1a122a 100%);
 }
 
+*:focus-visible {
+  outline: 2px solid var(--color-skol-gold);
+  outline-offset: 2px;
+}
+
 .container { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
 
 /* little utility used by cards/inputs */

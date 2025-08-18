@@ -1,47 +1,57 @@
-import { notFound } from 'next/navigation';
-import EpisodeLayout, { Episode } from '@/components/EpisodeLayout';
-import episodes from '@/data/episodes.json';
+import { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { getAllEpisodes, getEpisodeBySlug } from "@/lib/episodes";
+import EpisodePlayer from "@/components/EpisodePlayer";
 
-type Params = { slug: string };
-
-export function generateStaticParams() {
-  return (episodes as Episode[]).map((e) => ({ slug: e.slug }));
+export async function generateStaticParams() {
+  const episodes = await getAllEpisodes();
+  return episodes.map((ep) => ({ slug: ep.slug }));
 }
 
-export function generateMetadata({ params }: { params: Params }) {
-  const episode = (episodes as Episode[]).find((e) => e.slug === params.slug);
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const episode = await getEpisodeBySlug(params.slug);
   if (!episode) return {};
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "";
+  const og = `${base}/api/og?title=${encodeURIComponent(episode.title)}&cover=${encodeURIComponent(episode.coverImage || "")}`;
   return {
-    title: `${episode.title} — Hey Skol Sister`,
+    title: episode.title,
     description: episode.description,
+    alternates: { canonical: `/episodes/${episode.slug}` },
     openGraph: {
       title: episode.title,
       description: episode.description,
-      url: `/episodes/${episode.slug}`,
-      images: episode.coverImage ? [episode.coverImage] : undefined,
+      images: [og],
     },
     twitter: {
-      card: 'summary_large_image',
+      card: "summary_large_image",
       title: episode.title,
       description: episode.description,
-      images: episode.coverImage ? [episode.coverImage] : undefined,
+      images: [og],
     },
   };
 }
 
-export default function EpisodePage({ params }: { params: Params }) {
-  const episode = (episodes as Episode[]).find((e) => e.slug === params.slug);
-  if (!episode) notFound();
+export default async function EpisodePage({ params }: { params: { slug: string } }) {
+  const episode = await getEpisodeBySlug(params.slug);
+  if (!episode) return notFound();
 
-  const related = episode.tags
-    ? (episodes as Episode[])
-        .filter(
-          (e) => e.slug !== episode.slug && e.tags?.some((t) => episode.tags?.includes(t))
-        )
-        .map((e) => ({ title: e.title, slug: e.slug }))
-        .slice(0, 3)
-    : [];
-
-  return <EpisodeLayout episode={{ ...episode, related }} />;
+  return (
+    <div className="container py-12 space-y-6">
+      <h1 className="text-3xl font-bold">{episode.title}</h1>
+      <p className="text-white/70">{episode.description}</p>
+      {episode.audio ? (
+        <EpisodePlayer src={episode.audio} slug={episode.slug} title={episode.title} />
+      ) : (
+        <div className="text-white/60">Audio coming soon.</div>
+      )}
+      {episode.notes && (
+        <ul className="list-disc pl-5 space-y-1 text-white/80">
+          {episode.notes.map((n: string) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
-
+app/episodes/page.jsx
