@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Logo from "@/components/Logo";
 
 const nav = [
@@ -20,10 +20,36 @@ const nav = [
 
 export default function Header() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false);          // mobile menu
+  const [listenOpen, setListenOpen] = useState(false); // popover
+  const listenRef = useRef(null);
 
   const isActive = (href) =>
     pathname === href || (href !== "/" && pathname?.startsWith(href));
+
+  // Close Listen on outside click
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!listenRef.current) return;
+      if (listenOpen && !listenRef.current.contains(e.target)) {
+        setListenOpen(false);
+      }
+    }
+    function onEsc(e) {
+      if (e.key === "Escape") setListenOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [listenOpen]);
+
+  // Close Listen on route change
+  useEffect(() => {
+    setListenOpen(false);
+  }, [pathname]);
 
   return (
     <header className="sticky top-0 z-50 bg-[#120F1E]/80 backdrop-blur supports-[backdrop-filter]:bg-[#120F1E]/60 border-b border-white/10">
@@ -37,7 +63,7 @@ export default function Header() {
           <span className="hidden sm:inline">Hey&nbsp;Skol&nbsp;Sister</span>
         </Link>
 
-        {/* Desktop nav: keep on one line */}
+        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6 ml-4 whitespace-nowrap">
           {nav.map((item) => (
             <Link
@@ -54,20 +80,27 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* Listen: message only (md and up; no outbound links) */}
-          <details className="relative hidden md:block">
-            <summary className="cursor-pointer rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white whitespace-nowrap">
+          {/* Listen popover (controlled) */}
+          <details
+            ref={listenRef}
+            open={listenOpen}
+            onToggle={(e) => setListenOpen(e.currentTarget.open)}
+            className="relative hidden md:block"
+          >
+            <summary className="cursor-pointer rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white whitespace-nowrap select-none">
               Listen
             </summary>
-            <div className="absolute right-0 mt-2 w-72 rounded-xl border border-white/10 bg-[#120F1E]/95 p-4 shadow-lg">
-              <p className="text-sm text-white/80">
-                Podcast launching in <strong>2026</strong>. Follow along and{" "}
-                <Link href="/subscribe" className="underline">
-                  subscribe for updates
-                </Link>
-                .
-              </p>
-            </div>
+            {listenOpen && (
+              <div className="absolute right-0 mt-2 w-72 rounded-xl border border-white/10 bg-[#120F1E]/95 p-4 shadow-lg">
+                <p className="text-sm text-white/80">
+                  Podcast launching in <strong>2026</strong>. Follow along and{" "}
+                  <Link href="/subscribe" className="underline" onClick={() => setListenOpen(false)}>
+                    subscribe for updates
+                  </Link>
+                  .
+                </p>
+              </div>
+            )}
           </details>
 
           {/* Admin link (subtle) */}
