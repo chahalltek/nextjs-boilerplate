@@ -93,7 +93,7 @@ export default function StatsPage() {
 
   return (
     <main className="container mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Weekly Stats</h1>
+      <h1 className="text-3xl font-bold mb-6">Weekly Stats - will go live when season starts</h1>
 
       <div className="mb-8 flex items-center gap-2">
         <label htmlFor="week" className="font-medium">
