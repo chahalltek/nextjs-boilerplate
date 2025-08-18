@@ -10,6 +10,8 @@ export interface Episode {
   audio: string;
   notes: string[];
   coverImage?: string;
+  tags?: string[];
+  guests?: { name: string; title?: string; avatarUrl?: string; bio?: string; link?: string }[];
 }
 
 const episodes: Episode[] = episodesData as Episode[];
