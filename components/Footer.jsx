@@ -1,6 +1,7 @@
 // components/SiteFooter.jsx
 import Link from "next/link";
 import Logo from "./Logo";
+import ListenCtas from "./ListenCtas";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
@@ -53,6 +54,7 @@ export default function SiteFooter() {
               </svg>
             </a>
           </nav>
+           <ListenCtas />
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">

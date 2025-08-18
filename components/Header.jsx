@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import Logo from "@/components/Logo";
+import ListenCtas from "@/components/ListenCtas";
 
 const nav = [
   // { href: "/episodes", label: "Episodes" }, // hidden for now
@@ -51,6 +52,7 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+        <ListenCtas className="hidden md:flex" />
           <Link
             href="/subscribe"
             className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--skol-gold)]"
@@ -92,6 +94,7 @@ export default function Header() {
             >
               Subscribe
             </Link>
+            <ListenCtas className="mt-4" />
           </div>
         </div>
       )}
