@@ -1,6 +1,7 @@
+// components/survivor/BracketBuilder.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -56,7 +57,9 @@ export default function BracketBuilder({
     setFinal3((prev) => {
       const next = prev.slice();
       // ensure uniqueness across slots
-      for (let i = 0; i < 3; i++) if (next[i] === contestantId) next[i] = "";
+      for (let i = 0; i < 3; i++) {
+        if (next[i] === contestantId) next[i] = "";
+      }
       next[slotIndex] = contestantId;
       return next;
     });
@@ -172,4 +175,133 @@ export default function BracketBuilder({
         <DragOverlay dropAnimation={null}>
           {activeId && activeId.startsWith("boot-") ? (
             <RowVisual label={byId.get(activeId.replace("boot-", ""))?.name || ""} />
-          ) :
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
+      {/* Submit */}
+      {!locked ? (
+        <div className="flex flex-wrap gap-2">
+          <input
+            className="rounded border border-white/20 bg-transparent px-3 py-2"
+            placeholder="Display name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <button type="button" className="btn-gold" onClick={submit}>
+            Submit Bracket
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-white/60">Picks are locked for this season.</p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------- sub-components ------------------------- */
+
+function RowVisual({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-white/10 px-3 py-2">
+      <span className="text-sm">{label}</span>
+    </div>
+  );
+}
+
+function SortableRow({
+  id,
+  label,
+  index,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  index: number;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={[
+        "flex items-center justify-between gap-3 px-3 py-2 bg-transparent",
+        isDragging ? "opacity-70" : "",
+      ].join(" ")}
+    >
+      <span className="text-sm opacity-70 w-8">{index + 1}.</span>
+      <span className="flex-1">{label}</span>
+      {!disabled && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="shrink-0 rounded border border-white/20 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+          aria-label="Drag to reorder"
+        >
+          Drag
+        </button>
+      )}
+    </li>
+  );
+}
+
+function FinalSlot({
+  id,
+  label,
+  contestant,
+  highlightId,
+  locked,
+  onClear,
+}: {
+  id: string;
+  label: string;
+  contestant?: Contestant;
+  highlightId: string | null;
+  locked: boolean;
+  onClear: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const showGlow = !locked && isOver && highlightId?.startsWith("boot-");
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "rounded-xl border border-white/15 p-3 min-h-[64px]",
+        showGlow ? "outline outline-2 outline-[color:var(--skol-gold)]" : "",
+      ].join(" ")}
+    >
+      <div className="text-xs uppercase tracking-wide text-white/60 mb-1">
+        {label}
+      </div>
+      {contestant ? (
+        <div className="flex items-center justify-between gap-2">
+          <div className="rounded-lg bg-white/10 px-3 py-2">{contestant.name}</div>
+          {!locked && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-xs text-white/60 hover:text-white/90"
+              aria-label={`Clear ${label}`}
+              title="Clear"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-white/15 px-3 py-2 text-white/40 text-sm">
+          Drag a contestant here
+        </div>
+      )}
+    </div>
+  );
+}
