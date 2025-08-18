@@ -12,10 +12,21 @@ export default function StartSitPage() {
     <div className="container py-12 space-y-8">
       {/* Ticker at the very top */}
       <section aria-labelledby="injury-report-heading">
-        <h2 id="injury-report-heading" className="text-xl font-semibold mb-3">
+        <h2
+          id="injury-report-heading"
+          className="text-center text-sm font-normal text-white/70 mb-2"
+        >
           Injury Report
         </h2>
-        <InjuryTicker />
+
+        {/* Centered, small, non-bold ticker line */}
+        <div className="border-y border-white/10 py-2">
+          <InjuryTicker
+            className="mx-auto max-w-5xl text-center text-sm font-normal text-white/80
+                       [&_*]:font-normal" // force non-bold for any nested <b>/<strong>
+            center
+          />
+        </div>
       </section>
 
       {/* Page header below the ticker */}
