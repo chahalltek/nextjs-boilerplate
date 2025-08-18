@@ -1,5 +1,6 @@
 // app/privacy/page.jsx
 import Link from "next/link";
+
 export const runtime = "nodejs";
 export const metadata = {
   title: "Privacy Policy — Hey Skol Sister",
@@ -14,7 +15,7 @@ export default function PrivacyPage() {
       <p>
         <em>Last updated: {lastUpdated}</em>
       </p>
-
+<br />
       <section>
         <h2><strong>What we collect</strong></h2>
         <ul>
@@ -27,7 +28,7 @@ export default function PrivacyPage() {
           </li>
         </ul>
       </section>
-
+<br />
       <section>
        <h2><strong>How we store it</strong></h2>
         <p>
@@ -40,6 +41,7 @@ export default function PrivacyPage() {
 
          <section>
        <h2><strong>How long we keep it</strong></h2>
+        <p>We keep your email until you unsubscribe or ask us to remove it.</p>
       </section>
        <br />
 
