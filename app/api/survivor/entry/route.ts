@@ -1,10 +1,19 @@
 // app/api/survivor/entry/route.ts
 import { NextResponse } from "next/server";
-// TODO: plug in your store (KV/Supabase/GitHub)
+import { getSeason, upsertEntry } from "@/lib/survivor/store";
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  // validate body.seasonId, picks.bootOrder etc.
-  // await saveEntry(body);
-  return NextResponse.json({ ok: true }, { status: 200 });
+  try {
+    const { seasonId, name, picks, entryId } = await req.json();
+    if (!seasonId || !picks?.bootOrder?.length || !picks?.final3?.length) {
+      return NextResponse.json({ error: "invalid body" }, { status: 400 });
+    }
+    const season = await getSeason(seasonId);
+    if (!season) return NextResponse.json({ error: "season not found" }, { status: 404 });
+
+    const entry = await upsertEntry(season, { id: entryId, name, picks });
+    return NextResponse.json({ ok: true, entryId: entry.id });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "error" }, { status: 400 });
+  }
 }
