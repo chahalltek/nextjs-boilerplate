@@ -9,7 +9,6 @@ const EpisodePlayer = dynamic(() => import("@/components/EpisodePlayer"), { ssr:
 
 export async function generateStaticParams() {
   const episodes = await getAllEpisodes();
- 
   return episodes.map((ep) => ({ slug: ep.slug }));
 }
 
@@ -40,7 +39,8 @@ export default async function EpisodePage({ params }: { params: { slug: string }
   const episode = await getEpisodeBySlug(params.slug);
   if (!episode) return notFound();
 
-   const episodes = await getAllEpisodes();
+  
+  const episodes = await getAllEpisodes();
   const tags = Array.from(new Set(episodes.flatMap((e) => e.tags || [])));
 
   const ld = {
@@ -93,8 +93,7 @@ export default async function EpisodePage({ params }: { params: { slug: string }
           ))}
         </ul>
       )}
-        <EpisodeSearch tags={tags} />
+      <EpisodeSearch tags={tags} />
     </div>
   );
 }
-
