@@ -6,7 +6,7 @@ export function scoreEntry(season: Season, entry: Entry): number {
   const predicted = entry.picks.bootOrder;
   let score = 0;
 
-  // Per-episode scoring (only for boots we know so far)
+  // Weekly scoring for boots we know so far
   for (let i = 0; i < actual.length; i++) {
     const bootId = actual[i];
     const predictedIdx = predicted.indexOf(bootId);
@@ -17,8 +17,8 @@ export function scoreEntry(season: Season, entry: Entry): number {
     else if (diff <= 3) score += 1;
   }
 
-  // Bonuses at finale
-  if (season.final3 && season.final3.length === 3) {
+  // Finale bonuses
+  if (season.final3?.length === 3 && entry.picks.final3?.length === 3) {
     const [w1, w2, w3] = season.final3;
     const [p1, p2, p3] = entry.picks.final3;
     if (p1 === w1) score += 10;
