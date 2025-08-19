@@ -135,6 +135,60 @@ export default function RosterHome() {
         </p>
       </header>
 
+      {/* Explainer */}
+<section className="rounded-xl border border-white/10 bg-white/5 p-4">
+  <h2 className="font-semibold">What is Skol Coach?</h2>
+  <p className="text-white/80 text-sm mt-2">
+    Your weekly lineup consigliere. We blend data science (projections, injuries, opponent difficulty)
+    with human overrides to get you the best combo of <em>art + science</em>.
+  </p>
+
+  <div className="grid md:grid-cols-2 gap-3 mt-4 text-sm">
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="font-medium">How to use</div>
+      <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
+        <li>Paste or search/add your players (Sleeper IDs or names).</li>
+        <li>Save your roster once—update anytime for trades/waivers.</li>
+        <li>Select the week and click <b>Get Recommendation</b>.</li>
+      </ul>
+    </div>
+
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="font-medium">What you’ll get</div>
+      <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
+        <li>A position-by-position starting lineup + bench.</li>
+        <li>Confidence scores & rough tiers (A/B/C/D).</li>
+        <li>Optional weekly email reminders with your lineup.</li>
+      </ul>
+    </div>
+
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="font-medium">Multiple teams/leagues</div>
+      <p className="text-white/70 mt-1">
+        Managing more than one squad? Create a roster for each team
+        (unique email/team name helps you keep them straight).
+        You can pin players to FLEX and tweak your slot rules as needed—
+        some leagues require TE, some don’t—we’ve got you.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="font-medium">Art + Science</div>
+      <p className="text-white/70 mt-1">
+        Projections, injuries, and matchups power the model; our admins
+        can nudge calls when vibes or late news matter. If we override,
+        you’ll see it reflected in the recommendation.
+      </p>
+    </div>
+  </div>
+
+  <p className="text-xs text-white/50 mt-3">
+    Heads up: lineups refresh as projections and injuries update. You’ll get an email
+    near midweek with your recommended starters (and again if something meaningfully changes).
+  </p>
+</section>
+
+
       {/* Create or edit card */}
       <section className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
         {!id && (
