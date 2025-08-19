@@ -1,195 +1,108 @@
 // app/api/cron/backfill-lineup-names/route.ts
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
-// If you already have helpers to load lineups, use them:
-import { getLineup } from "@/lib/roster/store";
 
-// ---- Config / helpers -------------------------------------------------
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-/** Where we persist the names map per (roster, week). */
-const kLineupNames = (rosterId: string, week: number) =>
-  `lineup:names:${rosterId}:${week}`;
+// Key helpers (match your store.ts scheme)
+const kRoster = (id: string) => `ro:roster:${id}`;
+const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
+const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
 
-/** Parse all ids from a lineup’s slots + bench. */
-function collectIds(lineup: any): string[] {
-  const ids = new Set<string>();
-  if (lineup?.slots && typeof lineup.slots === "object") {
-    Object.values(lineup.slots as Record<string, string[]>).forEach((arr) => {
-      (arr || []).forEach((pid) => pid && ids.add(String(pid)));
-    });
-  }
-  (lineup?.bench || []).forEach((pid: string) => pid && ids.add(String(pid)));
-  return Array.from(ids);
-}
+type NameHit = { id: string; name?: string; pos?: string; team?: string };
 
-/** True if lineup was recommended within lookback window (or no timestamp present). */
-function isRecent(lineup: any, cutoffMs: number) {
-  if (!lineup) return false;
-  const ts = Date.parse(String(lineup.recommendedAt || "")) || 0;
-  return ts === 0 || ts >= cutoffMs;
-}
-
-/** Fetch name/pos/team for ids via your existing names API. */
-async function fetchNamesMap(ids: string[]): Promise<Record<string, any>> {
+// ---------- utilities ----------
+async function fetchNames(ids: string[], origin: string) {
   if (!ids.length) return {};
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-  const url = `${base}/api/players/names?ids=${encodeURIComponent(ids.join(","))}`;
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return {};
-    return (await res.json()) as Record<string, any>;
-  } catch {
-    return {};
+  // call your existing names endpoint in batches to be safe
+  const chunk = (a: string[], n = 60) =>
+    Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, (i + 1) * n));
+
+  const out: Record<string, { name?: string; pos?: string; team?: string }> = {};
+  for (const group of chunk(ids, 60)) {
+    const url = `${origin}/api/players/names?ids=${encodeURIComponent(group.join(","))}`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = (await res.json().catch(() => [])) as NameHit[];
+      for (const h of data || []) {
+        if (!h?.id) continue;
+        out[h.id] = { name: h.name, pos: h.pos, team: h.team };
+      }
+    } catch {
+      // ignore chunk errors; proceed with what we have
+    }
   }
+  return out;
 }
 
-/** Try to discover roster ids from KV if caller didn’t specify one. */
-async function discoverRosterIds(): Promise<string[]> {
-  // We try a couple likely patterns and dedupe; if unavailable, return [].
-  const out = new Set<string>();
-  try {
-    // Common pattern if rosters are stored like "roster:<id>"
-    const rosterKeys = await kv.keys<string>("roster:*");
-    rosterKeys.forEach((k) => {
-      const m = k.match(/^roster:(.+)$/);
-      if (m) out.add(m[1]);
-    });
-  } catch {}
-  // If you also keep an index/list somewhere (e.g., "rosters:index"), pull it here:
-  try {
-    const list = (await kv.get<string[]>("rosters:index")) || [];
-    list.forEach((id) => id && out.add(id));
-  } catch {}
-  return Array.from(out);
+function uniqueIdsFromLineup(lineup: any): string[] {
+  const slots = lineup?.slots || {};
+  const bench = lineup?.bench || [];
+  const slotIds = Object.values(slots).flat().filter(Boolean) as string[];
+  return Array.from(new Set([...slotIds, ...bench]));
 }
 
-// ---- Handlers ---------------------------------------------------------
+async function saveNameMap(rosterId: string, week: number, map: Record<string, any>) {
+  // TTL ~ 14 days; adjust as you wish
+  await kv.set(kLineupNames(rosterId, week), map, { ex: 60 * 60 * 24 * 14 });
+}
 
-/**
- * POST /api/cron/backfill-lineup-names?days=14[&roster=<id>]
- *
- * - If `roster` is provided, only that roster is scanned (weeks 1..18) and
- *   filtered by `recommendedAt >= now - days`.
- * - Otherwise, we attempt to discover roster ids from KV and scan them.
- * - For every lineup found, we collect unique player_ids, fetch name meta via
- *   /api/players/names, and store the result at KV key:
- *     lineup:names:<rosterId>:<week>
- *
- * Response: { ok, scanned, updated, ids }
- */
+// Scan all roster ids in KV (keys look like "ro:roster:<id>")
+async function getAllRosterIds(): Promise<string[]> {
+  const out: string[] = [];
+  for await (const key of kv.scanIterator({ match: "ro:roster:*", count: 500 })) {
+    const m = /^ro:roster:(.+)$/.exec(String(key));
+    if (m?.[1]) out.push(m[1]);
+  }
+  return out;
+}
+
+// ---------- handler ----------
 export async function POST(req: Request) {
-  const url = new URL(req.url);
-  const days = Number(url.searchParams.get("days") || "14");
-  const rosterParam = (url.searchParams.get("roster") || "").trim();
+  const { searchParams } = new URL(req.url);
+  const id = (searchParams.get("id") || "").trim();
+  const week = Number(searchParams.get("week") || "0");
+  const all = searchParams.get("all") === "1";
 
-  if (!Number.isFinite(days) || days <= 0) {
-    return NextResponse.json(
-      { ok: false, error: "Provide a positive ?days=N (e.g., ?days=14)." },
-      { status: 400 }
-    );
+  if ((!id && !all) || !Number.isFinite(week) || week <= 0) {
+    return NextResponse.json({ ok: false, error: "id or all=1 required, and valid week required" }, { status: 400 });
   }
 
-  const now = Date.now();
-  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  // figure out origin for internal fetches
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") ||
+    (typeof req.headers.get === "function" && (req.headers.get("x-forwarded-proto") && req.headers.get("x-forwarded-host")
+      ? `${req.headers.get("x-forwarded-proto")}://${req.headers.get("x-forwarded-host")}`
+      : "")) ||
+    "";
 
-  // Build candidate (roster, week) pairs to scan.
-  const candidates: Array<{ roster: string; week: number }> = [];
+  try {
+    const targetIds = id ? [id] : await getAllRosterIds();
 
-  async function addRosterWeeks(rid: string) {
-    // We don't know which weeks exist; probe 1..18 and include if present + recent
-    for (let w = 1; w <= 18; w++) {
-      try {
-        const lu = await getLineup(rid, w);
-        if (!lu) continue;
-        if (!isRecent(lu, cutoff)) continue;
-        candidates.push({ roster: rid, week: w });
-      } catch {
-        // ignore
-      }
+    let processed = 0;
+    let skipped = 0;
+
+    for (const rid of targetIds) {
+      const lu = await kv.get(kLineup(rid, week));
+      if (!lu) { skipped++; continue; }
+
+      const ids = uniqueIdsFromLineup(lu);
+      if (!ids.length) { skipped++; continue; }
+
+      const nameMap = await fetchNames(ids, origin || "");
+      await saveNameMap(rid, week, nameMap);
+      processed++;
     }
+
+    return NextResponse.json({ ok: true, processed, skipped, week, mode: id ? "single" : "bulk" });
+  } catch (e) {
+    console.error("backfill-lineup-names fatal:", e);
+    return NextResponse.json({ ok: false, error: "internal error" }, { status: 500 });
   }
-
-  if (rosterParam) {
-    await addRosterWeeks(rosterParam);
-  } else {
-    const rosters = await discoverRosterIds();
-    if (rosters.length === 0) {
-      // As a fallback, try to infer from lineup:* keys:
-      try {
-        const keys = await kv.keys<string>("lineup:*"); // e.g., "lineup:<id>:<week>"
-        keys.forEach((k) => {
-          const m = k.match(/^lineup:(.+?):(\d{1,2})$/);
-          if (m) candidates.push({ roster: m[1], week: Number(m[2]) });
-        });
-      } catch {
-        // nothing we can do; return a helpful message
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "Could not discover roster ids. Pass ?roster=<id> to backfill a single roster.",
-          },
-          { status: 400 }
-        );
-      }
-      // Filter by recency when we can fetch the lineup
-      const filtered: Array<{ roster: string; week: number }> = [];
-      for (const c of candidates) {
-        try {
-          const lu = await getLineup(c.roster, c.week);
-          if (lu && isRecent(lu, cutoff)) filtered.push(c);
-        } catch {}
-      }
-      candidates.length = 0;
-      candidates.push(...filtered);
-    } else {
-      // Scan discovered rosters
-      for (const rid of rosters) await addRosterWeeks(rid);
-    }
-  }
-
-  // Load all candidates to gather ids
-  const seenPairs = new Set<string>();
-  const lineups: Array<{ roster: string; week: number; lu: any }> = [];
-  const allIds = new Set<string>();
-
-  for (const c of candidates) {
-    const key = `${c.roster}:${c.week}`;
-    if (seenPairs.has(key)) continue;
-    seenPairs.add(key);
-    try {
-      const lu = await getLineup(c.roster, c.week);
-      if (!lu) continue;
-      const ids = collectIds(lu);
-      ids.forEach((id) => allIds.add(id));
-      lineups.push({ roster: c.roster, week: c.week, lu });
-    } catch {
-      // ignore individual failures
-    }
-  }
-
-  // Fetch names once, then persist per-lineup
-  const nameMap = await fetchNamesMap(Array.from(allIds));
-  let updated = 0;
-
-  for (const item of lineups) {
-    try {
-      await kv.set(kLineupNames(item.roster, item.week), nameMap);
-      updated++;
-    } catch {
-      // continue
-    }
-  }
-
-  return NextResponse.json({
-    ok: true,
-    scanned: candidates.length,
-    updated,
-    ids: allIds.size,
-  });
 }
 
-// Optional GET wrapper (handy for quick tests)
-export const GET = POST;
+// Optional GET for quick manual runs
+export async function GET(req: Request) {
+  return POST(req);
+}
