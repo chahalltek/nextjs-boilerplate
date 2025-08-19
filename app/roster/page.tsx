@@ -26,7 +26,7 @@ type Lineup = {
         injury?: string;
         forcedStart?: boolean;
         forcedSit?: boolean;
-        // NEW: matchup context
+        // matchup context
         oppRank?: number;
         matchupTier?: "Green" | "Yellow" | "Red";
       };
@@ -35,12 +35,11 @@ type Lineup = {
   scores?: number;
 };
 
-type Hit = { id: string; name?: string; pos?: string; team?: string };
-
-type Rules = { QB: number; RB: number; WR: number; TE: number; FLEX: number; DST: number; K: number; };
+type Rules = { QB: number; RB: number; WR: number; TE: number; FLEX: number; DST: number; K: number };
 const defaultRules: Rules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
 
 type SavedRosterMeta = { id: string; name?: string };
+type Hit = { id: string; name?: string; pos?: string; team?: string };
 
 export default function RosterHome() {
   const [id, setId] = useState<string | null>(null);
@@ -57,21 +56,25 @@ export default function RosterHome() {
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
+  // incremental per-roster meta (name/pos/team) to send to server
+  const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
+
   const [saving, setSaving] = useState(false);
   const [week, setWeek] = useState(1);
   const [recommendation, setRecommendation] = useState<Lineup | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
 
   const [myRosters, setMyRosters] = useState<SavedRosterMeta[]>([]);
-  const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   // migrate old single id -> list and choose first
   useEffect(() => {
     const old = localStorage.getItem("rosterId");
     const listRaw = localStorage.getItem("rosterIds");
     let list: SavedRosterMeta[] = [];
-    try { list = listRaw ? JSON.parse(listRaw) : []; } catch {}
-    if (old && !list.find(r => r.id === old)) {
+    try {
+      list = listRaw ? JSON.parse(listRaw) : [];
+    } catch {}
+    if (old && !list.find((r) => r.id === old)) {
       list.push({ id: old });
       localStorage.removeItem("rosterId");
       localStorage.setItem("rosterIds", JSON.stringify(list));
@@ -96,9 +99,14 @@ export default function RosterHome() {
     async function load() {
       if (!id) {
         // clear for new roster
-        setEmail(""); setName(""); setPlayers([]);
-        setPinsFlex({}); setOptInEmail(true);
-        setRules(defaultRules); setScoring("PPR");
+        setEmail("");
+        setName("");
+        setPlayers([]);
+        setPinsFlex({});
+        setOptInEmail(true);
+        setRules(defaultRules);
+        setScoring("PPR");
+        setMeta({});
         setRecommendation(null);
         return;
       }
@@ -117,9 +125,9 @@ export default function RosterHome() {
         setScoring(r.scoring || "PPR");
 
         // keep local label updated
-        setMyRosters(prev => {
+        setMyRosters((prev) => {
           const next = [...prev];
-          const i = next.findIndex(x => x.id === r.id);
+          const i = next.findIndex((x) => x.id === r.id);
           if (i >= 0) next[i] = { id: r.id, name: r.name };
           localStorage.setItem("rosterIds", JSON.stringify(next));
           return next;
@@ -132,25 +140,34 @@ export default function RosterHome() {
   // helpers
   function addPlayer(pid: string) {
     if (!pid) return;
-    setPlayers(prev => (prev.includes(pid) ? prev : [...prev, pid]));
+    setPlayers((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+  }
+  function addPlayerFromHit(hit: Hit) {
+    if (!hit?.id) return;
+    setPlayers((prev) => (prev.includes(hit.id) ? prev : [...prev, hit.id]));
+    setMeta((prev) => ({ ...prev, [hit.id]: { name: hit.name, pos: hit.pos, team: hit.team } }));
   }
   function removePlayer(pid: string) {
-    setPlayers(prev => prev.filter(p => p !== pid));
-    setPinsFlex(prev => {
-      const next = { ...prev }; delete next[pid]; return next;
+    setPlayers((prev) => prev.filter((p) => p !== pid));
+    setPinsFlex((prev) => {
+      const next = { ...prev };
+      delete next[pid];
+      return next;
+    });
+    setMeta((prev) => {
+      const next = { ...prev };
+      delete next[pid];
+      return next;
     });
   }
-  function toggleFlexPin(pid: string) { setPinsFlex(prev => ({ ...prev, [pid]: !prev[pid] })); }
+  function toggleFlexPin(pid: string) {
+    setPinsFlex((prev) => ({ ...prev, [pid]: !prev[pid] }));
+  }
   function applyPaste() {
-    const ids = pasteText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-    setPlayers(prev => Array.from(new Set([...prev, ...ids])));
-    setPasteText(""); setShowPaste(false);
-
-  function addPlayerFromHit(hit: Hit) {
-  if (!hit?.id) return;
-  setPlayers((prev) => (prev.includes(hit.id) ? prev : [...prev, hit.id]));
-  setMeta((prev) => ({ ...prev, [hit.id]: { name: hit.name, pos: hit.pos, team: hit.team } }));
-}
+    const ids = pasteText.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    setPlayers((prev) => Array.from(new Set([...prev, ...ids])));
+    setPasteText("");
+    setShowPaste(false);
   }
 
   async function save() {
@@ -163,41 +180,36 @@ export default function RosterHome() {
         optInEmail,
         rules,
         scoring,
+        meta, // send incremental meta to be cached server-side
       };
-      if (id) payload.id = id; else payload.email = email;
+      if (id) payload.id = id;
+      else payload.email = email;
 
       const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.roster?.id) {
         const newId = data.roster.id as string;
-        setMyRosters(prev => {
-          const exists = prev.find(r => r.id === newId);
-          const next = exists ? prev.map(r => r.id === newId ? { id: newId, name } : r)
-                              : [{ id: newId, name }, ...prev];
+        setMyRosters((prev) => {
+          const exists = prev.find((r) => r.id === newId);
+          const next = exists
+            ? prev.map((r) => (r.id === newId ? { id: newId, name } : r))
+            : [{ id: newId, name }, ...prev];
           localStorage.setItem("rosterIds", JSON.stringify(next));
           return next;
         });
         setId(newId);
       }
-      const payload: any = {
-  name,
-  players,
-  pins: { FLEX: Object.keys(pinsFlex).filter((k) => pinsFlex[k]) },
-  optInEmail,
-  rules,
-  scoring,
-  meta, // <— NEW
-};
-
     } finally {
       setSaving(false);
     }
   }
 
-  function startNewRoster() { setId(null); }
+  function startNewRoster() {
+    setId(null);
+  }
   function deleteLocalRoster(rid: string) {
-    setMyRosters(prev => {
-      const next = prev.filter(r => r.id !== rid);
+    setMyRosters((prev) => {
+      const next = prev.filter((r) => r.id !== rid);
       localStorage.setItem("rosterIds", JSON.stringify(next));
       if (id === rid) setId(next[0]?.id ?? null);
       return next;
@@ -217,12 +229,12 @@ export default function RosterHome() {
   }
 
   async function recomputeNow() {
-  if (!id) return;
-  await fetch("/api/roster/recompute", {
-    method: "POST",
-    body: JSON.stringify({ id, week, notify: true }),
-  });
-}
+    if (!id) return;
+    await fetch("/api/roster/recompute", {
+      method: "POST",
+      body: JSON.stringify({ id, week, notify: true }),
+    });
+  }
 
   const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
@@ -288,10 +300,9 @@ export default function RosterHome() {
             <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
               <li>Search by player name (we map to Sleeper IDs automatically) or paste IDs.</li>
               <li>Save your roster once—update anytime for trades/waivers.</li>
-              <li>Select the week and click <b>Get Recommendation</b>.</li>
-              <button onClick={recomputeNow} className="text-xs border border-white/20 rounded px-2 py-1 text-white/70 hover:bg-white/10">
-                Recompute now
-              </button>
+              <li>
+                Select the week and click <b>Get Recommendation</b>.
+              </li>
             </ul>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
@@ -305,20 +316,22 @@ export default function RosterHome() {
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Multiple teams/leagues</div>
             <p className="text-white/70 mt-1">
-              Managing more than one squad? Keep several rosters and switch above.
-              Pin players to FLEX and tweak your slot rules as your league requires.
+              Managing more than one squad? Keep several rosters and switch above. Pin players to FLEX and tweak your slot
+              rules as your league requires.
             </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Art + Science</div>
             <p className="text-white/70 mt-1">
-              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes or late news matter.
+              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes or late news
+              matter.
             </p>
           </div>
         </div>
 
         <p className="text-xs text-white/50 mt-3">
-          Heads up: lineups refresh as projections and injuries update. You’ll get an email midweek and again only if your lineup meaningfully changes.
+          Heads up: lineups refresh as projections and injuries update. You’ll get an email midweek and again only if your
+          lineup meaningfully changes.
         </p>
       </section>
 
@@ -358,11 +371,13 @@ export default function RosterHome() {
             <span className="text-xs text-white/60">(override defaults as needed)</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
-            {(["QB","RB","WR","TE","FLEX","DST","K"] as (keyof Rules)[]).map((k) => (
+            {(["QB", "RB", "WR", "TE", "FLEX", "DST", "K"] as (keyof Rules)[]).map((k) => (
               <label key={k} className="flex flex-col text-xs">
                 <span className="text-white/60">{k}</span>
                 <input
-                  type="number" min={0} max={8}
+                  type="number"
+                  min={0}
+                  max={8}
                   value={rules[k]}
                   onChange={(e) => setRules({ ...rules, [k]: Number(e.target.value || 0) })}
                   className="bg-transparent border border-white/15 rounded px-2 py-1"
@@ -397,8 +412,8 @@ export default function RosterHome() {
             </button>
           </div>
 
+          {/* Use onSelect(hit) to capture name/pos/team */}
           <PlayerSearch onSelect={(hit: Hit) => addPlayerFromHit(hit)} />
-
 
           {showPaste && (
             <div className="grid gap-2">
@@ -414,21 +429,28 @@ export default function RosterHome() {
             </div>
           )}
 
-          {hasPlayers ? (
+          {players.length ? (
             <ul className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
               {players.map((pid) => (
-                <li key={pid} className="flex items-center justify-between rounded border border-white/10 bg-black/30 px-3 py-2">
+                <li
+                  key={pid}
+                  className="flex items-center justify-between rounded border border-white/10 bg-black/30 px-3 py-2"
+                >
                   <span className="truncate text-sm">
-                    {rosterMeta.map[pid]?.name || pid}
-                    {rosterMeta.map[pid]?.pos ? ` — ${rosterMeta.map[pid]?.pos}` : ""}
-                    {rosterMeta.map[pid]?.team ? ` (${rosterMeta.map[pid]?.team})` : ""}
+                    {rosterMeta.map[pid]?.name || meta[pid]?.name || pid}
+                    {rosterMeta.map[pid]?.pos || meta[pid]?.pos ? ` — ${rosterMeta.map[pid]?.pos || meta[pid]?.pos}` : ""}
+                    {rosterMeta.map[pid]?.team || meta[pid]?.team
+                      ? ` (${rosterMeta.map[pid]?.team || meta[pid]?.team})`
+                      : ""}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleFlexPin(pid)}
-                      className={`text-xs rounded px-2 py-1 border ${pinsFlex[pid]
-                        ? "border-[color:var(--skol-gold)] text-[color:var(--skol-gold)]"
-                        : "border-white/20 text-white/70"}`}
+                      className={`text-xs rounded px-2 py-1 border ${
+                        pinsFlex[pid]
+                          ? "border-[color:var(--skol-gold)] text-[color:var(--skol-gold)]"
+                          : "border-white/20 text-white/70"
+                      }`}
                       title="Pin to FLEX"
                     >
                       FLEX
@@ -467,7 +489,9 @@ export default function RosterHome() {
           <div className="flex items-center gap-2">
             <label className="text-sm">Week</label>
             <input
-              type="number" min={1} max={18}
+              type="number"
+              min={1}
+              max={18}
               value={week}
               onChange={(e) => setWeek(Number(e.target.value))}
               className="w-16 bg-transparent border border-white/10 rounded px-2 py-1"
@@ -475,9 +499,19 @@ export default function RosterHome() {
             <button onClick={loadRecommendation} className="btn-gold">
               {loadingRec ? "Loading…" : "Get Recommendation"}
             </button>
+            <button
+              onClick={recomputeNow}
+              className="text-xs border border-white/20 rounded px-2 py-1 text-white/70 hover:bg-white/10"
+              title="Force a refresh + send email if changed"
+            >
+              Recompute now
+            </button>
             {recommendation?.scores != null && (
               <span className="ml-auto text-sm text-white/70">
-                Total starters proj: <b className="text-white">{(recommendation.scores as number)?.toFixed?.(2) ?? recommendation.scores}</b>
+                Total starters proj:{" "}
+                <b className="text-white">
+                  {(recommendation.scores as number)?.toFixed?.(2) ?? recommendation.scores}
+                </b>
               </span>
             )}
           </div>
@@ -491,10 +525,7 @@ export default function RosterHome() {
 
 /* ---------------- UI helpers ---------------- */
 
-// Safe alias for optional details map
-type SlotDetail = NonNullable<Lineup["details"]>[string];
-
-function explainLine(d?: SlotDetail) {
+function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
   if (!d?.breakdown) return "";
   const b = d.breakdown;
   const parts = [
@@ -535,7 +566,9 @@ function RecommendationView({ lu }: { lu: Lineup }) {
                   }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
                   return (
                     <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate" title={explainLine(d)}>{label}</span>
+                      <span className="truncate" title={explainLine(d)}>
+                        {label}
+                      </span>
                       {d && (
                         <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
                           {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
