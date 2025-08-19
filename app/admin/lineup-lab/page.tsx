@@ -1,217 +1,192 @@
 // app/admin/lineup-lab/page.tsx
+import Link from "next/link";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
-
-/* ---------------- Server actions ---------------- */
-
 /**
- * Trigger the Lineup Lab digest for a single roster.
+ * ACTION 1: Backfill lineup names
+ * --------------------------------
+ * Purpose:
+ *   Ensure the (id -> {name,pos,team}) name map is stored per roster/week.
+ *   Useful after you’ve computed a lineup but want pretty names in emails/UI.
  *
- * Instructions:
- * - Provide a Roster ID (the short id users see on /roster).
- * - Week is optional; leave blank to let the digest use the current NFL week.
- * - Check “Notify user” to send an email only if the lineup meaningfully changed
- *   (the cron compares hashes before emailing).
+ * How it works:
+ *   Calls /api/cron/backfill-lineup-names?id=<rosterId>&week=<week>
+ *   The API will look up the latest lineup, build a name map, and persist it.
  *
- * Implementation notes:
- * - Calls the existing /api/cron/roster-digest endpoint with query params:
- *     ?roster=<id>&week=<n>&notify=0|1
- * - GET is used (idempotent); we catch/return any error text for visibility.
+ * When to use:
+ *   - After importing rosters
+ *   - After changing your player-name source
+ *   - Before sending a digest if you see raw IDs in previews
  */
-async function actionTriggerDigest(formData: FormData) {
+async function actionBackfillLineupNames(formData: FormData): Promise<void> {
   "use server";
+  const id = String(formData.get("rosterId") || "").trim();
+  const week = Number(formData.get("week") || "0");
+  if (!id || !Number.isFinite(week) || week <= 0) return;
+
   const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-  const roster = String(formData.get("roster") || "").trim();
-  const weekRaw = String(formData.get("week") || "").trim();
-  const notify = formData.get("notify") ? "1" : "0";
-  const params = new URLSearchParams();
-  if (roster) params.set("roster", roster);
-  if (weekRaw) params.set("week", weekRaw);
-  params.set("notify", notify);
-
-  if (!roster) {
-    return { ok: false, msg: "Please provide a roster id." };
-  }
-
   try {
-    const url = `${base}/api/cron/roster-digest?${params.toString()}`;
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    const text = await res.text();
-    return res.ok
-      ? { ok: true, msg: `Digest triggered for ${roster}${weekRaw ? ` (wk ${weekRaw})` : ""}.` }
-      : { ok: false, msg: `Digest call failed: ${text || res.status}` };
-  } catch (e: any) {
-    return { ok: false, msg: `Digest error: ${e?.message || String(e)}` };
+    await fetch(`${base}/api/cron/backfill-lineup-names?id=${encodeURIComponent(id)}&week=${week}`, {
+      method: "POST",
+      cache: "no-store",
+    });
+  } catch (e) {
+    console.error("backfill-lineup-names error:", e);
   }
 }
 
 /**
- * Warm/refresh the Player Name cache used by search & emails.
+ * ACTION 2: Trigger digest (recompute & optionally email)
+ * ------------------------------------------------------
+ * Purpose:
+ *   Recompute the lineup now and, if notify=1, send the email immediately.
  *
- * Instructions:
- * - Click to (re)prime the in-memory/KV name index so search & email
- *   rendering show names/positions/teams quickly.
- * - This is safe to run anytime. It’s lightweight: we just hit the search API.
+ * How it works:
+ *   Calls /api/roster/recompute?id=<rosterId>&week=<week>&notify=1|0
+ *   The API recomputes the lineup, saves it, and (optionally) sends the email.
  *
- * Implementation notes:
- * - We call /api/players/search with a minimal query (q=a) to ensure the index
- *   loads and stays warm. If you later add a dedicated rebuild endpoint,
- *   point this action at it instead.
+ * When to use:
+ *   - You updated Admin Overrides and want a fresh recommendation
+ *   - A manager updated their roster and asked for a quick re-send
  */
-async function actionRefreshNameCache() {
+async function actionTriggerDigest(formData: FormData): Promise<void> {
   "use server";
+  const id = String(formData.get("rosterId") || "").trim();
+  const week = Number(formData.get("week") || "0");
+  const notify = String(formData.get("notify") || "0") === "1" ? 1 : 0;
+  if (!id || !Number.isFinite(week) || week <= 0) return;
+
   const base = process.env.NEXT_PUBLIC_SITE_URL || "";
   try {
-    const url = `${base}/api/players/search?q=a&limit=1`;
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return { ok: false, msg: `Search warmup failed: ${res.status}` };
-    return { ok: true, msg: "Name cache primed." };
-  } catch (e: any) {
-    return { ok: false, msg: `Warmup error: ${e?.message || String(e)}` };
+    await fetch(`${base}/api/roster/recompute?id=${encodeURIComponent(id)}&week=${week}&notify=${notify}`, {
+      method: "POST",
+      cache: "no-store",
+    });
+  } catch (e) {
+    console.error("trigger-digest error:", e);
   }
 }
 
 /**
- * Backfill names on recent saved lineups so emails & UI show names (not ids).
+ * ACTION 3: Clear lineup (for a given roster/week)
+ * ------------------------------------------------
+ * Purpose:
+ *   Remove a saved computed lineup so the next request must recompute.
  *
- * Instructions:
- * - Choose a lookback window (in days). We’ll iterate recent lineups and
- *   attach name/meta where missing.
- * - Use this after you switch providers or change the name-map structure.
+ * How it works:
+ *   Calls /api/roster/clear-lineup?id=<rosterId>&week=<week>
+ *   (Implement this route to kv.del the saved lineup key.)
  *
- * Implementation notes:
- * - This action calls a best-effort maintenance URL. If you haven’t created
- *   a dedicated endpoint yet, it will no-op gracefully.
- * - Recommended to implement a POST /api/cron/backfill-lineup-names with
- *   a `days` query param on the server that reads/saves affected lineups.
+ * When to use:
+ *   - You suspect stale data
+ *   - You changed core scoring/rules and want a clean recompute
  */
-async function actionBackfillNames(formData: FormData) {
+async function actionClearLineup(formData: FormData): Promise<void> {
   "use server";
+  const id = String(formData.get("rosterId") || "").trim();
+  const week = Number(formData.get("week") || "0");
+  if (!id || !Number.isFinite(week) || week <= 0) return;
+
   const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-  const days = Number(String(formData.get("days") || "14"));
-  if (!Number.isFinite(days) || days <= 0) {
-    return { ok: false, msg: "Please provide a positive number of days." };
-  }
   try {
-    const url = `${base}/api/cron/backfill-lineup-names?days=${days}`;
-    const res = await fetch(url, { method: "POST", cache: "no-store" });
-    const text = await res.text();
-    return res.ok
-      ? { ok: true, msg: `Backfill kicked off for ~${days} day(s).` }
-      : { ok: false, msg: `Backfill call failed: ${text || res.status}` };
-  } catch (e: any) {
-    // Graceful no-op if endpoint not present
-    return {
-      ok: false,
-      msg:
-        "Backfill endpoint not found yet. Create POST /api/cron/backfill-lineup-names?days=N to wire this up.",
-    };
+    await fetch(`${base}/api/roster/clear-lineup?id=${encodeURIComponent(id)}&week=${week}`, {
+      method: "POST",
+      cache: "no-store",
+    });
+  } catch (e) {
+    console.error("clear-lineup error:", e);
   }
 }
 
-/* ---------------- UI ---------------- */
-
-export default async function LineupLabAdmin() {
+export default function LineupLabAdmin() {
   return (
     <main className="container max-w-4xl py-10 space-y-8">
-      <header className="space-y-1">
+      <header>
         <h1 className="text-3xl font-bold">Lineup Lab — Admin</h1>
         <p className="text-white/70 text-sm">
-          Tools for digest runs, player-name cache, and name backfills.
+          Tools for recomputing lineups, backfilling names, and clearing cached results.
         </p>
       </header>
 
-      {/* Trigger digest */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Trigger Lineup Digest (single roster)</h2>
+      {/* Helper links */}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+        <div className="flex flex-wrap gap-3">
+          <Link href="/admin" className="underline hover:no-underline">← Admin Home</Link>
+          <Link href="/admin/roster" className="underline hover:no-underline">Roster Admin</Link>
+          <Link href="/roster" className="underline hover:no-underline">Lineup Lab (client)</Link>
+        </div>
+      </div>
+
+      {/* Card 1: Backfill lineup names */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 grid gap-3">
+        <h2 className="font-semibold">Backfill Lineup Names</h2>
         <p className="text-sm text-white/70">
-          Provide a roster id (from the user’s Lineup Lab page). Week is optional; leave
-          blank to use the current NFL week. “Notify user” sends an email only when the
-          computed lineup meaningfully changes.
+          Builds/stores the player name map for a specific roster + week so emails and UI display names
+          (not IDs). Safe to run multiple times; it’s idempotent.
         </p>
-        <form action={actionTriggerDigest} className="grid gap-3 sm:grid-cols-2">
+        <form action={actionBackfillLineupNames} className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-white/70">Roster ID</span>
-            <input
-              name="roster"
-              placeholder="e.g. 3bd20a1f-…"
-              className="rounded border border-white/15 bg-transparent px-3 py-2"
-              required
-            />
+            <input name="rosterId" required className="bg-transparent border border-white/15 rounded px-2 py-1" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-white/70">Week (optional)</span>
-            <input
-              name="week"
-              placeholder="auto"
-              type="number"
-              min={1}
-              max={18}
-              className="rounded border border-white/15 bg-transparent px-3 py-2"
-            />
-          </label>
-          <label className="inline-flex items-center gap-2 sm:col-span-2">
-            <input type="checkbox" name="notify" className="rounded border-white/20 bg-transparent" />
-            <span className="text-sm text-white/80">Notify user if lineup changed</span>
+            <span className="text-xs text-white/70">Week</span>
+            <input name="week" type="number" min={1} max={18} required className="bg-transparent border border-white/15 rounded px-2 py-1" />
           </label>
           <div className="sm:col-span-2">
-            <button className="btn-gold">Run digest</button>
+            <button className="btn-gold">Backfill</button>
           </div>
         </form>
       </section>
 
-      {/* Refresh name cache */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Refresh Player Name Cache</h2>
+      {/* Card 2: Recompute + (optional) email */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 grid gap-3">
+        <h2 className="font-semibold">Recompute Lineup &amp; (Optional) Send Email</h2>
         <p className="text-sm text-white/70">
-          (Re)primes the name/position/team lookup used in search and emails. Safe to run
-          anytime; useful after deployments or warm starts.
+          Recomputes a roster’s lineup for a given week and can immediately send the email. Use notify=0
+          to only recompute; use notify=1 to email if the computed lineup meaningfully changes.
         </p>
-        <form action={actionRefreshNameCache}>
-          <button className="rounded border border-white/20 px-3 py-2 hover:bg-white/10">
-            Warm/Refresh
-          </button>
-        </form>
-      </section>
-
-      {/* Backfill names */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Backfill Names on Recent Lineups</h2>
-        <p className="text-sm text-white/70">
-          Goes back through recent saved lineups and attaches name metadata where missing,
-          so historical emails/UI show names instead of ids. Pick a lookback window.
-        </p>
-        <form action={actionBackfillNames} className="flex items-end gap-2">
+        <form action={actionTriggerDigest} className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-white/70">Days to backfill</span>
-            <input
-              name="days"
-              type="number"
-              min={1}
-              max={90}
-              defaultValue={14}
-              className="rounded border border-white/15 bg-transparent px-3 py-2"
-            />
+            <span className="text-xs text-white/70">Roster ID</span>
+            <input name="rosterId" required className="bg-transparent border border-white/15 rounded px-2 py-1" />
           </label>
-          <button className="rounded border border-white/20 px-3 py-2 hover:bg-white/10">
-            Backfill
-          </button>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/70">Week</span>
+            <input name="week" type="number" min={1} max={18} required className="bg-transparent border border-white/15 rounded px-2 py-1" />
+          </label>
+          <label className="flex items-center gap-2">
+            <input name="notify" type="checkbox" value="1" className="rounded border-white/20 bg-transparent" />
+            <span className="text-sm text-white/80">Send email if changed</span>
+          </label>
+          <div className="sm:col-span-2">
+            <button className="btn-gold">Recompute</button>
+          </div>
         </form>
-        <p className="text-xs text-white/50">
-          Note: if you haven’t created the backfill endpoint yet, this will no-op with a
-          friendly message. Recommended: implement{" "}
-          <code className="px-1 py-0.5 rounded bg-black/40 border border-white/10">
-            POST /api/cron/backfill-lineup-names?days=N
-          </code>
-          .
-        </p>
       </section>
 
-      <footer className="pt-2 text-xs text-white/50">
-        Need the roster id? Ask the user to open <Link href="/roster" className="underline">Lineup Lab</Link>; it’s shown under the “Save Changes” button.
-      </footer>
+      {/* Card 3: Clear saved lineup */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 grid gap-3">
+        <h2 className="font-semibold">Clear Saved Lineup</h2>
+        <p className="text-sm text-white/70">
+          Deletes the stored lineup for a roster/week. The next request will recompute from scratch.
+        </p>
+        <form action={actionClearLineup} className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/70">Roster ID</span>
+            <input name="rosterId" required className="bg-transparent border border-white/15 rounded px-2 py-1" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-white/70">Week</span>
+            <input name="week" type="number" min={1} max={18} required className="bg-transparent border border-white/15 rounded px-2 py-1" />
+          </label>
+          <div className="sm:col-span-2">
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Clear</button>
+          </div>
+        </form>
+      </section>
     </main>
   );
 }

@@ -54,6 +54,15 @@ export async function getRoster(id: string): Promise<UserRoster | null> {
   }
 }
 
+// Minimal roster meta for email/recompute flows
+export type RosterMeta = Pick<UserRoster, "id" | "name" | "email">;
+
+export async function getRosterMeta(id: string): Promise<RosterMeta | null> {
+  const r = await getRoster(id);
+  if (!r) return null;
+  return { id: r.id, name: r.name || "", email: r.email || "" };
+}
+
 export async function createRoster(input: {
   email: string;
   name?: string;
