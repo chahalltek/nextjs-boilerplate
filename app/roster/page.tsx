@@ -26,6 +26,9 @@ type Lineup = {
         injury?: string;
         forcedStart?: boolean;
         forcedSit?: boolean;
+        // NEW: matchup context
+        oppRank?: number;
+        matchupTier?: "Green" | "Yellow" | "Red";
       };
     }
   >;
@@ -48,7 +51,7 @@ export default function RosterHome() {
   const [pasteText, setPasteText] = useState("");
   const [optInEmail, setOptInEmail] = useState(true);
 
-  // NEW: rules + scoring profile
+  // rules + scoring profile
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
@@ -195,6 +198,7 @@ export default function RosterHome() {
   }
 
   const hasPlayers = players.length > 0;
+  const rosterMeta = usePlayerNames(players);
 
   return (
     <main className="container max-w-3xl py-10 space-y-6">
@@ -383,7 +387,11 @@ export default function RosterHome() {
             <ul className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
               {players.map((pid) => (
                 <li key={pid} className="flex items-center justify-between rounded border border-white/10 bg-black/30 px-3 py-2">
-                  <span className="truncate text-sm">{pid}</span>
+                  <span className="truncate text-sm">
+                    {rosterMeta.map[pid]?.name || pid}
+                    {rosterMeta.map[pid]?.pos ? ` — ${rosterMeta.map[pid]?.pos}` : ""}
+                    {rosterMeta.map[pid]?.team ? ` (${rosterMeta.map[pid]?.team})` : ""}
+                  </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleFlexPin(pid)}
@@ -438,7 +446,7 @@ export default function RosterHome() {
             </button>
             {recommendation?.scores != null && (
               <span className="ml-auto text-sm text-white/70">
-                Total starters proj: <b className="text-white">{recommendation.scores.toFixed?.(2) ?? recommendation.scores}</b>
+                Total starters proj: <b className="text-white">{(recommendation.scores as number)?.toFixed?.(2) ?? recommendation.scores}</b>
               </span>
             )}
           </div>
@@ -462,15 +470,24 @@ function explainLine(d?: Lineup["details"][string]) {
     b.injury ? `Injury: ${b.injury}` : "",
     b.forcedStart ? "Forced start" : "",
     b.forcedSit ? "Forced sit" : "",
+    b.oppRank != null ? `Opp Rank: ${b.oppRank}` : "",
+    b.matchupTier ? `Matchup: ${b.matchupTier}` : "",
   ].filter(Boolean);
   return parts.join(" • ");
 }
 
 function RecommendationView({ lu }: { lu: Lineup }) {
   const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
+  const allIds = useMemo(
+    () => Array.from(new Set([...(order.flatMap((s) => lu.slots?.[s] || [])), ...(lu.bench || [])])),
+    [lu, order]
+  );
+  const meta = usePlayerNames(allIds);
+
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {order.map((slot) => (
           <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
@@ -479,14 +496,33 @@ function RecommendationView({ lu }: { lu: Lineup }) {
               <ul className="grid gap-1">
                 {lu.slots[slot].map((pid) => {
                   const d = lu.details?.[pid];
+                  const label = `${meta.map[pid]?.name || pid}${
+                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
+                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
                   return (
                     <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate" title={explainLine(d)}>
-                        {pid}
-                      </span>
+                      <span className="truncate" title={explainLine(d)}>{label}</span>
                       {d && (
-                        <span className="text-xs text-white/60" title={explainLine(d)}>
+                        <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
                           {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
+                          {d.breakdown?.matchupTier && (
+                            <span
+                              className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
+                                d.breakdown.matchupTier === "Green"
+                                  ? "bg-green-700/40 border-green-400/30"
+                                  : d.breakdown.matchupTier === "Yellow"
+                                  ? "bg-yellow-700/40 border-yellow-400/30"
+                                  : "bg-red-700/40 border-red-400/30"
+                              }`}
+                              title={
+                                d.breakdown.oppRank != null
+                                  ? `Opponent rank: ${d.breakdown.oppRank}`
+                                  : "Matchup context"
+                              }
+                            >
+                              {d.breakdown.matchupTier}
+                            </span>
+                          )}
                         </span>
                       )}
                     </li>
@@ -499,9 +535,40 @@ function RecommendationView({ lu }: { lu: Lineup }) {
           </div>
         ))}
       </div>
+
+      {/* Bench */}
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
         <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Bench</div>
-        {lu.bench?.length ? <div className="text-sm">{lu.bench.join(", ")}</div> : <div className="text-sm text-white/50">—</div>}
+        {lu.bench?.length ? (
+          <ul className="grid gap-1 text-sm">
+            {lu.bench.map((pid) => (
+              <li key={pid} className="truncate">
+                {(meta.map[pid]?.name || pid) +
+                  (meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : "") +
+                  (meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : "")}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-white/50">—</div>
+        )}
+      </div>
+
+      {/* Matchup legend */}
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+        <span className="mr-1">Matchup key:</span>
+        <span className="inline-flex items-center gap-1">
+          <span className="px-1.5 py-0.5 rounded border bg-green-700/40 border-green-400/30">Green</span>
+          easier/plus matchup
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="px-1.5 py-0.5 rounded border bg-yellow-700/40 border-yellow-400/30">Yellow</span>
+          neutral
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="px-1.5 py-0.5 rounded border bg-red-700/40 border-red-400/30">Red</span>
+          tougher defense
+        </span>
       </div>
     </div>
   );

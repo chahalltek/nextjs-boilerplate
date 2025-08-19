@@ -1,6 +1,6 @@
+// app/api/roster/route.ts
 import { NextResponse } from "next/server";
-import { createRoster, getRoster, saveRoster } from "@/lib/roster/store";
-import type { RosterRules, ScoringProfile } from "@/lib/roster/types";
+import { createRoster, saveRoster, getRoster } from "@/lib/roster/store";
 
 export const runtime = "nodejs";
 
@@ -15,43 +15,52 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
+  const { id, email, name, players, pins, rules, scoring, optInEmail } = body || {};
 
-  const patch: {
-    id?: string;
-    email?: string;
-    name?: string;
-    players?: string[];
-    pins?: { FLEX?: string[] };
-    rules?: Partial<RosterRules>;
-    scoring?: ScoringProfile;
-    optInEmail?: boolean;
-  } = body || {};
+  // Validate player list (optional)
+  const list: string[] = Array.isArray(players) ? players.filter(Boolean) : undefined;
 
+  // Create or update
+  let roster = id
+    ? await saveRoster(id, cleanPatch({ name, players: list, pins, rules, scoring, optInEmail }))
+    : await createRoster(cleanPatch({ email, name, players: list, rules }));
+
+  // Merge known positions for any provided players
+  if (list && list.length > 0) {
+    const pos = await fetchPositions(list);
+    // attach/merge `_pos` without forcing type changes downstream
+    const existing = (roster as any)._pos || {};
+    const merged = { ...existing, ...pos };
+    roster = await saveRoster(roster.id, { ...(roster as any), _pos: merged } as any);
+  }
+
+  return NextResponse.json({ roster });
+}
+
+function cleanPatch(obj: Record<string, any>) {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue;
+    if (k === "email" && typeof v === "string") out.email = v.trim().toLowerCase();
+    else out[k] = v;
+  }
+  return out;
+}
+
+// Pulls the big Sleeper map once, returns positions for the requested IDs
+async function fetchPositions(ids: string[]): Promise<Record<string, string>> {
   try {
-    if (patch.id) {
-      const roster = await saveRoster(patch.id, {
-        name: patch.name,
-        players: patch.players,
-        pins: patch.pins,
-        rules: patch.rules as Partial<RosterRules> | undefined,
-        scoring: patch.scoring,
-        optInEmail: typeof patch.optInEmail === "boolean" ? patch.optInEmail : undefined,
-      });
-      return NextResponse.json({ roster });
+    const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "force-cache" });
+    const data = await res.json();
+    const out: Record<string, string> = {};
+    for (const id of ids) {
+      const p = data?.[id];
+      const pos = typeof p?.position === "string" ? p.position : undefined;
+      if (pos) out[id] = pos;
     }
-
-    if (!patch.email) return NextResponse.json({ error: "email required" }, { status: 400 });
-    const roster = await createRoster({
-      email: patch.email,
-      name: patch.name,
-      players: patch.players,
-      pins: patch.pins,
-      rules: patch.rules as Partial<RosterRules> | undefined,
-      scoring: (patch.scoring as ScoringProfile) || "PPR",
-      optInEmail: typeof patch.optInEmail === "boolean" ? patch.optInEmail : true,
-    });
-    return NextResponse.json({ roster });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "error" }, { status: 500 });
+    return out;
+  } catch {
+    // fallback: nothing learned
+    return {};
   }
 }
