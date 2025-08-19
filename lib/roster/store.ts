@@ -1,5 +1,5 @@
+// lib/roster/store.ts
 import { kv } from "@vercel/kv";
-import type { WeeklyLineup } from "@/lib/roster/types";
 import { randomUUID } from "crypto";
 import type {
   UserRoster,
@@ -8,13 +8,12 @@ import type {
   AdminOverrides,
   ScoringProfile,
 } from "./types";
-import type { Position } from "./types";
 
 // ---------- Keys ----------
-const kRoster      = (id: string) => `ro:roster:${id}`;
-const kRosterIds   = "ro:roster:ids"; // set of roster ids
-const kLineup      = (id: string, week: number) => `ro:lineup:${id}:${week}`;
-const kOverrides   = (week: number) => `ro:overrides:${week}`;
+const kRoster = (id: string) => `ro:roster:${id}`;
+const kRosterIds = "ro:roster:ids"; // set of roster ids
+const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
+const kOverrides = (week: number) => `ro:overrides:${week}`;
 const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
 const kLineupIdx = (id: string) => `ro:lineup:index:${id}`;
 
@@ -56,7 +55,7 @@ export async function getRoster(id: string): Promise<UserRoster | null> {
   }
 }
 
-// Minimal roster meta for email/recompute flows
+// Minimal roster meta for admin/email flows (non-player map)
 export type RosterMeta = Pick<UserRoster, "id" | "name" | "email">;
 
 export async function getRosterMeta(id: string): Promise<RosterMeta | null> {
@@ -126,6 +125,19 @@ export async function saveLineup(
   await kv.set(kLineup(id, week), lineup);
 }
 
+/**
+ * Convenience saver used by cron/recompute flows.
+ * Also maintains a sorted index of computed weeks per roster.
+ */
+export async function saveWeeklyLineup(
+  id: string,
+  week: number,
+  lineup: WeeklyLineup
+): Promise<void> {
+  await kv.set(kLineup(id, week), lineup);
+  await kv.zadd(kLineupIdx(id), { score: week, member: String(week) });
+}
+
 // ---------- Overrides ----------
 export type OverridesInput = Partial<Pick<AdminOverrides, "pointDelta" | "forceStart" | "forceSit" | "note">>;
 
@@ -168,29 +180,16 @@ export async function setLineupNames(
   await kv.set(kLineupNames(id, week), map || {});
 }
 
-export async function saveWeeklyLineup(
-  id: string,
-  week: number,
-  lineup: WeeklyLineup
-): Promise<void> {
-  // save the lineup blob
-  await kv.set(kLineup(id, week), lineup);
-
-  // maintain a sorted index of weeks for this roster (handy for history pages)
-  await kv.zadd(kLineupIdx(id), {
-    score: week,
-    member: String(week),
-  });
-}
-
 export async function getLineupNames(
   id: string,
   week: number
 ): Promise<Record<string, { name: string; pos?: string; team?: string }>> {
   try {
-    return (await kv.get<Record<string, { name: string; pos?: string; team?: string }>>(
-      kLineupNames(id, week)
-    )) || {};
+    return (
+      (await kv.get<Record<string, { name: string; pos?: string; team?: string }>>(
+        kLineupNames(id, week)
+      )) || {}
+    );
   } catch {
     return {};
   }
