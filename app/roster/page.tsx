@@ -35,6 +35,8 @@ type Lineup = {
   scores?: number;
 };
 
+type Hit = { id: string; name?: string; pos?: string; team?: string };
+
 type Rules = { QB: number; RB: number; WR: number; TE: number; FLEX: number; DST: number; K: number; };
 const defaultRules: Rules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
 
@@ -61,6 +63,7 @@ export default function RosterHome() {
   const [loadingRec, setLoadingRec] = useState(false);
 
   const [myRosters, setMyRosters] = useState<SavedRosterMeta[]>([]);
+  const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   // migrate old single id -> list and choose first
   useEffect(() => {
@@ -142,6 +145,12 @@ export default function RosterHome() {
     const ids = pasteText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     setPlayers(prev => Array.from(new Set([...prev, ...ids])));
     setPasteText(""); setShowPaste(false);
+
+  function addPlayerFromHit(hit: Hit) {
+  if (!hit?.id) return;
+  setPlayers((prev) => (prev.includes(hit.id) ? prev : [...prev, hit.id]));
+  setMeta((prev) => ({ ...prev, [hit.id]: { name: hit.name, pos: hit.pos, team: hit.team } }));
+}
   }
 
   async function save() {
@@ -170,6 +179,16 @@ export default function RosterHome() {
         });
         setId(newId);
       }
+      const payload: any = {
+  name,
+  players,
+  pins: { FLEX: Object.keys(pinsFlex).filter((k) => pinsFlex[k]) },
+  optInEmail,
+  rules,
+  scoring,
+  meta, // <— NEW
+};
+
     } finally {
       setSaving(false);
     }
@@ -367,7 +386,8 @@ export default function RosterHome() {
             </button>
           </div>
 
-          <PlayerSearch onSelect={(hit) => addPlayer(hit.id)} />
+          <PlayerSearch onSelect={(hit: Hit) => addPlayerFromHit(hit)} />
+
 
           {showPaste && (
             <div className="grid gap-2">

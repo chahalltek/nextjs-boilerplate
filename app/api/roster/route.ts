@@ -1,6 +1,7 @@
 // app/api/roster/route.ts
 import { NextResponse } from "next/server";
 import { createRoster, saveRoster, getRoster } from "@/lib/roster/store";
+import { mergeRosterMeta } from "@/lib/roster/store";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,9 @@ export async function POST(req: Request) {
       rules: isObject(rules) ? (rules as any) : undefined,
       players: list,
     });
+
+    if (body.meta && roster?.id) {
+  await mergeRosterMeta(roster.id, body.meta);
 
     // Persist optional flags after create
     const postCreatePatch: Record<string, any> = {};
