@@ -20,14 +20,17 @@ type Lineup = {
   >;
 };
 
+type PlayerHit = { id: string; label: string; name?: string; team?: string; position?: string };
+
 export default function RosterHome() {
   const [id, setId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [players, setPlayers] = useState<string[]>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({}); // id -> "Name — TEAM POS"
   const [pinsFlex, setPinsFlex] = useState<Record<string, boolean>>({});
   const [showPaste, setShowPaste] = useState(false);
-  const [pasteText, setPasteText] = useState(""); // space/comma/line separated player_ids
+  const [pasteText, setPasteText] = useState("");
   const [optInEmail, setOptInEmail] = useState(true);
 
   const [saving, setSaving] = useState(false);
@@ -35,13 +38,74 @@ export default function RosterHome() {
   const [recommendation, setRecommendation] = useState<Lineup | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
 
-  // restore roster id from localStorage
+  // ---------------- helpers: label resolution ----------------
+  async function fetchLabelForId(pid: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/players/search?q=${encodeURIComponent(pid)}&limit=1`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      const hit: PlayerHit | undefined = data?.hits?.[0];
+      return hit?.label ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensureLabels(ids: string[]) {
+    const missing = ids.filter((pid) => !labels[pid]);
+    if (!missing.length) return;
+    const results = await Promise.all(missing.map((pid) => fetchLabelForId(pid)));
+    const add: Record<string, string> = {};
+    missing.forEach((pid, i) => {
+      if (results[i]) add[pid] = results[i] as string;
+    });
+    if (Object.keys(add).length) setLabels((prev) => ({ ...prev, ...add }));
+  }
+
+  function addPlayer(pid: string, label?: string) {
+    if (!pid) return;
+    setPlayers((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+    if (label) setLabels((prev) => (prev[pid] ? prev : { ...prev, [pid]: label }));
+    else ensureLabels([pid]);
+  }
+
+  function removePlayer(pid: string) {
+    setPlayers((prev) => prev.filter((p) => p !== pid));
+    setPinsFlex((prev) => {
+      const next = { ...prev };
+      delete next[pid];
+      return next;
+    });
+  }
+
+  function toggleFlexPin(pid: string) {
+    setPinsFlex((prev) => ({ ...prev, [pid]: !prev[pid] }));
+  }
+
+  function applyPaste() {
+    const ids = pasteText
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setPlayers((prev) => {
+      const next = Array.from(new Set([...prev, ...ids]));
+      // resolve labels for anything new
+      const newIds = next.filter((pid) => !labels[pid]);
+      ensureLabels(newIds);
+      return next;
+    });
+    setPasteText("");
+    setShowPaste(false);
+  }
+
+  // ---------------- lifecycle ----------------
   useEffect(() => {
     const stored = localStorage.getItem("rosterId");
     if (stored) setId(stored);
   }, []);
 
-  // try to hydrate roster data if we have an id (best effort)
+  // hydrate roster if we have an id
   useEffect(() => {
     async function load() {
       if (!id) return;
@@ -52,40 +116,20 @@ export default function RosterHome() {
         const r = data.roster || {};
         setEmail(r.email || "");
         setName(r.name || "");
-        setPlayers(Array.isArray(r.players) ? r.players : []);
+        const ids: string[] = Array.isArray(r.players) ? r.players : [];
+        setPlayers(ids);
         const flexPins = (r.pins?.FLEX as string[]) || [];
         setPinsFlex(Object.fromEntries(flexPins.map((p: string) => [p, true])));
         if (typeof r.optInEmail === "boolean") setOptInEmail(r.optInEmail);
+        // resolve friendly labels for loaded ids
+        ensureLabels(ids);
       } catch {}
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  function addPlayer(pid: string) {
-    if (!pid) return;
-    setPlayers((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
-  }
-  function removePlayer(pid: string) {
-    setPlayers((prev) => prev.filter((p) => p !== pid));
-    setPinsFlex((prev) => {
-      const next = { ...prev };
-      delete next[pid];
-      return next;
-    });
-  }
-  function toggleFlexPin(pid: string) {
-    setPinsFlex((prev) => ({ ...prev, [pid]: !prev[pid] }));
-  }
-  function applyPaste() {
-    const ids = pasteText
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    setPlayers((prev) => Array.from(new Set([...prev, ...ids])));
-    setPasteText("");
-    setShowPaste(false);
-  }
-
+  // ---------------- save / load recommendation ----------------
   async function save() {
     setSaving(true);
     try {
@@ -98,10 +142,7 @@ export default function RosterHome() {
       if (id) payload.id = id;
       else payload.email = email;
 
-      const res = await fetch("/api/roster", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.roster?.id) {
         localStorage.setItem("rosterId", data.roster.id);
@@ -136,60 +177,56 @@ export default function RosterHome() {
       </header>
 
       {/* Explainer */}
-<section className="rounded-xl border border-white/10 bg-white/5 p-4">
-  <h2 className="font-semibold">What is Skol Coach?</h2>
-  <p className="text-white/80 text-sm mt-2">
-    Your weekly lineup consigliere. We blend data science (projections, injuries, opponent difficulty)
-    with human overrides to get you the best combo of <em>art + science</em>.
-  </p>
+      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <h2 className="font-semibold">What is Skol Coach?</h2>
+        <p className="text-white/80 text-sm mt-2">
+          Your weekly lineup consigliere. We blend data science (projections, injuries, opponent difficulty)
+          with human overrides to get you the best combo of <em>art + science</em>.
+        </p>
 
-  <div className="grid md:grid-cols-2 gap-3 mt-4 text-sm">
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="font-medium">How to use</div>
-      <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
-        <li>Paste or search/add your players (Sleeper IDs or names).</li>
-        <li>Save your roster once—update anytime for trades/waivers.</li>
-        <li>Select the week and click <b>Get Recommendation</b>.</li>
-      </ul>
-    </div>
+        <div className="grid md:grid-cols-2 gap-3 mt-4 text-sm">
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="font-medium">How to use</div>
+            <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
+              <li>Search and add your players by name (we’ll store their IDs under the hood).</li>
+              <li>Save your roster once—update anytime for trades/waivers.</li>
+              <li>Select the week and click <b>Get Recommendation</b>.</li>
+            </ul>
+          </div>
 
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="font-medium">What you’ll get</div>
-      <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
-        <li>A position-by-position starting lineup + bench.</li>
-        <li>Confidence scores & rough tiers (A/B/C/D).</li>
-        <li>Optional weekly email reminders with your lineup.</li>
-      </ul>
-    </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="font-medium">What you’ll get</div>
+            <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
+              <li>A position-by-position starting lineup + bench.</li>
+              <li>Confidence scores & rough tiers (A/B/C/D).</li>
+              <li>Optional weekly email reminders with your lineup.</li>
+            </ul>
+          </div>
 
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="font-medium">Multiple teams/leagues</div>
-      <p className="text-white/70 mt-1">
-        Managing more than one squad? Create a roster for each team
-        (unique email/team name helps you keep them straight).
-        You can pin players to FLEX and tweak your slot rules as needed—
-        some leagues require TE, some don’t—we’ve got you.
-      </p>
-    </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="font-medium">Multiple teams/leagues</div>
+            <p className="text-white/70 mt-1">
+              Managing more than one squad? Create a roster for each team (unique email/team name helps
+              you keep them straight). You can pin players to FLEX and tweak your slot rules as needed.
+            </p>
+          </div>
 
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="font-medium">Art + Science</div>
-      <p className="text-white/70 mt-1">
-        Projections, injuries, and matchups power the model; our admins
-        can nudge calls when vibes or late news matter. If we override,
-        you’ll see it reflected in the recommendation.
-      </p>
-    </div>
-  </div>
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="font-medium">Art + Science</div>
+            <p className="text-white/70 mt-1">
+              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes
+              or late news matter. If we override, you’ll see it reflected in the recommendation.
+            </p>
+          </div>
+        </div>
 
-  <p className="text-xs text-white/50 mt-3">
-    Heads up: lineups refresh as projections and injuries update. You’ll get an email
-    near midweek with your recommended starters (and again if something meaningfully changes).
-  </p>
-</section>
+        <p className="text-xs text-white/50 mt-3">
+          Heads up: lineups refresh as projections and injuries update. You’ll get an email midweek with
+          your recommended starters (and again if something meaningfully changes).
+        </p>
+      </section>
 
-
-      {/* Create or edit card */}
+      {/* Create or edit */}
       <section className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
         {!id && (
           <>
@@ -231,7 +268,10 @@ export default function RosterHome() {
             </button>
           </div>
 
-          <PlayerSearch onPick={({ id }) => addPlayer(id)} />
+          <PlayerSearch
+            onSelect={(hit: PlayerHit) => addPlayer(hit.id, hit.label)}
+            placeholder="Type a player name (e.g., Justin Jefferson)…"
+          />
 
           {showPaste && (
             <div className="grid gap-2">
@@ -255,7 +295,10 @@ export default function RosterHome() {
                   key={pid}
                   className="flex items-center justify-between rounded border border-white/10 bg-black/30 px-3 py-2"
                 >
-                  <span className="truncate text-sm">{pid}</span>
+                  <span className="truncate text-sm">
+                    {labels[pid] || pid}
+                    <span className="ml-2 text-white/40 text-[11px]">({pid})</span>
+                  </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleFlexPin(pid)}
@@ -324,10 +367,7 @@ export default function RosterHome() {
 /* ---------------- UI helpers ---------------- */
 
 function RecommendationView({ lu }: { lu: Lineup }) {
-  const order = useMemo(
-    () => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"],
-    []
-  );
+  const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
 
   return (
     <div className="grid gap-3">

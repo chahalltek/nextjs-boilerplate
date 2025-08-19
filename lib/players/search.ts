@@ -1,88 +1,72 @@
 // lib/players/search.ts
-// Lightweight Sleeper player search with in-memory caching.
-
-export type PlayerIndex = {
-  id: string;          // Sleeper player_id
-  name: string;        // full_name
+export type PlayerHit = {
+  id: string;
+  name: string;
   team?: string;
-  position?: string;   // e.g. QB, RB, WR, TE, K, DEF
+  position?: string;
+  label: string; // "Name — TEAM POS"
 };
 
-let CACHE: PlayerIndex[] = [];
-let LAST_FETCH = 0;
-const TTL_MS = 1000 * 60 * 60; // 1 hour
+const ALLOWED = new Set(["QB", "RB", "WR", "TE", "K", "DEF", "DST"]);
 
-function norm(s: string) {
-  return s
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // strip accents
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+let _players: Record<string, any> | null = null;
 
-async function loadIndex(): Promise<PlayerIndex[]> {
-  const now = Date.now();
-  if (CACHE.length && now - LAST_FETCH < TTL_MS) return CACHE;
-
+async function loadPlayers(): Promise<Record<string, any>> {
+  if (_players) return _players;
   const res = await fetch("https://api.sleeper.app/v1/players/nfl", {
-    // Next can cache this if you want, but runtime=node is fine:
-    next: { revalidate: 3600 },
+    // this endpoint updates rarely; you can tune caching later
+    cache: "no-store",
   });
-  const data = (await res.json()) as Record<string, any>;
-
-  // Sleeper returns a map keyed by player_id
-  const list: PlayerIndex[] = Object.keys(data).map((player_id) => {
-    const p = data[player_id] || {};
-    return {
-      id: player_id,
-      name: p.full_name || p.first_name && p.last_name
-        ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim()
-        : player_id,
-      team: p.team || p.fantasy_positions?.[0] || p.team_abbr,
-      position: p.position || p.fantasy_positions?.[0] || (p.team && "DEF") || undefined,
-    };
-  });
-
-  // Basic hygiene: drop obviously empty names
-  CACHE = list.filter((p) => p.name && p.name !== p.id);
-  LAST_FETCH = now;
-  return CACHE;
+  _players = await res.json();
+  return _players!;
 }
 
-export async function searchPlayers(
-  query: string,
-  limit = 15
-): Promise<PlayerIndex[]> {
-  const q = norm(query);
+function bestName(p: any): string {
+  return (
+    p.full_name ||
+    [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+    p.search_full_name ||
+    ""
+  );
+}
+
+export async function searchPlayers(query: string, limit = 12): Promise<PlayerHit[]> {
+  const q = query.trim().toLowerCase();
   if (!q) return [];
 
-  const idx = await loadIndex();
+  const dict = await loadPlayers();
+  const hits: PlayerHit[] = [];
 
-  // Token-based scoring
-  const tokens = q.split(" ");
-  const scored = idx
-    .map((p) => {
-      const n = norm(p.name);
-      const hay = [n, p.team?.toLowerCase() ?? "", p.position?.toLowerCase() ?? ""].join(" ");
-      let score = 0;
+  for (const id in dict) {
+    const p = dict[id];
+    const pos: string | undefined =
+      p.position || (Array.isArray(p.fantasy_positions) ? p.fantasy_positions[0] : undefined);
 
-      // starts-with boost
-      if (n.startsWith(q)) score += 5;
-      // token matches
-      for (const t of tokens) {
-        if (t && hay.includes(t)) score += 2;
-      }
-      // exact name match bonus
-      if (n === q) score += 10;
+    // keep the search focused to fantasy-relevant positions
+    if (!pos || !ALLOWED.has(pos)) continue;
 
-      return { p, score };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ p }) => p);
+    const name = bestName(p);
+    if (!name) continue;
 
-  return scored;
+    const team: string | undefined = p.team || undefined;
+
+    // quick match (you can expand to fuzzy later)
+    const hay = `${name} ${team ?? ""} ${pos} ${id}`.toLowerCase();
+    if (!hay.includes(q)) continue;
+
+    const label = `${name}${team ? ` — ${team}` : ""}${pos ? ` ${pos}` : ""}`.trim();
+
+    hits.push({ id, name, team, position: pos, label });
+    if (hits.length >= limit) break;
+  }
+
+  // quality sort: startsWith first, then shorter label
+  hits.sort((a, b) => {
+    const aStarts = a.name.toLowerCase().startsWith(q) ? 1 : 0;
+    const bStarts = b.name.toLowerCase().startsWith(q) ? 1 : 0;
+    if (aStarts !== bStarts) return bStarts - aStarts;
+    return a.label.length - b.label.length;
+  });
+
+  return hits;
 }
