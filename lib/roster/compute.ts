@@ -7,7 +7,7 @@ type Proj = {
   pts_half_ppr?: number;
   pts_std?: number;
   injury_status?: string;
-  opponent_rank?: number;
+  opponent_rank?: number;  // Sleeper: lower is better/worse depending on field semantics
 };
 
 async function fetchProjectionsMap(week: number): Promise<Record<string, Proj>> {
@@ -45,6 +45,14 @@ function pickBasePoints(p: Proj, scoring: ScoringProfile): number {
   if (scoring === "STD") return Number(p.pts_std ?? p.pts_half_ppr ?? p.pts_ppr ?? 0);
   if (scoring === "HALF_PPR") return Number(p.pts_half_ppr ?? p.pts_ppr ?? p.pts_std ?? 0);
   return Number(p.pts_ppr ?? p.pts_half_ppr ?? p.pts_std ?? 0);
+}
+
+function matchupTierFromOppRank(rank?: number): "Green" | "Yellow" | "Red" | undefined {
+  if (typeof rank !== "number") return undefined;
+  // Simple bucketing. Adjust once we validate Sleeper's rank semantics.
+  if (rank <= 10) return "Green";
+  if (rank <= 20) return "Yellow";
+  return "Red";
 }
 
 export async function computeLineup(
@@ -93,6 +101,8 @@ export async function computeLineup(
         injury: p.injury_status,
         forcedStart: !!forcedStart[pid],
         forcedSit: !!forcedSit[pid],
+        oppRank: typeof p.opponent_rank === "number" ? p.opponent_rank : undefined,
+        matchupTier: matchupTierFromOppRank(p.opponent_rank),
       },
     };
     return { pid, pts, pos: guessPos(pid, roster, projMap) };
@@ -139,7 +149,7 @@ export async function computeLineup(
 
   const bench = rows.filter(r => !used.has(r.pid)).sort((a,b)=>b.pts-a.pts).map(r=>r.pid);
 
-  // slot totals -> overall total
+  // totals
   const slotTotals = Object.fromEntries(
     (Object.keys(slots) as SlotKey[]).map((k) => {
       const ids = slots[k] || [];
@@ -159,7 +169,7 @@ export async function computeLineup(
   };
 }
 
-/** placeholder; can be replaced with a real per-player position source */
+/** placeholder; replace with real per-player position source if desired */
 function guessPos(_pid: string, _roster: UserRoster, _map: Record<string, any>): Position {
-  return "WR"; // safe default
+  return "WR";
 }
