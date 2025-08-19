@@ -1,83 +1,72 @@
+// app/api/roster/recompute/route.ts
 import { NextResponse } from "next/server";
-import { getRoster, getLineup, saveLineup, getOverrides, getRosterMeta } from "@/lib/roster/store";
+
 import { computeLineup } from "@/lib/roster/compute";
-import { sendRosterEmail } from "@/lib/email";
+import {
+  getRoster,
+  saveLineup,
+  getRosterMeta, // <- used for name map
+} from "@/lib/roster/store";
+import { sendRosterEmail, renderEmail } from "@/lib/email/roster";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
+/**
+ * Recompute a single roster’s lineup for a given week.
+ * query: ?id=<rosterId>&week=<n>&notify=1
+ * - id (required): roster id
+ * - week (required): NFL week number
+ * - notify (optional): if "1", email the result if the roster is opted-in
+ */
+export async function GET(req: Request) {
+  return handle(req);
+}
 export async function POST(req: Request) {
+  return handle(req);
+}
+
+async function handle(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const id = (searchParams.get("id") || "").trim();
+  const week = Number(searchParams.get("week") || "0");
+  const notify = searchParams.get("notify") === "1";
+
+  if (!id) {
+    return NextResponse.json({ ok: false, error: "id is required" }, { status: 400 });
+  }
+  if (!Number.isFinite(week) || week <= 0) {
+    return NextResponse.json({ ok: false, error: "valid week is required" }, { status: 400 });
+  }
+
   try {
-    const body = await req.json().catch(() => ({}));
-    const id = String(body.id || "").trim();
-    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-
-    const week = Number(body.week || currentNflWeek());
-    const notify = Boolean(body.notify);
-
     const roster = await getRoster(id);
-    if (!roster) return NextResponse.json({ error: "roster not found" }, { status: 404 });
-
-    const overrides = await getOverrides(week);
-    const prev = await getLineup(id, week);
-    const next = await computeLineup(roster, week, overrides);
-
-    const newHash = hashSlots(next);
-    if (prev?.hash === newHash) {
-      // unchanged
-      return NextResponse.json({ recomputed: false, unchanged: true, week });
+    if (!roster) {
+      return NextResponse.json({ ok: false, error: "roster not found" }, { status: 404 });
     }
 
-    next.hash = newHash;
+    // Compute lineup (admin overrides are applied inside compute if you wire them there;
+    // otherwise you can fetch overrides here and pass them in)
+    const next = await computeLineup(roster, week);
+
+    // Persist the fresh lineup
     await saveLineup(id, week, next);
 
+    // Optionally email the user if they opted in
     if (notify && roster.optInEmail && roster.email) {
-      const meta = await getRosterMeta(id);
-      const html = renderEmail(roster.name || "Coach", week, next, meta);
+      // IMPORTANT: meta can be null — pass a safe empty map to renderEmail
+      const meta = await getRosterMeta(id); // { names?: Record<string, PlayerMeta> } | null
+      const html = renderEmail(roster.name || "Coach", week, next, meta?.names ?? {});
       await sendRosterEmail({
         to: roster.email,
-        subject: `Skol Coach Week ${week} Lineup`,
+        subject: `Lineup Lab — Week ${week} starters`,
         html,
       });
     }
 
-    return NextResponse.json({ recomputed: true, emailed: !!(notify && roster.optInEmail), week });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "failed" }, { status: 500 });
+    return NextResponse.json({ ok: true, id, week, notified: !!(notify && roster.optInEmail && roster.email), lineup: next });
+  } catch (e) {
+    console.error("recompute error:", e);
+    return NextResponse.json({ ok: false, error: "internal error" }, { status: 500 });
   }
-}
-
-function currentNflWeek() {
-  return 1;
-}
-
-function hashSlots(lu: { slots: Record<string, string[]>; bench?: string[] }) {
-  const s = JSON.stringify({
-    ...lu.slots,
-    bench: lu.bench || [],
-  });
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return String(h >>> 0);
-}
-
-type PlayerMeta = { name?: string; pos?: string; team?: string };
-function label(pid: string, meta: Record<string, PlayerMeta>) {
-  const m = meta?.[pid];
-  if (!m) return pid;
-  return `${m.name || pid}${m.pos ? ` — ${m.pos}` : ""}${m.team ? ` (${m.team})` : ""}`;
-}
-
-function renderEmail(name: string, week: number, lu: any, meta: Record<string, PlayerMeta>) {
-  const block = Object.entries(lu.slots)
-    .map(([k, arr]: any) => `<div><b>${k}</b>: ${arr.map((id: string) => label(id, meta)).join(", ") || "-"}</div>`)
-    .join("");
-  const bench = (lu.bench || []).map((id: string) => label(id, meta)).join(", ");
-  return `
-    <div style="font-family:Arial,sans-serif">
-      <h2>Week ${week} — Your Lineup</h2>
-      <p>Hi ${name}, here’s your recommended lineup from Skol Coach.</p>
-      ${block}
-      <p style="margin-top:12px">Bench: ${bench || "-"}</p>
-      <p style="color:#888;font-size:12px">Adjustments/overrides may apply.</p>
-    </div>`;
 }
