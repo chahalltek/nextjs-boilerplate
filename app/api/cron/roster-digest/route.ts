@@ -9,6 +9,8 @@ import {
 } from "@/lib/roster/store";
 import { computeLineup } from "@/lib/roster/compute";
 import { sendRosterEmail } from "@/lib/email";
+import { getLineupNames } from "@/lib/roster/store";
+import { renderLineupText, renderLineupHtml } from "@/lib/roster/email";
 
 export const runtime = "nodejs";
 
