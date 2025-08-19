@@ -1,167 +1,89 @@
 // app/api/cron/roster-digest/route.ts
-import { NextResponse } from "next/server";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import {
-  listRosterIds,
-  getRoster,
-  getLineup,
-  saveLineup,
-  getOverrides,
-  setLineupNames,
-} from "@/lib/roster/store";
+import { NextResponse } from "next/server";
 import { computeLineup } from "@/lib/roster/compute";
+import {
+  getRoster,
+  saveWeeklyLineup,
+  getRosterMeta,
+} from "@/lib/roster/store";
 import { renderLineupText, renderLineupHtml } from "@/lib/roster/email";
+import { sendEmail } from "@/lib/email/mailer";
 
-// ---------- Small helpers ----------
-
-function normalizeBool(v: string | null): boolean {
-  if (!v) return false;
-  const s = v.toLowerCase();
-  return s === "1" || s === "true" || s === "yes";
-}
-
-/** stable-ish hash over slots + week to detect changes */
-function hashSlots(lu: { week: number; slots: Record<string, string[]> }) {
-  // Only consider the ordered contents of each slot for change detection.
-  const keys = Object.keys(lu.slots).sort();
-  const parts = [String(lu.week)];
-  for (const k of keys) parts.push(k, ...(lu.slots[k] || []));
-  // FNV-1a tiny impl
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < parts.length; i++) {
-    const s = parts[i];
-    for (let j = 0; j < s.length; j++) {
-      h ^= s.charCodeAt(j);
-      h = Math.imul(h, 16777619) >>> 0;
-    }
-  }
-  return h.toString(16);
-}
-
-/** get current NFL week from internal endpoint or fallback to 1 */
-async function getCurrentWeek(): Promise<number> {
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "";
+// Resolve current NFL week via your internal endpoint; fall back to 1.
+async function resolveWeek(): Promise<number> {
   try {
+    const base = process.env.NEXT_PUBLIC_SITE_URL || "";
     const res = await fetch(`${base}/api/nfl/week`, { cache: "no-store" });
-    const j = await res.json().catch(() => ({} as any));
-    const w = Number(j?.week);
-    return Number.isFinite(w) && w > 0 ? w : 1;
-  } catch {
-    return 1;
-  }
+    const data = await res.json().catch(() => ({}));
+    const wk = Number(data?.week);
+    if (Number.isFinite(wk) && wk > 0) return wk;
+  } catch {}
+  return 1;
 }
-
-/** compact union of IDs appearing in lineup */
-function collectIds(lu: { slots: Record<string, string[]>; bench?: string[] }) {
-  const ids = new Set<string>();
-  Object.values(lu.slots || {}).forEach((arr) => (arr || []).forEach((id) => ids.add(id)));
-  (lu.bench || []).forEach((id) => ids.add(id));
-  return Array.from(ids);
-}
-
-/** fetch name/pos/team in one shot via your existing API (graceful fallback) */
-async function fetchNamesMap(ids: string[]): Promise<Record<string, { name: string; pos?: string; team?: string }>> {
-  if (!ids.length) return {};
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-  try {
-    const url = `${base}/api/players/names?ids=${encodeURIComponent(ids.join(","))}`;
-    const res = await fetch(url, { cache: "no-store" });
-    const j = await res.json().catch(() => ({} as any));
-    // expected shape: { map: { [id]: {name,pos,team} } }
-    return (j?.map as Record<string, { name: string; pos?: string; team?: string }>) || {};
-  } catch {
-    return {};
-  }
-}
-
-/** very light mailer: post to webhook if provided, else no-op (logs) */
-async function sendEmail({
-  to,
-  subject,
-  text,
-  html,
-}: {
-  to: string;
-  subject: string;
-  text: string;
-  html: string;
-}) {
-  const webhook = process.env.LINEUP_EMAIL_WEBHOOK_URL;
-  if (!webhook) {
-    console.log("[digest] (dry-run) Would email:", { to, subject });
-    return;
-  }
-  await fetch(webhook, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ to, subject, text, html }),
-  });
-}
-
-// ---------- Main handler ----------
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const onlyId = searchParams.get("id");
-  const notify = normalizeBool(searchParams.get("notify"));
-  const week = Number(searchParams.get("week")) || (await getCurrentWeek());
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id") || "";           // required for “Recompute now”
+  const notify = ["1", "true", "yes"].includes(
+    (url.searchParams.get("notify") || "").toLowerCase()
+  );
+  const weekParam = Number(url.searchParams.get("week"));
+  const week = Number.isFinite(weekParam) && weekParam > 0 ? weekParam : await resolveWeek();
 
-  // Build the work list
-  const ids = onlyId ? [onlyId] : await listRosterIds();
-
-  const results: Array<{ id: string; changed: boolean; emailed: boolean; reason?: string }> = [];
-
-  for (const id of ids) {
-    try {
-      const roster = await getRoster(id);
-      if (!roster) {
-        results.push({ id, changed: false, emailed: false, reason: "roster not found" });
-        continue;
-      }
-
-      // Compute fresh lineup
-      const overrides = await getOverrides(week);
-      const computed = await computeLineup(roster, week, overrides);
-      const newHash = hashSlots({ week, slots: computed.slots });
-
-      // Load existing to compare
-      const existing = await getLineup(id, week);
-      const hasChanged = !existing || (existing as any).hash !== newHash;
-
-      // Always save the latest lineup + hash (even if unchanged)
-      const toSave = { ...computed, hash: newHash } as any;
-      await saveLineup(id, week, toSave);
-
-      // Build & store names map for this lineup (used by email + UI)
-      const allIds = collectIds(computed);
-      const names = await fetchNamesMap(allIds);
-      await setLineupNames(id, week, names);
-
-      // Decide whether to email
-      const canEmail = Boolean(roster.email) && roster.optInEmail !== false;
-      const shouldEmail = notify || hasChanged; // notify=1 forces an email
-      let emailed = false;
-
-      if (canEmail && shouldEmail) {
-        const textBody = renderLineupText(computed, names);
-        const htmlBody = renderLineupHtml(computed, names);
-        await sendEmail({
-          to: roster.email!,
-          subject: `Lineup Lab — Week ${week} recommendation`,
-          text: textBody,
-          html: htmlBody,
-        });
-        emailed = true;
-      }
-
-      results.push({ id, changed: hasChanged, emailed });
-    } catch (e: any) {
-      results.push({ id, changed: false, emailed: false, reason: String(e?.message || e) });
-    }
+  if (!id) {
+    return NextResponse.json(
+      { ok: false, error: "Missing roster id (?id=...)" },
+      { status: 400 }
+    );
   }
 
-  return NextResponse.json({ week, count: results.length, results });
+  // Load roster
+  const roster = await getRoster(id);
+  if (!roster) {
+    return NextResponse.json(
+      { ok: false, error: `Roster not found: ${id}` },
+      { status: 404 }
+    );
+  }
+
+  // Compute lineup and persist as the latest weekly recommendation
+  const computed = await computeLineup(roster, week);
+  await saveWeeklyLineup(id, week, computed);
+
+  // Optional: email the result if explicitly asked AND user has opted in
+  let emailed = false;
+  if (notify && roster.optInEmail && roster.email) {
+    // Roster meta can be stored either as a flat id->meta map or as { names: {...} }.
+    // Normalize to a plain map for the renderer.
+    const meta = await getRosterMeta(id);
+    const names =
+      (meta && (meta as any).names && (meta as any).names) ||
+      (meta as any) ||
+      ({} as Record<string, { name?: string; pos?: string; team?: string }>);
+
+    const displayName = roster.name?.trim() || "Coach";
+
+    // NOTE: renderLineupText/Html expect (displayName, week, lineup, metaMap)
+    const textBody = renderLineupText(displayName, week, computed, names);
+    const htmlBody = renderLineupHtml(displayName, week, computed, names);
+
+    await sendEmail({
+      to: roster.email!,
+      subject: `Lineup Lab — Week ${week} starters`,
+      text: textBody,
+      html: htmlBody,
+    });
+    emailed = true;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    id,
+    week,
+    saved: true,
+    emailed,
+  });
 }
