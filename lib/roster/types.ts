@@ -1,5 +1,4 @@
 // lib/roster/types.ts
-
 export type SlotKey = "QB" | "RB" | "WR" | "TE" | "FLEX" | "DST" | "K";
 export type Position = SlotKey;
 
@@ -16,7 +15,7 @@ export type UserRoster = {
   rules: RosterRules;
   players: string[];
   pins?: { FLEX?: string[] };
-  scoring?: ScoringProfile;            // 👈 NEW
+  scoring?: ScoringProfile;
   optInEmail?: boolean;
   updatedAt: string;
 };
@@ -28,13 +27,16 @@ export type SlotDetail = {
   confidence: number;
   tier: "A" | "B" | "C" | "D";
   note?: string;
-  breakdown?: {                        // 👈 NEW (for explainability)
+  breakdown?: {
     scoring: ScoringProfile;
-    base: number;                      // projection from API (per scoring)
-    delta: number;                     // admin +/- points
+    base: number;
+    delta: number;
     injury?: string;
     forcedStart?: boolean;
     forcedSit?: boolean;
+    // NEW: matchup context
+    oppRank?: number;                       // lower = tougher D (or reverse per API)
+    matchupTier?: "Green" | "Yellow" | "Red";
   };
 };
 
@@ -43,9 +45,9 @@ export type WeeklyLineup = {
   slots: Record<SlotKey, string[]>;
   bench: string[];
   details: Record<string, SlotDetail>;
-  scores: number;                      // total projected points for starters
+  scores: number;
   recommendedAt: string;
-  hash?: string;                       // used by cron to detect meaningful change
+  hash?: string;
 };
 
 export type AdminOverrides = {
@@ -56,5 +58,4 @@ export type AdminOverrides = {
   forceSit?: Record<string, boolean>;
 };
 
-// Convenience type for admin inputs (no `week` inside payload)
 export type OverridesInput = Omit<AdminOverrides, "week">;
