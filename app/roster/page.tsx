@@ -367,7 +367,7 @@ export default function RosterHome() {
             </button>
           </div>
 
-          <PlayerSearch onPick={({ id }) => addPlayer(id)} />
+          <PlayerSearch onSelect={(hit) => addPlayer(hit.id)} />
 
           {showPaste && (
             <div className="grid gap-2">
