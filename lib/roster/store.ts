@@ -2,6 +2,7 @@ import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides, ScoringProfile } from "./types";
 import type { Position } from "./types";
+import { kv } from "@vercel/kv";
 
 const kUsers = "ro:users";
 const kRoster = (id: string) => `ro:roster:${id}`;
@@ -103,4 +104,25 @@ export async function mergeRosterMeta(
   await kv.set(kRosterMeta(id), next);
   return next;
 }
+// lib/roster/store.ts (additions)
+export type PlayerMeta = { name: string; pos?: string; team?: string };
+
+export const kLineupNames = (rosterId: string, week: number) =>
+  `lineup:names:${rosterId}:${week}`;
+
+export async function getLineupNames(
+  rosterId: string,
+  week: number
+): Promise<Record<string, PlayerMeta>> {
+  return (await kv.get<Record<string, PlayerMeta>>(kLineupNames(rosterId, week))) || {};
+}
+
+export async function setLineupNames(
+  rosterId: string,
+  week: number,
+  map: Record<string, PlayerMeta>
+): Promise<void> {
+  await kv.set(kLineupNames(rosterId, week), map);
+}
+
 
