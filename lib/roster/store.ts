@@ -1,6 +1,7 @@
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides, ScoringProfile } from "./types";
+import type { Position } from "./types";
 
 const kUsers = "ro:users";
 const kRoster = (id: string) => `ro:roster:${id}`;
@@ -80,3 +81,26 @@ export async function setOverrides(week: number, o: Omit<AdminOverrides, "week">
   await kv.set(kOverrides(week), { week, ...o });
   return getOverrides(week);
 }
+// --- roster meta cache -----------------------------
+
+export type PlayerMeta = { name?: string; pos?: Position | string; team?: string };
+const kRosterMeta = (id: string) => `ro:meta:${id}`;
+
+export async function getRosterMeta(id: string): Promise<Record<string, PlayerMeta>> {
+  return (await kv.get<Record<string, PlayerMeta>>(kRosterMeta(id))) ?? {};
+}
+
+export async function mergeRosterMeta(
+  id: string,
+  patch?: Record<string, PlayerMeta>
+): Promise<Record<string, PlayerMeta>> {
+  if (!patch || typeof patch !== "object") return getRosterMeta(id);
+  const current = await getRosterMeta(id);
+  const next: Record<string, PlayerMeta> = { ...current };
+  for (const [pid, meta] of Object.entries(patch)) {
+    next[pid] = { ...(current[pid] || {}), ...(meta || {}) };
+  }
+  await kv.set(kRosterMeta(id), next);
+  return next;
+}
+
