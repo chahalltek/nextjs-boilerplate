@@ -8,14 +8,7 @@ const kRoster = (id: string) => `ro:roster:${id}`;
 const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
 const kOverrides = (week: number) => `ro:overrides:${week}`;
 
-// ✅ Explicit return type + defensive normalization
-export async function listRosterIds(): Promise<string[]> {
-  const res: unknown = await kv.smembers(kUsers);
-  if (Array.isArray(res)) return res as string[];
-  if (typeof res === "string") return [res];
-  return [];
-}
-
+/* -------------------- Rosters -------------------- */
 export async function createRoster(input: {
   email: string;
   name?: string;
@@ -51,6 +44,15 @@ export async function saveRoster(id: string, patch: Partial<UserRoster>): Promis
   return next;
 }
 
+/** Returns all roster IDs (defensively normalized to an array). */
+export async function listRosterIds(): Promise<string[]> {
+  const res: unknown = await kv.smembers(kUsers);
+  if (Array.isArray(res)) return res as string[];
+  if (typeof res === "string") return [res];
+  return [];
+}
+
+/* -------------------- Lineups -------------------- */
 export async function saveLineup(id: string, week: number, lu: WeeklyLineup): Promise<WeeklyLineup> {
   await kv.set(kLineup(id, week), lu);
   return lu;
@@ -60,14 +62,9 @@ export async function getLineup(id: string, week: number): Promise<WeeklyLineup 
   return (await kv.get<WeeklyLineup>(kLineup(id, week))) ?? null;
 }
 
-// ✅ Important: explicit return type + nullish coalescing to avoid `string | never[]`
-export async function listRosterIds(): Promise<string[]> {
-  return (await kv.smembers<string>(kUsers)) ?? [];
-}
-
-/* Admin overrides */
+/* -------------------- Admin overrides -------------------- */
 export async function getOverrides(week: number): Promise<AdminOverrides> {
-  return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week } as AdminOverrides;
+  return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week };
 }
 
 export async function setOverrides(week: number, o: AdminOverrides): Promise<AdminOverrides> {
