@@ -14,24 +14,36 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({} as any));
   const { id, email, name, players, pins, rules, scoring, optInEmail } = body || {};
 
-  // Validate player list (optional)
-  const list: string[] = Array.isArray(players) ? players.filter(Boolean) : undefined;
+  // Validate/normalize players; allow undefined
+  const list: string[] | undefined = Array.isArray(players)
+    ? (players as unknown[])
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
 
   // Create or update
-  let roster = id
-    ? await saveRoster(id, cleanPatch({ name, players: list, pins, rules, scoring, optInEmail }))
-    : await createRoster(cleanPatch({ email, name, players: list, rules }));
+  let roster =
+    id
+      ? await saveRoster(id, cleanPatch({ name, players: list, pins, rules, scoring, optInEmail }))
+      : await createRoster(cleanPatch({ email, name, players: list, rules }));
 
-  // Merge known positions for any provided players
+  // If created, also persist scoring/opt-in if provided
+  if (!id && (scoring !== undefined || optInEmail !== undefined)) {
+    roster = await saveRoster(roster.id, cleanPatch({ scoring, optInEmail }) as any);
+  }
+
+  // Learn/merge positions for supplied players (helps lineup compute)
   if (list && list.length > 0) {
     const pos = await fetchPositions(list);
-    // attach/merge `_pos` without forcing type changes downstream
-    const existing = (roster as any)._pos || {};
-    const merged = { ...existing, ...pos };
-    roster = await saveRoster(roster.id, { ...(roster as any), _pos: merged } as any);
+    if (Object.keys(pos).length) {
+      const existing = (roster as any)._pos || {};
+      const merged = { ...existing, ...pos };
+      roster = await saveRoster(roster.id, { _pos: merged } as any);
+    }
   }
 
   return NextResponse.json({ roster });
@@ -47,7 +59,7 @@ function cleanPatch(obj: Record<string, any>) {
   return out;
 }
 
-// Pulls the big Sleeper map once, returns positions for the requested IDs
+// Pulls the Sleeper map once and returns positions for requested IDs
 async function fetchPositions(ids: string[]): Promise<Record<string, string>> {
   try {
     const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "force-cache" });
@@ -60,7 +72,6 @@ async function fetchPositions(ids: string[]): Promise<Record<string, string>> {
     }
     return out;
   } catch {
-    // fallback: nothing learned
     return {};
   }
 }
