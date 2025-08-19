@@ -61,14 +61,6 @@ export default function HomePage() {
             Weekly picks, waiver targets, and Survivor takes.
           </p>
 
-          <p className="mt-2 text-xs text-white/60">
-            New:{" "}
-            <Link href="/roster" className="underline hover:no-underline">
-              Skol Coach
-            </Link>{" "}
-            — save your roster and get weekly start/sit emails.
-          </p>
-        </div>
       </section>
 
       {/* VALUE PROPS */}
@@ -104,7 +96,7 @@ export default function HomePage() {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:p-6 flex items-center justify-between gap-4">
           <div className="relative">
             <div className="flex items-center gap-2">
-              <div className="font-semibold">Skol Coach — Lineup Lab</div>
+              <div className="font-semibold">Lineup Lab</div>
               {/* NEW badge */}
               <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-[color:var(--skol-gold)]/15 border-[color:var(--skol-gold)]/40 text-[color:var(--skol-gold)]">
                 ✨ New
@@ -118,7 +110,7 @@ export default function HomePage() {
             href="/roster"
             className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 whitespace-nowrap"
           >
-            Try Skol Coach
+            Try Lineup Lab
           </Link>
         </div>
       </section>
