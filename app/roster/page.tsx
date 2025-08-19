@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PlayerSearch from "@/components/PlayerSearch";
+import { usePlayerNames } from "@/lib/client/usePlayerNames";
 
 type Scoring = "PPR" | "HALF_PPR" | "STD";
 
