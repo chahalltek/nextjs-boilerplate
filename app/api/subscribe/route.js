@@ -86,6 +86,11 @@ export async function POST(req) {
       return NextResponse.json({ ok: false, error: "Invalid email." }, { status: 400 });
     }
 
+const body = await req.json();
+const rosterOptIn = Boolean(body.roster_opt_in);
+await kv.sadd("ro:optin:emails", email);
+if (rosterOptIn) await kv.sadd("ro:optin:digest", email);
+
     // Check current status
     const member = await getMember(dc, listId, key, email);
 
