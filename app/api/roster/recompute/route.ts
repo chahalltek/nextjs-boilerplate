@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing roster id" }, { status: 400 });
     }
 
-    // Use supplied week or default to 1 (safe fallback).
+    // Use supplied week or default to 1 (safe fallback)
     const week = Number.isFinite(weekParam) && weekParam > 0 ? weekParam : 1;
 
     const roster = await getRoster(id);
@@ -33,10 +33,15 @@ export async function GET(req: Request) {
     const next: WeeklyLineup = await computeLineup(roster, week);
     await saveLineup(id, week, next);
 
-    // Optional email notify (uses meta name map for pretty labels)
+    // Optional email notify (pretty names via meta map)
     if (notify && roster.optInEmail && roster.email) {
-      const metaMap = (await getRosterMeta(id)) || ({} as Record<string, PlayerMeta>);
-      const html = renderEmail(roster.name || "Coach", week, next, metaMap);
+      // getRosterMeta’s return type may be declared as a broader “RosterMeta”.
+      // We only need the name map: Record<string, PlayerMeta>.
+      const metaRaw = await getRosterMeta(id);
+      const nameMap: Record<string, PlayerMeta> =
+        (metaRaw as unknown as Record<string, PlayerMeta>) || {};
+
+      const html = renderEmail(roster.name || "Coach", week, next, nameMap);
       await sendRosterEmail({
         to: roster.email,
         subject: `Lineup Lab — Week ${week} starters`,
