@@ -242,7 +242,7 @@ export default function RosterHome() {
   return (
     <main className="container max-w-3xl py-10 space-y-6">
       <header>
-        <h1 className="text-3xl font-bold">Skol Coach — Lineup Lab</h1>
+        <h1 className="text-3xl font-bold">Lineup Lab</h1>
         <p className="text-white/70">
           Save your roster, set your league rules & scoring, and get weekly start/sit recommendations.
         </p>
@@ -288,7 +288,7 @@ export default function RosterHome() {
 
       {/* Explainer */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <h2 className="font-semibold">What is Skol Coach?</h2>
+        <h2 className="font-semibold">What is Lineup Lab?</h2>
         <p className="text-white/80 text-sm mt-2">
           Your weekly lineup consigliere. We blend data science (projections, injuries, opponent difficulty)
           with human overrides to get you the best combo of <em>art + science</em>.
