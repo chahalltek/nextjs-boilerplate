@@ -67,7 +67,14 @@ export async function getOverrides(week: number): Promise<AdminOverrides> {
   return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week };
 }
 
-export async function setOverrides(week: number, o: AdminOverrides): Promise<AdminOverrides> {
-  await kv.set(kOverrides(week), { week, ...o });
+// Accept overrides *without* the week field
+export type OverridesInput = Omit<AdminOverrides, "week">;
+
+export async function setOverrides(
+  week: number,
+  o: OverridesInput
+): Promise<AdminOverrides> {
+  await kv.set(kOverrides(week), { ...o, week });
   return getOverrides(week);
 }
+
