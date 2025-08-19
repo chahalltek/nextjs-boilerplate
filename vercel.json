@@ -1,16 +1,8 @@
 {
   "version": 2,
   "crons": [
-    {
-      "path": "/api/admin/publish-sweeper",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
-
-{
-  "crons": [
-    { "path": "/api/admin/kv-snapshot", "schedule": "0 9 * * *" }
+    { "path": "/api/admin/publish-sweeper", "schedule": "*/5 * * * *" },
+    { "path": "/api/admin/kv-snapshot",   "schedule": "0 9 * * *" }
   ]
 }
 
