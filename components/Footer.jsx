@@ -9,6 +9,7 @@ export default function SiteFooter() {
   // Start/Sit → Weekly Recap → Survivor → Hold ’em Fold ’em → Stats → Blog → 101 → About → Search
   const nav = [
     { href: "/start-sit", label: "Start/Sit" },
+    { href: "/roster", label: "Skol Coach" },
     { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
     { href: "/survivor", label: "Survivor" },
     { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em", title: "Who to stash, who to trash" },

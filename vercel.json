@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/admin/publish-sweeper", "schedule": "*/5 * * * *" },
     { "path": "/api/admin/kv-snapshot",   "schedule": "0 9 * * *" }
+    { "path": "/api/cron/roster-digest",    "schedule": "0 14 * * 3" }
   ]
 }
 
