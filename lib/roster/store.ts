@@ -1,20 +1,57 @@
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
-import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides, ScoringProfile } from "./types";
+import type {
+  UserRoster,
+  RosterRules,
+  WeeklyLineup,
+  AdminOverrides,
+  ScoringProfile,
+} from "./types";
 import type { Position } from "./types";
-import { kv } from "@vercel/kv";
 
-const kUsers = "ro:users";
-const kRoster = (id: string) => `ro:roster:${id}`;
-const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
-const kOverrides = (week: number) => `ro:overrides:${week}`;
+// ---------- Keys ----------
+const kRoster      = (id: string) => `ro:roster:${id}`;
+const kRosterIds   = "ro:roster:ids"; // set of roster ids
+const kLineup      = (id: string, week: number) => `ro:lineup:${id}:${week}`;
+const kOverrides   = (week: number) => `ro:overrides:${week}`;
+const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
 
-/* Safer set of smembers: KV can return string or string[] depending on dataset shape */
+// ---------- Rules helpers ----------
+const defaultRules: RosterRules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
+
+function mergeRules(partial?: Partial<RosterRules>): RosterRules {
+  return {
+    QB: partial?.QB ?? defaultRules.QB,
+    RB: partial?.RB ?? defaultRules.RB,
+    WR: partial?.WR ?? defaultRules.WR,
+    TE: partial?.TE ?? defaultRules.TE,
+    FLEX: partial?.FLEX ?? defaultRules.FLEX,
+    DST: partial?.DST ?? defaultRules.DST,
+    K: partial?.K ?? defaultRules.K,
+  };
+}
+
+function nowISO() {
+  return new Date().toISOString();
+}
+
+// ---------- Roster CRUD ----------
 export async function listRosterIds(): Promise<string[]> {
-  const res: unknown = await kv.smembers(kUsers);
-  if (Array.isArray(res)) return res as string[];
-  if (typeof res === "string") return [res];
-  return [];
+  try {
+    const ids = await kv.smembers<string>(kRosterIds);
+    return Array.isArray(ids) ? ids : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getRoster(id: string): Promise<UserRoster | null> {
+  try {
+    const obj = await kv.get<UserRoster>(kRoster(id));
+    return obj || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function createRoster(input: {
@@ -29,100 +66,106 @@ export async function createRoster(input: {
   const id = randomUUID();
   const roster: UserRoster = {
     id,
-    email: input.email.trim().toLowerCase(),
-    name: input.name?.trim(),
-    rules: {
-      QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1,
-      ...(input.rules || {}),
-    },
-    scoring: input.scoring || "PPR",
+    email: input.email,
+    name: input.name || "",
     players: input.players || [],
+    rules: mergeRules(input.rules),
     pins: input.pins || {},
-    optInEmail: input.optInEmail ?? true,
-    updatedAt: new Date().toISOString(),
+    scoring: input.scoring || "PPR",
+    optInEmail: input.optInEmail !== false,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
   };
   await kv.set(kRoster(id), roster);
-  await kv.sadd(kUsers, id);
+  await kv.sadd(kRosterIds, id);
   return roster;
 }
 
-export async function getRoster(id: string): Promise<UserRoster | null> {
-  return (await kv.get<UserRoster>(kRoster(id))) ?? null;
-}
-
 export async function saveRoster(id: string, patch: Partial<UserRoster>): Promise<UserRoster> {
-  const current = await getRoster(id);
-  if (!current) throw new Error("roster not found");
+  const existing = await getRoster(id);
+  if (!existing) throw new Error("Roster not found");
   const next: UserRoster = {
-    ...current,
-    ...patch,
-    rules: { ...current.rules, ...(patch.rules || {}) },
-    pins: { ...(current.pins || {}), ...(patch.pins || {}) },
-    scoring: patch.scoring || current.scoring || "PPR",
-    updatedAt: new Date().toISOString(),
+    ...existing,
+    ...(patch as any),
+    rules: mergeRules(patch.rules ?? existing.rules),
+    updatedAt: nowISO(),
   };
   await kv.set(kRoster(id), next);
   return next;
 }
 
-export async function saveLineup(id: string, week: number, lu: WeeklyLineup): Promise<WeeklyLineup> {
-  await kv.set(kLineup(id, week), lu);
-  return lu;
-}
-
-export async function getLineup(id: string, week: number): Promise<WeeklyLineup | null> {
-  return (await kv.get<WeeklyLineup>(kLineup(id, week))) ?? null;
-}
-
-/* Admin overrides */
-export async function getOverrides(week: number): Promise<AdminOverrides> {
-  return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week };
-}
-export async function setOverrides(week: number, o: Omit<AdminOverrides, "week">): Promise<AdminOverrides> {
-  await kv.set(kOverrides(week), { week, ...o });
-  return getOverrides(week);
-}
-// --- roster meta cache -----------------------------
-
-export type PlayerMeta = { name?: string; pos?: Position | string; team?: string };
-const kRosterMeta = (id: string) => `ro:meta:${id}`;
-
-export async function getRosterMeta(id: string): Promise<Record<string, PlayerMeta>> {
-  return (await kv.get<Record<string, PlayerMeta>>(kRosterMeta(id))) ?? {};
-}
-
-export async function mergeRosterMeta(
+// ---------- Lineups ----------
+export async function getLineup(
   id: string,
-  patch?: Record<string, PlayerMeta>
-): Promise<Record<string, PlayerMeta>> {
-  if (!patch || typeof patch !== "object") return getRosterMeta(id);
-  const current = await getRosterMeta(id);
-  const next: Record<string, PlayerMeta> = { ...current };
-  for (const [pid, meta] of Object.entries(patch)) {
-    next[pid] = { ...(current[pid] || {}), ...(meta || {}) };
+  week: number
+): Promise<(WeeklyLineup & { hash?: string }) | null> {
+  try {
+    const lu = await kv.get<WeeklyLineup & { hash?: string }>(kLineup(id, week));
+    return lu || null;
+  } catch {
+    return null;
   }
-  await kv.set(kRosterMeta(id), next);
-  return next;
 }
-// lib/roster/store.ts (additions)
-export type PlayerMeta = { name: string; pos?: string; team?: string };
 
-export const kLineupNames = (rosterId: string, week: number) =>
-  `lineup:names:${rosterId}:${week}`;
+export async function saveLineup(
+  id: string,
+  week: number,
+  lineup: WeeklyLineup & { hash?: string }
+): Promise<void> {
+  await kv.set(kLineup(id, week), lineup);
+}
+
+// ---------- Overrides ----------
+export type OverridesInput = Partial<Pick<AdminOverrides, "pointDelta" | "forceStart" | "forceSit" | "note">>;
+
+export async function getOverrides(week: number): Promise<AdminOverrides> {
+  try {
+    const o = (await kv.get<AdminOverrides>(kOverrides(week))) || null;
+    return (
+      o || {
+        week,
+        pointDelta: {},
+        forceStart: {},
+        forceSit: {},
+        note: "",
+      }
+    );
+  } catch {
+    return { week, pointDelta: {}, forceStart: {}, forceSit: {}, note: "" };
+  }
+}
+
+export async function setOverrides(week: number, input: OverridesInput): Promise<AdminOverrides> {
+  const current = await getOverrides(week);
+  const merged: AdminOverrides = {
+    week,
+    pointDelta: { ...(current.pointDelta || {}), ...(input.pointDelta || {}) },
+    forceStart: { ...(current.forceStart || {}), ...(input.forceStart || {}) },
+    forceSit: { ...(current.forceSit || {}), ...(input.forceSit || {}) },
+    note: input.note ?? current.note ?? "",
+  };
+  await kv.set(kOverrides(week), merged);
+  return merged;
+}
+
+// ---------- Names map for emails/UI ----------
+export async function setLineupNames(
+  id: string,
+  week: number,
+  map: Record<string, { name: string; pos?: string; team?: string }>
+): Promise<void> {
+  await kv.set(kLineupNames(id, week), map || {});
+}
 
 export async function getLineupNames(
-  rosterId: string,
+  id: string,
   week: number
-): Promise<Record<string, PlayerMeta>> {
-  return (await kv.get<Record<string, PlayerMeta>>(kLineupNames(rosterId, week))) || {};
+): Promise<Record<string, { name: string; pos?: string; team?: string }>> {
+  try {
+    return (await kv.get<Record<string, { name: string; pos?: string; team?: string }>>(
+      kLineupNames(id, week)
+    )) || {};
+  } catch {
+    return {};
+  }
 }
-
-export async function setLineupNames(
-  rosterId: string,
-  week: number,
-  map: Record<string, PlayerMeta>
-): Promise<void> {
-  await kv.set(kLineupNames(rosterId, week), map);
-}
-
-
