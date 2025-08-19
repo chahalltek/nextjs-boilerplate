@@ -8,21 +8,60 @@ async function actionSave(formData: FormData) {
   const week = Number(formData.get("week") || "1");
   const note = String(formData.get("note") || "");
 
-  // Expect JSON blocks for deltas/forces
-  const pointDelta = safeJson(formData.get("pointDelta")) as Record<string, number> | undefined;
-  const forceStart = safeJson(formData.get("forceStart")) as string[] | undefined;
-  const forceSit   = safeJson(formData.get("forceSit")) as string[] | undefined;
+  // Parse JSON blobs from the form
+  const rawPointDelta = safeJson(formData.get("pointDelta"));
+  const rawForceStart  = safeJson(formData.get("forceStart"));
+  const rawForceSit    = safeJson(formData.get("forceSit"));
 
-  // ✅ Do NOT include `week` inside the payload
+  // Coerce to the right shapes for setOverrides
+  const pointDelta = toNumberMap(rawPointDelta);            // Record<string, number> | undefined
+  const forceStart = toBoolMap(rawForceStart);              // Record<string, boolean> | undefined
+  const forceSit   = toBoolMap(rawForceSit);                // Record<string, boolean> | undefined
+
   await setOverrides(week, { note, pointDelta, forceStart, forceSit });
 }
 
 function safeJson(v: any) {
-  try {
-    return v ? JSON.parse(String(v)) : undefined;
-  } catch {
-    return undefined;
+  try { return v ? JSON.parse(String(v)) : undefined; } catch { return undefined; }
+}
+
+function toNumberMap(v: any): Record<string, number> | undefined {
+  if (!v) return undefined;
+  if (typeof v === "object" && !Array.isArray(v)) {
+    const out: Record<string, number> = {};
+    for (const [k, val] of Object.entries(v)) {
+      const n = Number(val);
+      if (!Number.isNaN(n)) out[k] = n;
+    }
+    return Object.keys(out).length ? out : undefined;
   }
+  // allow array of tuples: [["player_id", 1.5], ...]
+  if (Array.isArray(v)) {
+    const out: Record<string, number> = {};
+    for (const item of v) {
+      if (Array.isArray(item) && typeof item[0] === "string") {
+        const n = Number(item[1]);
+        if (!Number.isNaN(n)) out[item[0]] = n;
+      }
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return undefined;
+}
+
+function toBoolMap(v: any): Record<string, boolean> | undefined {
+  if (!v) return undefined;
+  if (Array.isArray(v)) {
+    const out: Record<string, boolean> = {};
+    for (const id of v) if (typeof id === "string" && id.trim()) out[id] = true;
+    return Object.keys(out).length ? out : undefined;
+  }
+  if (typeof v === "object") {
+    const out: Record<string, boolean> = {};
+    for (const [k, val] of Object.entries(v)) out[k] = Boolean(val);
+    return Object.keys(out).length ? out : undefined;
+  }
+  return undefined;
 }
 
 export default async function RosterAdmin() {
@@ -51,23 +90,26 @@ export default async function RosterAdmin() {
           name="pointDelta"
           className="min-h-24 bg-transparent border border-white/10 rounded p-2 font-mono text-sm"
           defaultValue={JSON.stringify(current.pointDelta || {}, null, 2)}
-          placeholder='e.g. { "dalvin_cook": 1.5, "justin_jefferson": -0.5 }'
+          placeholder='Object or array of tuples, e.g. { "p_123": 1.5 } or [["p_123", 1.5]]'
         />
 
         <label className="text-sm">Force Start (JSON)</label>
         <textarea
           name="forceStart"
           className="min-h-24 bg-transparent border border-white/10 rounded p-2 font-mono text-sm"
-          defaultValue={JSON.stringify(current.forceStart || [], null, 2)}
-          placeholder='e.g. ["tyreek_hill","puka_nacua"]'
+          defaultValue={
+            // show as array in the textarea for readability
+            JSON.stringify(Object.keys(current.forceStart || {}), null, 2)
+          }
+          placeholder='Array or object, e.g. ["p_123","p_456"] or { "p_123": true }'
         />
 
         <label className="text-sm">Force Sit (JSON)</label>
         <textarea
           name="forceSit"
           className="min-h-24 bg-transparent border border-white/10 rounded p-2 font-mono text-sm"
-          defaultValue={JSON.stringify(current.forceSit || [], null, 2)}
-          placeholder='e.g. ["cooper_kupp"]'
+          defaultValue={JSON.stringify(Object.keys(current.forceSit || {}), null, 2)}
+          placeholder='Array or object, e.g. ["p_789"] or { "p_789": true }'
         />
 
         <label className="text-sm">Note</label>
