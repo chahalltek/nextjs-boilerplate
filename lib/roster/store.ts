@@ -6,7 +6,6 @@ import type {
   WeeklyLineup,
   AdminOverrides,
   ScoringProfile,
-  Position,
 } from "./types";
 
 // ---------- Keys ----------
@@ -32,14 +31,10 @@ function mergeRules(partial?: Partial<RosterRules>): RosterRules {
   };
 }
 
-function nowISO() {
-  return new Date().toISOString();
-}
-
 // ---------- Roster CRUD ----------
 export async function listRosterIds(): Promise<string[]> {
   try {
-    // Cast because @vercel/kv's smembers doesn't accept a generic type arg
+    // kv.smembers has a broad return type; cast to string[]
     const ids = (await kv.smembers(kRosterIds)) as string[] | null;
     return Array.isArray(ids) ? ids : [];
   } catch {
@@ -84,8 +79,6 @@ export async function createRoster(input: {
     pins: input.pins || {},
     scoring: input.scoring || "PPR",
     optInEmail: input.optInEmail !== false,
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
   };
   await kv.set(kRoster(id), roster);
   await kv.sadd(kRosterIds, id);
@@ -99,7 +92,6 @@ export async function saveRoster(id: string, patch: Partial<UserRoster>): Promis
     ...existing,
     ...(patch as any),
     rules: mergeRules(patch.rules ?? existing.rules),
-    updatedAt: nowISO(),
   };
   await kv.set(kRoster(id), next);
   return next;
