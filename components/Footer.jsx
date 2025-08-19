@@ -5,7 +5,6 @@ import ListenCtas from "./ListenCtas";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
-  const SHOW_LISTEN = process.env.NEXT_PUBLIC_SHOW_LISTEN === "1"; // toggle on later
 
   // Match header order:
   // Start/Sit → Weekly Recap → Survivor → Hold ’em Fold ’em → Stats → Blog → 101 → About → Search
@@ -13,7 +12,7 @@ export default function SiteFooter() {
     { href: "/start-sit", label: "Start/Sit" },
     { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
     { href: "/survivor", label: "Survivor" },
-    { href: "/holdem-foldem", label: "Hold & Fold", title: "Who to stash, who to trash" },
+    { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em", title: "Who to stash, who to trash" },
     { href: "/stats", label: "Stats" },
     { href: "/blog", label: "Blog" },
     { href: "/101", label: "101", title: "Fantasy Football 101" },
@@ -22,9 +21,10 @@ export default function SiteFooter() {
   ];
 
   return (
-    <footer className="mt-16 border-t border-white/10">
+    // Hide on mobile, show from md and up
+    <footer className="mt-16 border-t border-white/10 hidden md:block">
       <div className="container py-6">
-        {/* One row that wraps on small screens */}
+        {/* One row that wraps on small screens (desktop/tablet only due to md:block) */}
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           {/* Brand */}
           <Link href="/" className="flex items-center gap-2">
@@ -61,8 +61,8 @@ export default function SiteFooter() {
             </a>
           </nav>
 
-          {/* Listen CTAs (hidden by default; enable with NEXT_PUBLIC_SHOW_LISTEN=1) */}
-          {SHOW_LISTEN ? <ListenCtas /> : null}
+          {/* Keep podcast CTAs out of sight for now if you wish, or remove */}
+          <ListenCtas />
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">
