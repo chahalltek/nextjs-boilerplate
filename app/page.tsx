@@ -18,6 +18,7 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
+      {/* Trending */}
       <div className="space-y-2">
         <p className="text-center text-sm text-white/60">Trending (hot) players</p>
         <TrendingTicker />
@@ -26,7 +27,7 @@ export default function HomePage() {
       {/* HERO */}
       <section className="pt-10 pb-16 text-center relative">
         <div className="absolute inset-0 -z-10 pointer-events-none [mask-image:radial-gradient(50%_50%_at_50%_0%,#000_0%,transparent_70%)]">
-          <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-[color:var(--skol-purple)]/30 to-transparent blur-3xl"></div>
+          <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-[color:var(--skol-purple)]/30 to-transparent blur-3xl" />
         </div>
 
         <div className="container">
@@ -34,12 +35,10 @@ export default function HomePage() {
             <Logo size={180} />
           </div>
 
-          <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">
-            Hey Skol Sister
-          </h1>
+          <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">Hey Skol Sister</h1>
 
           <p className="mt-4 text-white/80 max-w-2xl mx-auto text-lg">
-            Nobody cares about your fantasy team — except us!!
+            Nobody cares about your fantasy team — Except Us!!
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3">
@@ -61,24 +60,36 @@ export default function HomePage() {
             Weekly picks, waiver targets, and Survivor takes.
           </p>
 
+          <p className="mt-3 text-xs text-white/60">
+            New: <Link href="/roster" className="underline hover:no-underline">Lineup Lab</Link> — save your roster and get weekly start/sit emails.
+          </p>
+        </div>
       </section>
 
       {/* VALUE PROPS */}
       <section className="container grid md:grid-cols-3 gap-4">
-        <Feature
-          title="Actionable Picks"
-          desc="Tiered Start/Sit with confidence levels you can use on Sunday morning."
-        />
-        <Feature
-          title="Waiver + Trades"
-          desc="Spot contingent value and stash upside before your league-mates."
-        />
+        <Feature title="Actionable Picks" desc="Tiered Start/Sit with confidence levels you can use on Sunday morning." />
+        <Feature title="Waiver + Trades" desc="Spot contingent value and stash upside before your league-mates." />
         <Feature title="Vikings Vibes" desc="Data-driven—but with plenty of purple. Skol!" />
       </section>
 
-      {/* PROMO GRID: Survivor + Skol Coach */}
-      <section className="container grid md:grid-cols-2 gap-4">
-        {/* Survivor */}
+      {/* PROMO CARDS */}
+      <section className="container grid gap-4 md:grid-cols-2">
+        {/* Lineup Lab promo */}
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:p-6 flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold">Lineup Lab</div>
+            <div className="text-sm text-white/70">Save your roster. Get weekly start/sit emails.</div>
+          </div>
+          <Link
+            href="/roster"
+            className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 whitespace-nowrap"
+          >
+            Try it
+          </Link>
+        </div>
+
+        {/* Survivor promo */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:p-6 flex items-center justify-between gap-4">
           <div>
             <div className="font-semibold">Survivor Bracket Challenge</div>
@@ -89,28 +100,6 @@ export default function HomePage() {
             className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 whitespace-nowrap"
           >
             Play Now
-          </Link>
-        </div>
-
-        {/* Skol Coach */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:p-6 flex items-center justify-between gap-4">
-          <div className="relative">
-            <div className="flex items-center gap-2">
-              <div className="font-semibold">Lineup Lab</div>
-              {/* NEW badge */}
-              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-[color:var(--skol-gold)]/15 border-[color:var(--skol-gold)]/40 text-[color:var(--skol-gold)]">
-                ✨ New
-              </span>
-            </div>
-            <div className="text-sm text-white/70">
-              Save your roster, pin FLEX, and get weekly start/sit emails.
-            </div>
-          </div>
-          <Link
-            href="/roster"
-            className="px-4 py-2 rounded bg-[color:var(--skol-gold)] text-white font-semibold hover:opacity-90 whitespace-nowrap"
-          >
-            Try Lineup Lab
           </Link>
         </div>
       </section>
@@ -195,9 +184,7 @@ function EmptyCard() {
   return (
     <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-sm text-white/70">
       No posts yet. Create your first post in{" "}
-      <code className="px-1 py-0.5 rounded bg-black/40 border border-white/10">
-        /content/posts
-      </code>{" "}
+      <code className="px-1 py-0.5 rounded bg-black/40 border border-white/10">/content/posts</code>{" "}
       or via the admin.
     </div>
   );
