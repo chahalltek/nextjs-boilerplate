@@ -7,3 +7,10 @@
     }
   ]
 }
+
+{
+  "crons": [
+    { "path": "/api/admin/kv-snapshot", "schedule": "0 9 * * *" }
+  ]
+}
+

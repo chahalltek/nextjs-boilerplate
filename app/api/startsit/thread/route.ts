@@ -1,4 +1,6 @@
 // app/api/startsit/thread/route.ts
+import { NextResponse } from "next/server"; // if not already present
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 
