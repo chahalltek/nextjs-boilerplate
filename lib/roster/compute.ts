@@ -38,6 +38,7 @@ export async function computeLineup(
   week: number,
   overrides: Partial<AdminOverrides> = {}
 ): Promise<WeeklyLineup> {
+  // Normalize overrides to a full AdminOverrides shape
   const ov: AdminOverrides = {
     week,
     pointDelta: {},
@@ -56,6 +57,7 @@ export async function computeLineup(
   const deltas = ov.pointDelta || {};
   const used = new Set<string>();
 
+  // Score each roster player
   const rows = (roster.players || []).map((pid) => {
     const p = projMap[pid] || {};
     let pts = Number(p.pts_ppr || 0) + Number(deltas[pid] || 0);
@@ -72,6 +74,7 @@ export async function computeLineup(
     return { pid, pts, pos: guessPos(pid, roster, projMap) };
   });
 
+  // Helper to fill non-FLEX slots
   const take = (pos: Exclude<Position, "FLEX">, n: number) => {
     const pool = rows
       .filter((r) => !used.has(r.pid) && r.pos === pos && !forcedSit[r.pid])
@@ -88,6 +91,7 @@ export async function computeLineup(
     return pool.map((r) => r.pid);
   };
 
+  // Primary slots (non-FLEX)
   const slots: WeeklyLineup["slots"] = {
     QB: take("QB", want.QB),
     RB: take("RB", want.RB),
@@ -98,6 +102,7 @@ export async function computeLineup(
     FLEX: [],
   };
 
+  // FLEX: honor pins first, then best remaining RB/WR/TE
   const pins = roster.pins?.FLEX || [];
   for (const pid of pins) {
     if (
@@ -133,12 +138,13 @@ export async function computeLineup(
     slots.FLEX.push(...pool.map((r) => r.pid));
   }
 
+  // Bench
   const bench = rows
     .filter((r) => !used.has(r.pid))
     .sort((a, b) => b.pts - a.pts)
     .map((r) => r.pid);
 
-  // compute per-slot sums, but only return the total to match WeeklyLineup type
+  // Per-slot sums + grand total; return as record to match WeeklyLineup
   type SlotKey = keyof WeeklyLineup["slots"];
   const slotTotals = Object.fromEntries(
     (Object.keys(slots) as SlotKey[]).map((k) => {
@@ -147,25 +153,29 @@ export async function computeLineup(
       return [k, Number(sum.toFixed(2))];
     })
   ) as Record<SlotKey, number>;
+
   const total = Number(
     (Object.values(slotTotals) as number[]).reduce((a, b) => a + b, 0).toFixed(2)
   );
+
+  const scores: Record<string, number> = { total, ...slotTotals };
 
   return {
     week,
     slots,
     bench,
     details,
-    scores: total, // <- matches WeeklyLineup type (number)
+    scores,
     recommendedAt: new Date().toISOString(),
   };
 }
 
-/** rough position guess from prior roster/rules; replace with a real lookup if you store per-player meta */
+/** Rough position guess from prior roster/rules; replace with a real lookup if you store per-player meta. */
 function guessPos(
   pid: string,
   roster: UserRoster,
   _map: Record<string, any>
 ): Position {
+  // fallback guess (treat unknown as WR)
   return (roster as any)._pos?.[pid] || "WR";
 }
