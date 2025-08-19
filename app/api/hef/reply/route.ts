@@ -1,17 +1,31 @@
-import { NextResponse } from "next/server"; // if not already present
-import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { addReply, listReplies } from "@/lib/hef/store";
 
-export const runtime = "nodejs"; // keep if you already have it
+export const runtime = "nodejs";
 
+// List replies in a thread
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const threadId = searchParams.get("threadId");
+    if (!threadId) return NextResponse.json({ replies: [] });
+    const replies = await listReplies(threadId);
+    return NextResponse.json({ replies });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "error" }, { status: 500 });
+  }
+}
+
+// Create a reply (rate-limited)
 export async function POST(req: Request) {
-  // 🛡️ Rate limit: 5 replies / 60s per IP for Start/Sit
+  // 5 replies / 60s per IP for Hold ’em / Fold ’em
   const ip = getClientIp(req);
-  const { success, remaining, reset, limit } = await rateLimit(`${ip}:ss:reply`, {
+  const { success, remaining, reset, limit } = await rateLimit(`${ip}:hef:reply`, {
     limit: 5,
     window: 60,
   });
+
   if (!success) {
     const retry = Math.max(1, reset - Math.floor(Date.now() / 1000));
     return NextResponse.json(
@@ -28,24 +42,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // ⬇️ your existing logic stays the same below this line
-  // const body = await req.json(); ...
-  // write to KV / return response, etc.
-}
-
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const threadId = searchParams.get("threadId");
-  if (!threadId) return NextResponse.json({ replies: [] });
-  const replies = await listReplies(threadId);
-  return NextResponse.json({ replies });
-}
-
-export async function POST(req: Request) {
   const { threadId, name, message } = await req.json();
   if (!threadId || !message?.trim()) {
-    return NextResponse.json({ error: "threadId/message required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "threadId/message required" },
+      { status: 400 }
+    );
   }
-  const r = await addReply(threadId, name || "Anonymous", message);
-  return NextResponse.json({ ok: true, reply: r });
+
+  const reply = await addReply(threadId, {
+    name: name?.trim() || "Anonymous",
+    message: message.trim(),
+    ip,
+  });
+
+  return NextResponse.json({ ok: true, reply });
 }
