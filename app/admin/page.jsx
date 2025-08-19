@@ -59,11 +59,13 @@ const cards = [
   { href: "/admin/posts", title: "Blog", desc: "Write posts and upload images. Commits to content/posts/…", emoji: "📝" },
   { href: "/admin/cws", title: "Weekly Recap", desc: "Post your ‘Coulda, Woulda, Shoulda’ recap.", emoji: "⏪" },
   { href: "/admin/holdem-foldem", title: "Hold ’em / Fold ’em", desc: "Stash-or-trash: injuries, usage, matchups.", emoji: "🃏" },
-  // ✅ New: Start/Sit admin
+  // Start/Sit admin
   { href: "/admin/start-sit", title: "Start / Sit", desc: "Post this week’s Start/Sit thread and notes.", emoji: "✅" },
   { href: "/admin/polls", title: "Survivor (Polls)", desc: "Create/manage polls shown on the Survivor page.", emoji: "📊" },
   // Bracket admin
   { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
+  // ✅ New: Lineup Lab admin hub
+  { href: "/admin/lineup-lab", title: "Lineup Lab", desc: "Rosters, overrides, and recompute controls.", emoji: "🧪" },
 ];
 
 export default function AdminHome() {
@@ -124,7 +126,11 @@ export default function AdminHome() {
         <h2 className="text-lg font-semibold mb-3">Content Tools</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((c) => (
-            <Link key={c.href} href={c.href} className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition">
+            <Link
+              key={c.href}
+              href={c.href}
+              className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition"
+            >
               <div className="text-2xl mb-2">{c.emoji}</div>
               <div className="text-lg font-semibold">{c.title}</div>
               <p className="text-sm text-white/70 mt-1">{c.desc}</p>
