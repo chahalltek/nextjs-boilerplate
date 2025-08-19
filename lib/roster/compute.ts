@@ -36,10 +36,10 @@ function confidence(points: number, injury?: string) {
 export async function computeLineup(
   roster: UserRoster,
   week: number,
-  // ✅ Accept partial overrides so `{}` is valid
+  // Accept partial overrides so `{}` is valid
   overrides: Partial<AdminOverrides> = {}
 ): Promise<WeeklyLineup> {
-  // ✅ Normalize to a full AdminOverrides object
+  // Normalize to a full AdminOverrides object
   const ov: AdminOverrides = {
     week,
     pointDelta: {},
@@ -144,11 +144,25 @@ export async function computeLineup(
     .sort((a, b) => b.pts - a.pts)
     .map((r) => r.pid);
 
+  // 🔢 Build scores (bySlot + total) from selected players’ points
+  type SlotKey = keyof WeeklyLineup["slots"];
+  const bySlot = Object.fromEntries(
+    (Object.keys(slots) as SlotKey[]).map((k) => {
+      const ids = slots[k] || [];
+      const sum = ids.reduce((acc, id) => acc + (details[id]?.points || 0), 0);
+      return [k, Number(sum.toFixed(2))];
+    })
+  ) as Record<SlotKey, number>;
+  const total = Number(
+    (Object.values(bySlot) as number[]).reduce((a, b) => a + b, 0).toFixed(2)
+  );
+
   return {
     week,
     slots,
     bench,
     details,
+    scores: { total, bySlot },
     recommendedAt: new Date().toISOString(),
   };
 }
