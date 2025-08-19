@@ -1,7 +1,6 @@
 // components/SiteFooter.jsx
 import Link from "next/link";
 import Logo from "./Logo";
-import ListenCtas from "./ListenCtas";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
@@ -21,7 +20,7 @@ export default function SiteFooter() {
   ];
 
   return (
-    // Hide on mobile, show from md and up
+    // Hidden on mobile, shown from md and up
     <footer className="mt-16 border-t border-white/10 hidden md:block">
       <div className="container py-6">
         {/* One row that wraps on small screens (desktop/tablet only due to md:block) */}
@@ -32,7 +31,7 @@ export default function SiteFooter() {
             <span className="font-semibold">Hey Skol Sister</span>
           </Link>
 
-          {/* Links + Facebook icon together */}
+          {/* Links + Facebook button */}
           <nav className="flex items-center gap-6">
             {nav.map((n) => (
               <Link
@@ -44,25 +43,27 @@ export default function SiteFooter() {
                 {n.label}
               </Link>
             ))}
+
+            {/* Bigger, labeled Facebook link */}
             <a
               href="https://www.facebook.com/profile.php?id=61578258645337"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Hey Skol Sister on Facebook"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
               title="Facebook"
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 hover:bg-white/20 px-3 py-1.5"
             >
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
                 <path
                   fill="currentColor"
                   d="M22 12.07C22 6.48 17.52 2 11.93 2 6.35 2 1.87 6.48 1.87 12.07c0 4.99 3.65 9.13 8.42 9.93v-7.02H7.9V12.1h2.39v-1.9c0-2.35 1.4-3.66 3.54-3.66 1.02 0 2.09.18 2.09.18v2.3h-1.18c-1.16 0-1.52.72-1.52 1.46v1.62h2.59l-.41 2.89h-2.18V22c4.77-.8 8.42-4.94 8.42-9.93z"
                 />
               </svg>
+              <span className="text-sm">Facebook</span>
             </a>
           </nav>
 
-          {/* Keep podcast CTAs out of sight for now if you wish, or remove */}
-          <ListenCtas />
+          {/* Podcast CTAs removed (hidden until launch) */}
 
           {/* Copyright pushed to the far right on wide screens */}
           <div className="ml-auto text-xs text-white/50">

@@ -78,7 +78,7 @@ export default function AdminHome() {
 
       {/* Revalidation Shortcuts */}
       <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-5">
-        <h2 className="text-lg font-semibold">Revalidate (cache)</h2>
+        <h2 className="text-lg font-semibold">Revalidate (cache) - Charlie Only</h2>
 
         <form action={actionRevalidate} className="flex flex-wrap gap-2">
           <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10" name="path" value="/">Revalidate Home</button>
@@ -105,7 +105,7 @@ export default function AdminHome() {
 
       {/* Maintenance */}
       <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-5">
-        <h2 className="text-lg font-semibold">Maintenance</h2>
+        <h2 className="text-lg font-semibold">Maintenance - Charlie Only</h2>
         <div className="flex flex-wrap gap-2">
           <form action={actionRebuildSearchIndex}>
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Rebuild Search Index</button>
