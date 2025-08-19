@@ -1,19 +1,28 @@
-// lib/roster/store.ts
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
-import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides } from "./types";
+import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides, ScoringProfile } from "./types";
 
 const kUsers = "ro:users";
 const kRoster = (id: string) => `ro:roster:${id}`;
 const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
 const kOverrides = (week: number) => `ro:overrides:${week}`;
 
-/* -------------------- Rosters -------------------- */
+/* Safer set of smembers: KV can return string or string[] depending on dataset shape */
+export async function listRosterIds(): Promise<string[]> {
+  const res: unknown = await kv.smembers(kUsers);
+  if (Array.isArray(res)) return res as string[];
+  if (typeof res === "string") return [res];
+  return [];
+}
+
 export async function createRoster(input: {
   email: string;
   name?: string;
   rules?: Partial<RosterRules>;
   players?: string[];
+  pins?: { FLEX?: string[] };
+  scoring?: ScoringProfile;
+  optInEmail?: boolean;
 }): Promise<UserRoster> {
   const id = randomUUID();
   const roster: UserRoster = {
@@ -24,7 +33,10 @@ export async function createRoster(input: {
       QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1,
       ...(input.rules || {}),
     },
+    scoring: input.scoring || "PPR",
     players: input.players || [],
+    pins: input.pins || {},
+    optInEmail: input.optInEmail ?? true,
     updatedAt: new Date().toISOString(),
   };
   await kv.set(kRoster(id), roster);
@@ -39,20 +51,18 @@ export async function getRoster(id: string): Promise<UserRoster | null> {
 export async function saveRoster(id: string, patch: Partial<UserRoster>): Promise<UserRoster> {
   const current = await getRoster(id);
   if (!current) throw new Error("roster not found");
-  const next: UserRoster = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  const next: UserRoster = {
+    ...current,
+    ...patch,
+    rules: { ...current.rules, ...(patch.rules || {}) },
+    pins: { ...(current.pins || {}), ...(patch.pins || {}) },
+    scoring: patch.scoring || current.scoring || "PPR",
+    updatedAt: new Date().toISOString(),
+  };
   await kv.set(kRoster(id), next);
   return next;
 }
 
-/** Returns all roster IDs (defensively normalized to an array). */
-export async function listRosterIds(): Promise<string[]> {
-  const res: unknown = await kv.smembers(kUsers);
-  if (Array.isArray(res)) return res as string[];
-  if (typeof res === "string") return [res];
-  return [];
-}
-
-/* -------------------- Lineups -------------------- */
 export async function saveLineup(id: string, week: number, lu: WeeklyLineup): Promise<WeeklyLineup> {
   await kv.set(kLineup(id, week), lu);
   return lu;
@@ -62,19 +72,11 @@ export async function getLineup(id: string, week: number): Promise<WeeklyLineup 
   return (await kv.get<WeeklyLineup>(kLineup(id, week))) ?? null;
 }
 
-/* -------------------- Admin overrides -------------------- */
+/* Admin overrides */
 export async function getOverrides(week: number): Promise<AdminOverrides> {
   return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week };
 }
-
-// Accept overrides *without* the week field
-export type OverridesInput = Omit<AdminOverrides, "week">;
-
-export async function setOverrides(
-  week: number,
-  o: OverridesInput
-): Promise<AdminOverrides> {
-  await kv.set(kOverrides(week), { ...o, week });
+export async function setOverrides(week: number, o: Omit<AdminOverrides, "week">): Promise<AdminOverrides> {
+  await kv.set(kOverrides(week), { week, ...o });
   return getOverrides(week);
 }
-

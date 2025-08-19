@@ -3,15 +3,36 @@
 import { useEffect, useMemo, useState } from "react";
 import PlayerSearch from "@/components/PlayerSearch";
 
+type Scoring = "PPR" | "HALF_PPR" | "STD";
+
 type Lineup = {
   week: number;
   slots: Record<string, string[]>;
   bench?: string[];
   details?: Record<
     string,
-    { playerId: string; position: string; points: number; confidence: number; tier: "A"|"B"|"C"|"D"; note?: string }
+    {
+      playerId: string;
+      position: string;
+      points: number;
+      confidence: number;
+      tier: "A" | "B" | "C" | "D";
+      note?: string;
+      breakdown?: {
+        scoring: Scoring;
+        base: number;
+        delta: number;
+        injury?: string;
+        forcedStart?: boolean;
+        forcedSit?: boolean;
+      };
+    }
   >;
+  scores?: number;
 };
+
+type Rules = { QB: number; RB: number; WR: number; TE: number; FLEX: number; DST: number; K: number; };
+const defaultRules: Rules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
 
 type SavedRosterMeta = { id: string; name?: string };
 
@@ -21,19 +42,23 @@ export default function RosterHome() {
   const [name, setName] = useState("");
   const [players, setPlayers] = useState<string[]>([]);
   const [pinsFlex, setPinsFlex] = useState<Record<string, boolean>>({});
+
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [optInEmail, setOptInEmail] = useState(true);
+
+  // NEW: rules + scoring profile
+  const [rules, setRules] = useState<Rules>(defaultRules);
+  const [scoring, setScoring] = useState<Scoring>("PPR");
 
   const [saving, setSaving] = useState(false);
   const [week, setWeek] = useState(1);
   const [recommendation, setRecommendation] = useState<Lineup | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
 
-  // ---------- roster switcher state ----------
   const [myRosters, setMyRosters] = useState<SavedRosterMeta[]>([]);
 
-  // migrate old single id -> list
+  // migrate old single id -> list and choose first
   useEffect(() => {
     const old = localStorage.getItem("rosterId");
     const listRaw = localStorage.getItem("rosterIds");
@@ -48,7 +73,7 @@ export default function RosterHome() {
     if (list[0]?.id) setId(list[0].id);
   }, []);
 
-  // default NFL week from API
+  // default NFL week
   useEffect(() => {
     (async () => {
       try {
@@ -59,16 +84,14 @@ export default function RosterHome() {
     })();
   }, []);
 
-  // hydrate roster when id changes
+  // hydrate on roster id
   useEffect(() => {
     async function load() {
       if (!id) {
-        // clear form for "new roster" flow
-        setEmail("");
-        setName("");
-        setPlayers([]);
-        setPinsFlex({});
-        setOptInEmail(true);
+        // clear for new roster
+        setEmail(""); setName(""); setPlayers([]);
+        setPinsFlex({}); setOptInEmail(true);
+        setRules(defaultRules); setScoring("PPR");
         setRecommendation(null);
         return;
       }
@@ -82,10 +105,12 @@ export default function RosterHome() {
         setPlayers(Array.isArray(r.players) ? r.players : []);
         const flexPins = (r.pins?.FLEX as string[]) || [];
         setPinsFlex(Object.fromEntries(flexPins.map((p: string) => [p, true])));
-        if (typeof r.optInEmail === "boolean") setOptInEmail(r.optInEmail);
+        setOptInEmail(typeof r.optInEmail === "boolean" ? r.optInEmail : true);
+        setRules({ ...defaultRules, ...(r.rules || {}) });
+        setScoring(r.scoring || "PPR");
 
-        // keep local switcher label fresh
-        setMyRosters((prev) => {
+        // keep local label updated
+        setMyRosters(prev => {
           const next = [...prev];
           const i = next.findIndex(x => x.id === r.id);
           if (i >= 0) next[i] = { id: r.id, name: r.name };
@@ -97,27 +122,22 @@ export default function RosterHome() {
     load();
   }, [id]);
 
-  // ----- helpers -----
+  // helpers
   function addPlayer(pid: string) {
     if (!pid) return;
-    setPlayers((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+    setPlayers(prev => (prev.includes(pid) ? prev : [...prev, pid]));
   }
   function removePlayer(pid: string) {
-    setPlayers((prev) => prev.filter((p) => p !== pid));
-    setPinsFlex((prev) => {
-      const next = { ...prev };
-      delete next[pid];
-      return next;
+    setPlayers(prev => prev.filter(p => p !== pid));
+    setPinsFlex(prev => {
+      const next = { ...prev }; delete next[pid]; return next;
     });
   }
-  function toggleFlexPin(pid: string) {
-    setPinsFlex((prev) => ({ ...prev, [pid]: !prev[pid] }));
-  }
+  function toggleFlexPin(pid: string) { setPinsFlex(prev => ({ ...prev, [pid]: !prev[pid] })); }
   function applyPaste() {
     const ids = pasteText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-    setPlayers((prev) => Array.from(new Set([...prev, ...ids])));
-    setPasteText("");
-    setShowPaste(false);
+    setPlayers(prev => Array.from(new Set([...prev, ...ids])));
+    setPasteText(""); setShowPaste(false);
   }
 
   async function save() {
@@ -128,17 +148,17 @@ export default function RosterHome() {
         players,
         pins: { FLEX: Object.keys(pinsFlex).filter((k) => pinsFlex[k]) },
         optInEmail,
+        rules,
+        scoring,
       };
-      if (id) payload.id = id;
-      else payload.email = email;
+      if (id) payload.id = id; else payload.email = email;
 
       const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.roster?.id) {
         const newId = data.roster.id as string;
-        // add to local switcher if new
-        setMyRosters((prev) => {
-          const exists = prev.find((r) => r.id === newId);
+        setMyRosters(prev => {
+          const exists = prev.find(r => r.id === newId);
           const next = exists ? prev.map(r => r.id === newId ? { id: newId, name } : r)
                               : [{ id: newId, name }, ...prev];
           localStorage.setItem("rosterIds", JSON.stringify(next));
@@ -151,16 +171,11 @@ export default function RosterHome() {
     }
   }
 
-  function startNewRoster() {
-    setId(null); // triggers clear
-    // focus email field visually handled by user
-  }
-
+  function startNewRoster() { setId(null); }
   function deleteLocalRoster(rid: string) {
-    setMyRosters((prev) => {
+    setMyRosters(prev => {
       const next = prev.filter(r => r.id !== rid);
       localStorage.setItem("rosterIds", JSON.stringify(next));
-      // if we deleted the active one, switch to first remaining
       if (id === rid) setId(next[0]?.id ?? null);
       return next;
     });
@@ -185,7 +200,7 @@ export default function RosterHome() {
       <header>
         <h1 className="text-3xl font-bold">Skol Coach — Lineup Lab</h1>
         <p className="text-white/70">
-          Save your roster, pin players to FLEX if you like, and get weekly start/sit recommendations.
+          Save your roster, set your league rules & scoring, and get weekly start/sit recommendations.
         </p>
       </header>
 
@@ -272,7 +287,7 @@ export default function RosterHome() {
         </p>
       </section>
 
-      {/* Create or edit card */}
+      {/* Create / Edit */}
       <section className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
         {!id && (
           <>
@@ -300,6 +315,39 @@ export default function RosterHome() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        {/* Rules & scoring */}
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="font-medium">League rules & scoring</div>
+            <span className="text-xs text-white/60">(override defaults as needed)</span>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+            {(["QB","RB","WR","TE","FLEX","DST","K"] as (keyof Rules)[]).map((k) => (
+              <label key={k} className="flex flex-col text-xs">
+                <span className="text-white/60">{k}</span>
+                <input
+                  type="number" min={0} max={8}
+                  value={rules[k]}
+                  onChange={(e) => setRules({ ...rules, [k]: Number(e.target.value || 0) })}
+                  className="bg-transparent border border-white/15 rounded px-2 py-1"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-white/60">Scoring</span>
+            <select
+              value={scoring}
+              onChange={(e) => setScoring(e.target.value as Scoring)}
+              className="bg-transparent border border-white/15 rounded px-2 py-1 text-sm"
+            >
+              <option value="PPR">PPR</option>
+              <option value="HALF_PPR">Half-PPR</option>
+              <option value="STD">Standard</option>
+            </select>
+          </div>
+        </div>
 
         {/* Player search + roster list */}
         <div className="grid gap-2">
@@ -387,6 +435,11 @@ export default function RosterHome() {
             <button onClick={loadRecommendation} className="btn-gold">
               {loadingRec ? "Loading…" : "Get Recommendation"}
             </button>
+            {recommendation?.scores != null && (
+              <span className="ml-auto text-sm text-white/70">
+                Total starters proj: <b className="text-white">{recommendation.scores.toFixed?.(2) ?? recommendation.scores}</b>
+              </span>
+            )}
           </div>
 
           {recommendation && <RecommendationView lu={recommendation} />}
@@ -397,6 +450,20 @@ export default function RosterHome() {
 }
 
 /* ---------------- UI helpers ---------------- */
+
+function explainLine(d?: Lineup["details"][string]) {
+  if (!d?.breakdown) return "";
+  const b = d.breakdown;
+  const parts = [
+    `Scoring: ${b.scoring}`,
+    `Base: ${b.base.toFixed(1)}`,
+    `Δ: ${b.delta >= 0 ? "+" : ""}${b.delta.toFixed(1)}`,
+    b.injury ? `Injury: ${b.injury}` : "",
+    b.forcedStart ? "Forced start" : "",
+    b.forcedSit ? "Forced sit" : "",
+  ].filter(Boolean);
+  return parts.join(" • ");
+}
 
 function RecommendationView({ lu }: { lu: Lineup }) {
   const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
@@ -413,9 +480,11 @@ function RecommendationView({ lu }: { lu: Lineup }) {
                   const d = lu.details?.[pid];
                   return (
                     <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate">{pid}</span>
+                      <span className="truncate" title={explainLine(d)}>
+                        {pid}
+                      </span>
                       {d && (
-                        <span className="text-xs text-white/60">
+                        <span className="text-xs text-white/60" title={explainLine(d)}>
                           {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
                         </span>
                       )}
