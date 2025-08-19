@@ -12,10 +12,11 @@ export const metadata = {
 export default function StartSitPage() {
   return (
     <div className="container py-12">
-      {/* Ticker at very top */}
-      <div className="space-y-2 mb-8">
-        <p className="text-center text-sm text-white/60">Trending players</p>
-        <TrendingTicker />
+      {/* Injury report + ticker */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold mb-4">Injury Report</h2>
+        <InjuryTicker />
+      </section>
       </div>
 
       <header className="mb-8">
@@ -25,13 +26,7 @@ export default function StartSitPage() {
         </p>
       </header>
 
-      {/* Injury report + ticker */}
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Injury Report</h2>
-        <InjuryTicker />
-      </section>
-
-      {/* Weekly thread (title/body/replies/reactions) */}
+       {/* Weekly thread (title/body/replies/reactions) */}
       <section className="mb-10">
         <h2 className="text-xl font-semibold mb-3">This Week’s Thread</h2>
         <ThreadBlock apiBase="/api/ss" />
