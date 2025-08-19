@@ -1,3 +1,4 @@
+// lib/roster/store.ts
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type { UserRoster, RosterRules, WeeklyLineup, AdminOverrides } from "./types";
@@ -30,11 +31,11 @@ export async function createRoster(input: {
   return roster;
 }
 
-export async function getRoster(id: string) {
-  return (await kv.get<UserRoster>(kRoster(id))) || null;
+export async function getRoster(id: string): Promise<UserRoster | null> {
+  return (await kv.get<UserRoster>(kRoster(id))) ?? null;
 }
 
-export async function saveRoster(id: string, patch: Partial<UserRoster>) {
+export async function saveRoster(id: string, patch: Partial<UserRoster>): Promise<UserRoster> {
   const current = await getRoster(id);
   if (!current) throw new Error("roster not found");
   const next: UserRoster = { ...current, ...patch, updatedAt: new Date().toISOString() };
@@ -42,24 +43,26 @@ export async function saveRoster(id: string, patch: Partial<UserRoster>) {
   return next;
 }
 
-export async function saveLineup(id: string, week: number, lu: WeeklyLineup) {
+export async function saveLineup(id: string, week: number, lu: WeeklyLineup): Promise<WeeklyLineup> {
   await kv.set(kLineup(id, week), lu);
   return lu;
 }
 
-export async function getLineup(id: string, week: number) {
-  return (await kv.get<WeeklyLineup>(kLineup(id, week))) || null;
+export async function getLineup(id: string, week: number): Promise<WeeklyLineup | null> {
+  return (await kv.get<WeeklyLineup>(kLineup(id, week))) ?? null;
 }
 
-export async function listRosterIds() {
-  return (await kv.smembers<string>(kUsers)) || [];
+// ✅ Important: explicit return type + nullish coalescing to avoid `string | never[]`
+export async function listRosterIds(): Promise<string[]> {
+  return (await kv.smembers<string>(kUsers)) ?? [];
 }
 
 /* Admin overrides */
-export async function getOverrides(week: number) {
-  return (await kv.get<AdminOverrides>(kOverrides(week))) || { week };
+export async function getOverrides(week: number): Promise<AdminOverrides> {
+  return (await kv.get<AdminOverrides>(kOverrides(week))) ?? { week } as AdminOverrides;
 }
-export async function setOverrides(week: number, o: AdminOverrides) {
+
+export async function setOverrides(week: number, o: AdminOverrides): Promise<AdminOverrides> {
   await kv.set(kOverrides(week), { week, ...o });
   return getOverrides(week);
 }
