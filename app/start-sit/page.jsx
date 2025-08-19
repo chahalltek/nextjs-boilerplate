@@ -14,7 +14,7 @@ export default function StartSitPage() {
     <div className="container py-12">
       {/* Ticker at very top */}
       <div className="space-y-2 mb-8">
-        <p className="text-center text-sm text-white/60">Trending (hot) players</p>
+        <p className="text-center text-sm text-white/60">Trending players</p>
         <TrendingTicker />
       </div>
 
