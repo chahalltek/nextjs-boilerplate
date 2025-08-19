@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   // 5 replies / 60s per IP for Hold ’em / Fold ’em
   const ip = getClientIp(req);
-  const { success, remaining, reset, limit } = await rateLimit(`${ip}:hef:reply`, {
+  const { success, reset, limit } = await rateLimit(`${ip}:hef:reply`, {
     limit: 5,
     window: 60,
   });
@@ -50,11 +50,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const reply = await addReply(threadId, {
-    name: name?.trim() || "Anonymous",
-    message: message.trim(),
-    ip,
-  });
+  // ✅ match store signature: (threadId, name, message)
+  const reply = await addReply(
+    threadId,
+    (name?.trim() || "Anonymous"),
+    message.trim()
+  );
 
   return NextResponse.json({ ok: true, reply });
 }
