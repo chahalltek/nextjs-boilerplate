@@ -216,6 +216,14 @@ export default function RosterHome() {
     }
   }
 
+  async function recomputeNow() {
+  if (!id) return;
+  await fetch("/api/roster/recompute", {
+    method: "POST",
+    body: JSON.stringify({ id, week, notify: true }),
+  });
+}
+
   const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
 
@@ -281,6 +289,9 @@ export default function RosterHome() {
               <li>Search by player name (we map to Sleeper IDs automatically) or paste IDs.</li>
               <li>Save your roster once—update anytime for trades/waivers.</li>
               <li>Select the week and click <b>Get Recommendation</b>.</li>
+              <button onClick={recomputeNow} className="text-xs border border-white/20 rounded px-2 py-1 text-white/70 hover:bg-white/10">
+                Recompute now
+              </button>
             </ul>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
