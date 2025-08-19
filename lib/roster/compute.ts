@@ -186,3 +186,20 @@ function guessPos(pid: string, meta: Record<string, { pos?: string }>): Position
   const pos = meta?.[pid]?.pos || "WR";
   return (pos as Position) || "WR";
 }
+
+function guessPos(
+  pid: string,
+  meta: Record<string, { pos?: string }> | { names?: Record<string, { pos?: string }> } | null | undefined
+): Position {
+  // Try several common shapes: plain map, {names: {...}}, or fallback
+  const pos =
+    (meta as any)?.[pid]?.pos ??
+    (meta as any)?.names?.[pid]?.pos ??
+    undefined;
+
+  // ensure a valid Position; default to WR
+  if (pos === "QB" || pos === "RB" || pos === "WR" || pos === "TE" || pos === "DST" || pos === "K") {
+    return pos;
+  }
+  return "WR";
+}

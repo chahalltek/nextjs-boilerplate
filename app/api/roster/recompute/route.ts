@@ -32,6 +32,8 @@ export async function GET(req: Request) {
     // Compute lineup and persist
     const next: WeeklyLineup = await computeLineup(roster, week);
     await saveLineup(id, week, next);
+    const safeMeta = (rosterMeta as any) ?? {};
+    return { pid, pts, pos: guessPos(pid, safeMeta) };
 
     // Optional email notify (pretty names via meta map)
     if (notify && roster.optInEmail && roster.email) {
