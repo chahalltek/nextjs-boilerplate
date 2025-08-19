@@ -34,6 +34,38 @@ function confidence(points: number, injury?: string) {
   return Number(c.toFixed(2));
 }
 
+/** Normalize whatever getRosterMeta(id) returns into a plain { [pid]: { pos?: string } } map. */
+function coercePosMap(
+  meta: unknown
+): Record<string, { pos?: string }> {
+  const out: Record<string, { pos?: string }> = {};
+  if (!meta || typeof meta !== "object") return out;
+
+  const m = meta as any;
+
+  // Common shapes we support:
+  // 1) { names: { [pid]: { pos?: string, ... } }, ... }
+  if (m.names && typeof m.names === "object") {
+    for (const [pid, v] of Object.entries(m.names as Record<string, any>)) {
+      if (v && typeof v === "object") {
+        if (typeof v.pos === "string") out[pid] = { pos: v.pos };
+        else out[pid] = { pos: undefined };
+      }
+    }
+    return out;
+  }
+
+  // 2) Flat map: { [pid]: { pos?: string, ... }, name?: string, ... }
+  for (const [key, v] of Object.entries(m)) {
+    if (v && typeof v === "object" && "pos" in (v as any)) {
+      const pos = (v as any).pos;
+      out[key] = typeof pos === "string" ? { pos } : { pos: undefined };
+    }
+  }
+
+  return out;
+}
+
 export async function computeLineup(
   roster: UserRoster,
   week: number,
@@ -51,8 +83,9 @@ export async function computeLineup(
   const projMap = await fetchProjectionsMap(week);
   const want: Record<Position, number> = { ...roster.rules };
 
-  // per-roster meta cache (names/pos/team)
-  const rosterMeta = await getRosterMeta(roster.id);
+  // per-roster meta cache (names/pos/team) -> normalize to a simple position map
+  const rawMeta = await getRosterMeta(roster.id);
+  const posMap = coercePosMap(rawMeta);
 
   const details: WeeklyLineup["details"] = {};
   const forcedStart = ov.forceStart || {};
@@ -90,7 +123,7 @@ export async function computeLineup(
             : undefined,
       },
     };
-    return { pid, pts, pos: guessPos(pid, rosterMeta) };
+    return { pid, pts, pos: guessPos(pid, posMap) };
   });
 
   const take = (pos: Exclude<Position, "FLEX">, n: number) => {
@@ -182,20 +215,9 @@ export async function computeLineup(
   };
 }
 
-/** Single tolerant version: accepts plain maps, {names:{…}}, or null/undefined */
-function guessPos(
-  pid: string,
-  meta:
-    | Record<string, { pos?: string }>
-    | { names?: Record<string, { pos?: string }> }
-    | null
-    | undefined
-): Position {
-  const pos =
-    (meta as any)?.[pid]?.pos ??
-    (meta as any)?.names?.[pid]?.pos ??
-    undefined;
-
+/** rough position guess from cached meta */
+function guessPos(pid: string, meta: Record<string, { pos?: string }>): Position {
+  const pos = meta?.[pid]?.pos;
   if (pos === "QB" || pos === "RB" || pos === "WR" || pos === "TE" || pos === "DST" || pos === "K") {
     return pos;
   }
