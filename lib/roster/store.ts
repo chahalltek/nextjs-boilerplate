@@ -1,3 +1,4 @@
+// lib/roster/store.ts
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type {
@@ -15,6 +16,11 @@ const kLineup      = (id: string, week: number) => `ro:lineup:${id}:${week}`;
 const kOverrides   = (week: number) => `ro:overrides:${week}`;
 const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
 const kLineupIdx   = (id: string) => `ro:lineup:index:${id}`;
+
+// ---------- Utils ----------
+function nowISO() {
+  return new Date().toISOString();
+}
 
 // ---------- Rules helpers ----------
 const defaultRules: RosterRules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
@@ -34,7 +40,6 @@ function mergeRules(partial?: Partial<RosterRules>): RosterRules {
 // ---------- Roster CRUD ----------
 export async function listRosterIds(): Promise<string[]> {
   try {
-    // kv.smembers has a broad return type; cast to string[]
     const ids = (await kv.smembers(kRosterIds)) as string[] | null;
     return Array.isArray(ids) ? ids : [];
   } catch {
@@ -79,6 +84,8 @@ export async function createRoster(input: {
     pins: input.pins || {},
     scoring: input.scoring || "PPR",
     optInEmail: input.optInEmail !== false,
+    // required by your UserRoster type
+    updatedAt: nowISO(),
   };
   await kv.set(kRoster(id), roster);
   await kv.sadd(kRosterIds, id);
@@ -92,6 +99,7 @@ export async function saveRoster(id: string, patch: Partial<UserRoster>): Promis
     ...existing,
     ...(patch as any),
     rules: mergeRules(patch.rules ?? existing.rules),
+    updatedAt: nowISO(), // keep required timestamp fresh
   };
   await kv.set(kRoster(id), next);
   return next;
