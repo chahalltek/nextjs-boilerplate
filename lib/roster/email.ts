@@ -76,6 +76,59 @@ export function renderEmail(
   return wrap(`${header}${slotSections}${section("Bench", benchRows || `<div style="color:#777;font:14px system-ui;">—</div>`)}${totals}${footer}`);
 }
 
+/** Back-compat wrappers expected by /api/cron/roster-digest */
+export function renderLineupHtml(
+  displayName: string,
+  week: number,
+  lu: WeeklyLineup,
+  metaMap: Record<string, PlayerMeta>
+) {
+  return renderEmail(displayName, week, lu, metaMap);
+}
+
+export function renderLineupText(
+  displayName: string,
+  week: number,
+  lu: WeeklyLineup,
+  metaMap: Record<string, PlayerMeta>
+) {
+  const lines: string[] = [];
+  lines.push(`Lineup Lab — Week ${week}`);
+  lines.push(`Hi ${displayName}, here’s your recommended lineup.`);
+  lines.push("");
+
+  for (const slot of ORDER) {
+    lines.push(slot);
+    const ids = lu.slots?.[slot] || [];
+    if (!ids.length) {
+      lines.push("  —");
+    } else {
+      for (const pid of ids) {
+        const d = lu.details?.[pid];
+        const right = d ? `${d.points.toFixed(1)} pts · ${Math.round(d.confidence * 100)}% · ${d.tier}` : "";
+        lines.push(`  - ${label(pid, metaMap)}${right ? ` — ${right}` : ""}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("Bench");
+  if (!lu.bench?.length) {
+    lines.push("  —");
+  } else {
+    for (const pid of lu.bench) {
+      lines.push(`  - ${label(pid, metaMap)}`);
+    }
+  }
+
+  if (typeof lu.scores === "number") {
+    lines.push("");
+    lines.push(`Total starters: ${lu.scores.toFixed?.(2) ?? lu.scores}`);
+  }
+
+  return lines.join("\n");
+}
+
 /* ---------------- helpers ---------------- */
 
 function row(left: string, right: string) {
