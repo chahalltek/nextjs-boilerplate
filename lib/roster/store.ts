@@ -1,4 +1,5 @@
 import { kv } from "@vercel/kv";
+import type { WeeklyLineup } from "@/lib/roster/types";
 import { randomUUID } from "crypto";
 import type {
   UserRoster,
@@ -15,6 +16,7 @@ const kRosterIds   = "ro:roster:ids"; // set of roster ids
 const kLineup      = (id: string, week: number) => `ro:lineup:${id}:${week}`;
 const kOverrides   = (week: number) => `ro:overrides:${week}`;
 const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
+const kLineupIdx = (id: string) => `ro:lineup:index:${id}`;
 
 // ---------- Rules helpers ----------
 const defaultRules: RosterRules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
@@ -164,6 +166,21 @@ export async function setLineupNames(
   map: Record<string, { name: string; pos?: string; team?: string }>
 ): Promise<void> {
   await kv.set(kLineupNames(id, week), map || {});
+}
+
+export async function saveWeeklyLineup(
+  id: string,
+  week: number,
+  lineup: WeeklyLineup
+): Promise<void> {
+  // save the lineup blob
+  await kv.set(kLineup(id, week), lineup);
+
+  // maintain a sorted index of weeks for this roster (handy for history pages)
+  await kv.zadd(kLineupIdx(id), {
+    score: week,
+    member: String(week),
+  });
 }
 
 export async function getLineupNames(
