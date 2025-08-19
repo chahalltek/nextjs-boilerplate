@@ -22,10 +22,8 @@ export default function Header() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [listenOpen, setListenOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const listenRef = useRef(null);
 
-  // Active link checker
   const isActive = (href) =>
     pathname === href || (href !== "/" && pathname?.startsWith(href));
 
@@ -33,13 +31,6 @@ export default function Header() {
   useEffect(() => {
     setListenOpen(false);
   }, [pathname]);
-
-  // Detect admin cookie (for Admin link)
-  useEffect(() => {
-    if (typeof document !== "undefined") {
-      setIsAdmin(document.cookie.includes("skol_admin="));
-    }
-  }, []);
 
   // Close listen popover if user clicks outside it
   useEffect(() => {
@@ -80,7 +71,7 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* Listen popover (all breakpoints) */}
+          {/* Listen popover */}
           <div
             ref={listenRef}
             className="relative"
@@ -112,16 +103,14 @@ export default function Header() {
             )}
           </div>
 
-          {/* Admin link (only if cookie present) */}
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="hidden sm:inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white/80 hover:text-white"
-              title="Super Admin"
-            >
-              Admin
-            </Link>
-          )}
+          {/* Admin link (always visible; protected by middleware) */}
+          <Link
+            href="/admin"
+            className="hidden sm:inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white/80 hover:text-white"
+            title="Super Admin"
+          >
+            Admin
+          </Link>
 
           <Link
             href="/subscribe"
@@ -135,7 +124,6 @@ export default function Header() {
             className="md:hidden inline-flex items-center justify-center rounded-lg px-2 py-1.5 text-white/80 hover:text-white border border-white/20"
             onClick={() => {
               setMenuOpen((v) => !v);
-              // Close listen popover when opening the mobile menu
               setListenOpen(false);
             }}
             aria-expanded={menuOpen}
@@ -162,7 +150,7 @@ export default function Header() {
               </Link>
             ))}
 
-            {/* Simple mobile 'Listen' message inline */}
+            {/* Mobile Listen inline note */}
             <button
               type="button"
               className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white/80 hover:text-white"
@@ -170,11 +158,17 @@ export default function Header() {
             >
               Listen
             </button>
-            {listenOpen && (
-              <div className="text-sm text-white/70">
-                Podcast coming in 2026.
-              </div>
-            )}
+            {listenOpen && <div className="text-sm text-white/70">Podcast coming in 2026.</div>}
+
+            {/* Admin link on mobile */}
+            <Link
+              href="/admin"
+              className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white/80 hover:text-white"
+              onClick={() => setMenuOpen(false)}
+              title="Super Admin"
+            >
+              Admin
+            </Link>
 
             <Link
               href="/subscribe"
