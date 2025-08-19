@@ -1,4 +1,6 @@
+// app/start-sit/page.jsx
 import Link from "next/link";
+import TrendingTicker from "@/components/TrendingTicker";
 import InjuryTicker from "@/components/InjuryTicker";
 import ThreadBlock from "@/components/ThreadBlock";
 
@@ -10,6 +12,12 @@ export const metadata = {
 export default function StartSitPage() {
   return (
     <div className="container py-12">
+      {/* Ticker at very top */}
+      <div className="space-y-2 mb-8">
+        <p className="text-center text-sm text-white/60">Trending (hot) players</p>
+        <TrendingTicker />
+      </div>
+
       <header className="mb-8">
         <h1 className="text-4xl font-bold">Start / Sit</h1>
         <p className="mt-2 text-white/70">
