@@ -3,9 +3,15 @@ import { NextResponse } from "next/server";
 import { computeLineup } from "@/lib/roster/compute";
 import { getRoster, saveLineup, getRosterMeta } from "@/lib/roster/store";
 import { renderEmail } from "@/lib/email/roster";
-import { sendRosterEmail } from "@/lib/email/mailer";
 
-/** Best-effort current NFL week lookup (falls back to 1) */
+// --- TEMP MAILER STUB --------------------------------------------------
+// Replace this with: `import { sendRosterEmail } from "@/lib/email/mailer";`
+// once you add a real mailer. For now, it logs so builds succeed.
+async function sendRosterEmail(args: { to: string; subject: string; html: string }): Promise<void> {
+  console.log("[mailer:stub] Email disabled. Would send to:", args.to, "subject:", args.subject);
+}
+
+// --- helpers ------------------------------------------------------------
 async function getCurrentWeek(): Promise<number> {
   try {
     const base = process.env.NEXT_PUBLIC_SITE_URL || "";
@@ -18,6 +24,7 @@ async function getCurrentWeek(): Promise<number> {
   }
 }
 
+// --- route --------------------------------------------------------------
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -41,17 +48,23 @@ export async function GET(req: Request) {
     const lineup = await computeLineup(roster, week);
     await saveLineup(id, week, lineup);
 
-    // Optional email notify
+    // Optional email notify (no-op if using the stub above)
     if (notify && roster.optInEmail && roster.email) {
       try {
-        // getRosterMeta may be either a plain map or an object with .names
         const meta = await getRosterMeta(id);
+        // getRosterMeta may return either a flat map or { names: {...} }; normalize to a flat map
         const nameMap =
           (meta && (meta as any).names) ||
           (meta as Record<string, unknown>) ||
           {};
 
-        const html = renderEmail(roster.name || "Coach", week, lineup, nameMap as Record<string, any>);
+        const html = renderEmail(
+          roster.name || "Coach",
+          week,
+          lineup,
+          nameMap as Record<string, any>
+        );
+
         await sendRosterEmail({
           to: roster.email,
           subject: `Lineup Lab — Week ${week} starters`,
@@ -59,7 +72,7 @@ export async function GET(req: Request) {
         });
       } catch (err) {
         console.error("recompute notify error:", err);
-        // Don’t fail the endpoint if email fails
+        // Don't fail the endpoint if email fails
       }
     }
 
