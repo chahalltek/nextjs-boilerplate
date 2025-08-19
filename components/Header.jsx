@@ -1,11 +1,10 @@
 // components/Header.jsx
-"use client";
+'use client';
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Logo from "@/components/Logo";
-import ListenCtas from "@/components/ListenCtas";
 
 const nav = [
   { href: "/start-sit", label: "Start/Sit" },
@@ -21,14 +20,41 @@ const nav = [
 
 export default function Header() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [listenOpen, setListenOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const listenRef = useRef(null);
 
-  const isActive = (href) => pathname === href || (href !== "/" && pathname?.startsWith(href));
+  // Active link checker
+  const isActive = (href) =>
+    pathname === href || (href !== "/" && pathname?.startsWith(href));
+
+  // Close the listen popover when route changes
+  useEffect(() => {
+    setListenOpen(false);
+  }, [pathname]);
+
+  // Detect admin cookie (for Admin link)
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      setIsAdmin(document.cookie.includes("skol_admin="));
+    }
+  }, []);
+
+  // Close listen popover if user clicks outside it
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!listenRef.current) return;
+      if (!listenRef.current.contains(e.target)) setListenOpen(false);
+    }
+    if (listenOpen) document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [listenOpen]);
 
   return (
     <header className="sticky top-0 z-50 bg-[#120F1E]/80 backdrop-blur supports-[backdrop-filter]:bg-[#120F1E]/60 border-b border-white/10">
       <div className="container mx-auto max-w-6xl px-4 h-14 flex items-center gap-4">
-        {/* BRAND: never wrap */}
+        {/* Brand */}
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-white font-semibold whitespace-nowrap shrink-0"
@@ -37,7 +63,7 @@ export default function Header() {
           <span className="hidden sm:inline">Hey&nbsp;Skol&nbsp;Sister</span>
         </Link>
 
-        {/* Desktop nav: keep on one line */}
+        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6 ml-4 whitespace-nowrap">
           {nav.map((item) => (
             <Link
@@ -54,27 +80,48 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* Compact Listen dropdown on md–lg; full pills on xl+ */}
-          <details className="relative hidden md:block xl:hidden">
-            <summary className="cursor-pointer rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white whitespace-nowrap">
+          {/* Listen popover (all breakpoints) */}
+          <div
+            ref={listenRef}
+            className="relative"
+            onMouseLeave={() => setListenOpen(false)}
+          >
+            <button
+              type="button"
+              className="inline-flex items-center rounded-xl border border-white/20 px-3 py-1.5 text-sm text-white/80 hover:text-white"
+              aria-haspopup="dialog"
+              aria-expanded={listenOpen}
+              aria-controls="listen-popover"
+              onClick={() => setListenOpen((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setListenOpen(false);
+              }}
+            >
               Listen
-            </summary>
-            <div className="absolute right-0 mt-2 w-64 rounded-xl border border-white/10 bg-[#120F1E]/95 p-3 shadow-lg">
-              <ListenCtas className="flex flex-col gap-2" />
-            </div>
-          </details>
-          <div className="hidden xl:flex">
-            <ListenCtas />
+            </button>
+
+            {listenOpen && (
+              <div
+                id="listen-popover"
+                role="dialog"
+                tabIndex={-1}
+                className="absolute right-0 mt-2 w-56 rounded-xl border border-white/10 bg-[#120F1E]/95 p-3 text-sm text-white/80 shadow-lg"
+              >
+                Podcast coming in 2026.
+              </div>
+            )}
           </div>
 
-          {/* Admin button (middleware will protect) */}
-          <Link
-            href="/admin"
-            className="hidden md:inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white/80 hover:text-white hover:bg-white/10 whitespace-nowrap"
-            title="Super Admin"
-          >
-            Admin
-          </Link>
+          {/* Admin link (only if cookie present) */}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="hidden sm:inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white/80 hover:text-white"
+              title="Super Admin"
+            >
+              Admin
+            </Link>
+          )}
 
           <Link
             href="/subscribe"
@@ -86,8 +133,12 @@ export default function Header() {
           {/* Mobile menu toggle */}
           <button
             className="md:hidden inline-flex items-center justify-center rounded-lg px-2 py-1.5 text-white/80 hover:text-white border border-white/20"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
+            onClick={() => {
+              setMenuOpen((v) => !v);
+              // Close listen popover when opening the mobile menu
+              setListenOpen(false);
+            }}
+            aria-expanded={menuOpen}
             aria-label="Toggle menu"
           >
             Menu
@@ -96,7 +147,7 @@ export default function Header() {
       </div>
 
       {/* Mobile nav */}
-      {open && (
+      {menuOpen && (
         <div className="md:hidden border-t border-white/10 bg-[#120F1E]/95">
           <div className="container mx-auto max-w-6xl px-4 py-3 grid gap-2">
             {nav.map((item) => (
@@ -105,27 +156,33 @@ export default function Header() {
                 href={item.href}
                 title={item.title}
                 className={`py-1 ${isActive(item.href) ? "text-white" : "text-white/80"}`}
-                onClick={() => setOpen(false)}
+                onClick={() => setMenuOpen(false)}
               >
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/admin"
-              className="py-1 text-white/80 hover:text-white"
-              onClick={() => setOpen(false)}
-              title="Super Admin"
+
+            {/* Simple mobile 'Listen' message inline */}
+            <button
+              type="button"
+              className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white/80 hover:text-white"
+              onClick={() => setListenOpen((v) => !v)}
             >
-              Admin
-            </Link>
+              Listen
+            </button>
+            {listenOpen && (
+              <div className="text-sm text-white/70">
+                Podcast coming in 2026.
+              </div>
+            )}
+
             <Link
               href="/subscribe"
               className="mt-2 inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-sm font-semibold bg-[color:var(--skol-gold)] text-white"
-              onClick={() => setOpen(false)}
+              onClick={() => setMenuOpen(false)}
             >
               Subscribe
             </Link>
-            <ListenCtas className="mt-4" />
           </div>
         </div>
       )}
