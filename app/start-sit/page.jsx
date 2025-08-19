@@ -1,6 +1,6 @@
-// app/start-sit/page.jsx
 import Link from "next/link";
 import InjuryTicker from "@/components/InjuryTicker";
+import ThreadBlock from "@/components/ThreadBlock";
 
 export const metadata = {
   title: "Start/Sit — Hey Skol Sister",
@@ -9,37 +9,28 @@ export const metadata = {
 
 export default function StartSitPage() {
   return (
-    <div className="container py-12 space-y-8">
-      {/* Ticker at the very top */}
-      <section aria-labelledby="injury-report-heading">
-        <h2
-          id="injury-report-heading"
-          className="text-center text-sm font-normal text-white/70 mb-2"
-        >
-          Injury Report
-        </h2>
-
-        {/* Centered, small, non-bold ticker line */}
-        <div className="border-y border-white/10 py-2">
-          <InjuryTicker
-            className="mx-auto max-w-5xl text-center text-sm font-normal text-white/80
-                       [&_*]:font-normal" // force non-bold for any nested <b>/<strong>
-            center
-          />
-        </div>
-      </section>
-
-      {/* Page header below the ticker */}
-      <header>
+    <div className="container py-12">
+      <header className="mb-8">
         <h1 className="text-4xl font-bold">Start / Sit</h1>
         <p className="mt-2 text-white/70">
           Latest injury report to help with your start/sit decisions.
         </p>
       </header>
 
-      {/* CTAs */}
+      {/* Injury report + ticker */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold mb-4">Injury Report</h2>
+        <InjuryTicker />
+      </section>
+
+      {/* Weekly thread (title/body/replies/reactions) */}
+      <section className="mb-10">
+        <h2 className="text-xl font-semibold mb-3">This Week’s Thread</h2>
+        <ThreadBlock apiBase="/api/ss" />
+      </section>
+
       <div className="flex flex-wrap gap-3">
-        <Link href="/subscribe" className="btn-gold inline-flex items-center justify-center">
+        <Link href="/subscribe" className="btn-gold">
           Notify me when weekly picks drop
         </Link>
         <Link href="/101" className="cta-card">
