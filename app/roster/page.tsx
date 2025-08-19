@@ -460,7 +460,10 @@ export default function RosterHome() {
 
 /* ---------------- UI helpers ---------------- */
 
-function explainLine(d?: Lineup["details"][string]) {
+// Safe alias for optional details map
+type SlotDetail = NonNullable<Lineup["details"]>[string];
+
+function explainLine(d?: SlotDetail) {
   if (!d?.breakdown) return "";
   const b = d.breakdown;
   const parts = [
