@@ -1,3 +1,4 @@
+// app/admin/page.jsx
 import Link from "next/link";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -58,8 +59,10 @@ const cards = [
   { href: "/admin/posts", title: "Blog", desc: "Write posts and upload images. Commits to content/posts/…", emoji: "📝" },
   { href: "/admin/cws", title: "Weekly Recap", desc: "Post your ‘Coulda, Woulda, Shoulda’ recap.", emoji: "⏪" },
   { href: "/admin/holdem-foldem", title: "Hold ’em / Fold ’em", desc: "Stash-or-trash: injuries, usage, matchups.", emoji: "🃏" },
+  // ✅ New: Start/Sit admin
+  { href: "/admin/start-sit", title: "Start / Sit", desc: "Post this week’s Start/Sit thread and notes.", emoji: "✅" },
   { href: "/admin/polls", title: "Survivor (Polls)", desc: "Create/manage polls shown on the Survivor page.", emoji: "📊" },
-  // ✅ New: Bracket admin
+  // Bracket admin
   { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
 ];
 
