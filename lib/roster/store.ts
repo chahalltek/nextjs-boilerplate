@@ -8,6 +8,14 @@ const kRoster = (id: string) => `ro:roster:${id}`;
 const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
 const kOverrides = (week: number) => `ro:overrides:${week}`;
 
+// ✅ Explicit return type + defensive normalization
+export async function listRosterIds(): Promise<string[]> {
+  const res: unknown = await kv.smembers(kUsers);
+  if (Array.isArray(res)) return res as string[];
+  if (typeof res === "string") return [res];
+  return [];
+}
+
 export async function createRoster(input: {
   email: string;
   name?: string;
