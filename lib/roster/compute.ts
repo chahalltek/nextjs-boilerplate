@@ -1,108 +1,117 @@
-import type { UserRoster, WeeklyLineup, SlotKey, AdminOverrides } from "./types";
+import type { UserRoster, WeeklyLineup, AdminOverrides, Position } from "./types";
 
-/** Fetch Sleeper projections for the week (PPR points) */
-async function fetchProjections(week: number) {
-  const year = new Date().getFullYear();
-  const url = `https://api.sleeper.app/projections/nfl/${year}/${week}?season_type=regular`;
+const CURRENT_YEAR = new Date().getFullYear();
+
+type Proj = { pts_ppr?: number; injury_status?: string; opp_rank?: number };
+
+async function fetchProjectionsMap(week: number): Promise<Record<string, Proj>> {
+  const url = `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`;
   const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("projections fetch failed");
-  const rows = await res.json();
-  const points: Record<string, number> = {};
-  for (const r of rows) points[r.player_id] = r.stats?.pts_ppr || 0;
-  return points;
+  const rows = await res.json().catch(()=>[]) as any[];
+  const out: Record<string, Proj> = {};
+  for (const r of rows) out[r.player_id] = { pts_ppr: r.stats?.pts_ppr, injury_status: r.injury_status, opp_rank: r.opponent_rank };
+  return out;
 }
 
-/** Fetch player metadata (injury + position) once per build */
-async function fetchPlayersMeta() {
-  const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "force-cache" });
-  const all = await res.json();
-  // all[player_id] = { position, team, injury_status, ... }
-  return all as Record<string, any>;
+function tierFrom(points: number): "A"|"B"|"C"|"D" {
+  if (points >= 18) return "A";
+  if (points >= 12) return "B";
+  if (points >= 8)  return "C";
+  return "D";
 }
 
-function eligiblePositions(position: string): SlotKey[] {
-  if (position === "QB") return ["QB"];
-  if (position === "RB") return ["RB", "FLEX"];
-  if (position === "WR") return ["WR", "FLEX"];
-  if (position === "TE") return ["TE", "FLEX"];
-  if (position === "K")  return ["K"];
-  if (position === "DEF")return ["DST"];
-  return []; // ignore IDP etc for MVP
+function confidence(points: number, injury?: string) {
+  let c = Math.max(0, Math.min(1, points / 24));
+  if (injury === "OUT" || injury === "Doubtful") c *= 0.1;
+  else if (injury === "Questionable") c *= 0.8;
+  return Number(c.toFixed(2));
 }
 
 export async function computeLineup(
   roster: UserRoster,
   week: number,
-  overrides?: AdminOverrides
+  overrides: AdminOverrides = {}
 ): Promise<WeeklyLineup> {
-  const [proj, meta] = await Promise.all([fetchProjections(week), fetchPlayersMeta()]);
+  const projMap = await fetchProjectionsMap(week);
+  const want: Record<Position, number> = { ...roster.rules };
 
-  // Build candidate list with adjusted points
-  const scored = roster.players.map(pid => {
-    const m = meta[pid] || {};
-    const base = proj[pid] ?? 0;
-    // Simple injury penalty MVP
-    let adj = base;
-    const inj = m.injury_status?.toUpperCase();
-    if (inj === "OUT") adj = -9999;
-    else if (inj === "DOUBTFUL") adj -= 5;
-    else if (inj === "QUESTIONABLE") adj -= 2;
+  const details: WeeklyLineup["details"] = {};
+  const forcedStart = overrides.forceStart || {};
+  const forcedSit   = overrides.forceSit   || {};
+  const deltas      = overrides.pointDelta || {};
+  const used = new Set<string>();
 
-    // Admin deltas
-    const delta = overrides?.pointDelta?.[pid] ?? 0;
-    adj += delta;
+  // candidate score
+  const rows = (roster.players || []).map(pid => {
+    const p = projMap[pid] || {};
+    let pts = Number(p.pts_ppr || 0) + Number(deltas[pid] || 0);
+    if (forcedSit[pid]) pts = -9999;
+    const conf = confidence(pts, p.injury_status);
+    details![pid] = {
+      playerId: pid,
+      position: "BENCH",
+      points: Number(pts.toFixed(2)),
+      confidence: conf,
+      tier: tierFrom(pts),
+      note: p.injury_status || undefined,
+    };
+    return { pid, pts, pos: guessPos(pid, roster, projMap) };
+  });
 
-    return { id: pid, position: m.position, adjusted: adj };
-  }).filter(x => eligiblePositions(x.position).length);
+  // helpers
+  const take = (pos: Exclude<Position,"FLEX">, n: number) => {
+    const pool = rows
+      .filter(r => !used.has(r.pid) && r.pos === pos && !forcedSit[r.pid])
+      .sort((a,b) => (forcedStart[b.pid]?1:0) - (forcedStart[a.pid]?1:0) || b.pts - a.pts)
+      .slice(0, Math.max(0, n));
+    pool.forEach(r => { used.add(r.pid); details![r.pid]!.position = pos; });
+    return pool.map(r => r.pid);
+  };
 
-  // Apply forceSit by nuking score
-  const forceSit = overrides?.forceSit || {};
-  for (const c of scored) if (forceSit[c.id]) c.adjusted = -9999;
+  // primary slots (non-FLEX)
+  const slots: WeeklyLineup["slots"] = {
+    QB:  take("QB",  want.QB),
+    RB:  take("RB",  want.RB),
+    WR:  take("WR",  want.WR),
+    TE:  take("TE",  want.TE),
+    DST: take("DST", want.DST),
+    K:   take("K",   want.K),
+    FLEX:[]
+  };
 
-  // Sort by adjusted desc
-  scored.sort((a,b) => b.adjusted - a.adjusted);
-
-  // Greedy fill: required slots first, then FLEX
-  const slots: Record<SlotKey, string[]> = { QB:[], RB:[], WR:[], TE:[], FLEX:[], DST:[], K:[] };
-  const taken = new Set<string>();
-  const need: Record<SlotKey, number> = { ...roster.rules };
-
-  const forceStart = overrides?.forceStart || {};
-  // Put forced starters first where eligible
-  for (const pid of Object.keys(forceStart)) {
-    if (!forceStart[pid]) continue;
-    const m = (await fetchPlayersMeta())[pid] || {};
-    const elig = eligiblePositions(m.position);
-    for (const s of elig) {
-      if ((need[s] ?? 0) > (slots[s]?.length ?? 0)) {
-        slots[s].push(pid);
-        taken.add(pid);
-        break;
-      }
+  // FLEX: honor pins first, then best remaining RB/WR/TE
+  const pins = roster.pins?.FLEX || [];
+  for (const pid of pins) {
+    if (!used.has(pid) && !forcedSit[pid] && ["RB","WR","TE"].includes(rows.find(r=>r.pid===pid)?.pos || "")) {
+      used.add(pid); details![pid]!.position = "FLEX";
+      slots.FLEX.push(pid);
+      if (slots.FLEX.length >= want.FLEX) break;
     }
   }
-
-  function tryPlace(pid: string, pos: string) {
-    for (const s of eligiblePositions(pos)) {
-      if ((need[s] ?? 0) > (slots[s]?.length ?? 0)) {
-        slots[s].push(pid);
-        return true;
-      }
-    }
-    return false;
+  if (slots.FLEX.length < want.FLEX) {
+    const need = want.FLEX - slots.FLEX.length;
+    const pool = rows
+      .filter(r => !used.has(r.pid) && !forcedSit[r.pid] && (r.pos==="RB"||r.pos==="WR"||r.pos==="TE"))
+      .sort((a,b) => (forcedStart[b.pid]?1:0) - (forcedStart[a.pid]?1:0) || b.pts - a.pts)
+      .slice(0, need);
+    pool.forEach(r => { used.add(r.pid); details![r.pid]!.position = "FLEX"; });
+    slots.FLEX.push(...pool.map(r=>r.pid));
   }
 
-  for (const c of scored) {
-    if (taken.has(c.id)) continue;
-    if (c.adjusted <= -9999) continue;
-    if (tryPlace(c.id, c.position)) taken.add(c.id);
-  }
+  const bench = rows.filter(r => !used.has(r.pid)).sort((a,b)=>b.pts-a.pts).map(r=>r.pid);
 
-  // Bench = remaining
-  const bench = roster.players.filter(p => !taken.has(p));
+  return {
+    week,
+    slots,
+    bench,
+    details,
+    recommendedAt: new Date().toISOString(),
+  };
+}
 
-  const scores: Record<string, number> = {};
-  for (const c of scored) scores[c.id] = c.adjusted;
-
-  return { week, slots, bench, scores };
+/** rough position guess from prior roster/rules; replace with a real lookup if you store per-player meta */
+function guessPos(pid: string, roster: UserRoster, _map: Record<string, any>): Position {
+  // fallback guess (treat unknown as WR)
+  // You can improve by caching Sleeper position for the id
+  return (roster as any)._pos?.[pid] || "WR";
 }

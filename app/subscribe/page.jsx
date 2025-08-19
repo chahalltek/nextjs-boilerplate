@@ -26,6 +26,11 @@ export default function SubscribePage() {
           Privacy Policy
         </Link>.
       </p>
+      <label className="flex items-center gap-2 text-sm text-white/80">
+  <input type="checkbox" name="roster_opt_in" className="rounded border-white/20 bg-transparent" />
+  Get my Skol Coach lineup by email each week
+</label>
+
     </div>
   );
 }

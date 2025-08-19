@@ -53,6 +53,15 @@ export default function HomePage() {
             >
               Subscribe
             </Link>
+            {/* ...inside HERO, below the Subscribe link group */}
+<p className="mt-3 text-sm text-white/60">
+  Weekly picks, waiver targets, and Survivor takes.
+</p>
+
+<p className="mt-3 text-xs text-white/60">
+  New: <Link href="/roster" className="underline hover:no-underline">Skol Coach</Link> — save your roster and get weekly start/sit emails.
+</p>
+
           </div>
 
           <p className="mt-3 text-xs text-white/60">
