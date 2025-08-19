@@ -1,4 +1,3 @@
-// lib/roster/store.ts
 import { kv } from "@vercel/kv";
 import { randomUUID } from "crypto";
 import type {
@@ -7,15 +6,16 @@ import type {
   WeeklyLineup,
   AdminOverrides,
   ScoringProfile,
+  Position,
 } from "./types";
 
 // ---------- Keys ----------
-const kRoster = (id: string) => `ro:roster:${id}`;
-const kRosterIds = "ro:roster:ids"; // set of roster ids
-const kLineup = (id: string, week: number) => `ro:lineup:${id}:${week}`;
-const kOverrides = (week: number) => `ro:overrides:${week}`;
+const kRoster      = (id: string) => `ro:roster:${id}`;
+const kRosterIds   = "ro:roster:ids"; // set of roster ids
+const kLineup      = (id: string, week: number) => `ro:lineup:${id}:${week}`;
+const kOverrides   = (week: number) => `ro:overrides:${week}`;
 const kLineupNames = (id: string, week: number) => `ro:lineup:names:${id}:${week}`;
-const kLineupIdx = (id: string) => `ro:lineup:index:${id}`;
+const kLineupIdx   = (id: string) => `ro:lineup:index:${id}`;
 
 // ---------- Rules helpers ----------
 const defaultRules: RosterRules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
@@ -39,7 +39,8 @@ function nowISO() {
 // ---------- Roster CRUD ----------
 export async function listRosterIds(): Promise<string[]> {
   try {
-    const ids = await kv.smembers<string>(kRosterIds);
+    // Cast because @vercel/kv's smembers doesn't accept a generic type arg
+    const ids = (await kv.smembers(kRosterIds)) as string[] | null;
     return Array.isArray(ids) ? ids : [];
   } catch {
     return [];
@@ -55,7 +56,7 @@ export async function getRoster(id: string): Promise<UserRoster | null> {
   }
 }
 
-// Minimal roster meta for admin/email flows (non-player map)
+// Minimal roster meta for email/recompute flows
 export type RosterMeta = Pick<UserRoster, "id" | "name" | "email">;
 
 export async function getRosterMeta(id: string): Promise<RosterMeta | null> {
@@ -125,21 +126,25 @@ export async function saveLineup(
   await kv.set(kLineup(id, week), lineup);
 }
 
-/**
- * Convenience saver used by cron/recompute flows.
- * Also maintains a sorted index of computed weeks per roster.
- */
 export async function saveWeeklyLineup(
   id: string,
   week: number,
   lineup: WeeklyLineup
 ): Promise<void> {
+  // save the lineup blob
   await kv.set(kLineup(id, week), lineup);
-  await kv.zadd(kLineupIdx(id), { score: week, member: String(week) });
+
+  // maintain a sorted index of weeks for this roster (handy for history pages)
+  await kv.zadd(kLineupIdx(id), {
+    score: week,
+    member: String(week),
+  });
 }
 
 // ---------- Overrides ----------
-export type OverridesInput = Partial<Pick<AdminOverrides, "pointDelta" | "forceStart" | "forceSit" | "note">>;
+export type OverridesInput = Partial<
+  Pick<AdminOverrides, "pointDelta" | "forceStart" | "forceSit" | "note">
+>;
 
 export async function getOverrides(week: number): Promise<AdminOverrides> {
   try {
