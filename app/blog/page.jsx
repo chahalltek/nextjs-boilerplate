@@ -86,6 +86,14 @@ function RssBadge() {
 
 export default async function BlogIndexPage() {
   const posts = await fetchPosts();
+// app/blog/page.jsx
+import SubscribeCta from "@/components/SubscribeCta";
+// ...
+<div className="container max-w-5xl py-10 space-y-8">
+  {/* header... */}
+  <SubscribeCta tag="starter-pack" source="/blog" compact />
+  {/* list of posts... */}
+</div>
 
   return (
     <div className="container max-w-5xl py-10 space-y-8">

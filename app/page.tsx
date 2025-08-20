@@ -5,6 +5,7 @@ import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
 import NextDynamic from "next/dynamic";
+import SubscribeCta from "@/components/SubscribeCta";
 
 // Load TrendingTicker on the client only to avoid build-time fetches/timeouts
 const TrendingTicker = NextDynamic(() => import("@/components/TrendingTicker"), {
@@ -149,6 +150,12 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+// app/page.tsx (somewhere in the page)
+
+// ...
+<section className="container">
+  <SubscribeCta tag="starter-pack" source="/" />
+</section>
 
       {/* CTA STRIP */}
       <section className="container my-4">
