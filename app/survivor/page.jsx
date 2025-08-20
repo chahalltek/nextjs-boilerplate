@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Countdown from "@/components/Countdown";
 import { getSeason } from "@/lib/survivor/store";
+import SurvivorOptIn from "@/components/SurvivorOptIn";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export default async function SurvivorLanding() {
           Predict the full boot order and Final 3. Scores update weekly after each episode.
         </p>
       </header>
+      <section className="container my-8">
+  <SurvivorOptIn />
+</section>
 
       {/* Lock status + actions (only if a season exists) */}
       {season ? (
