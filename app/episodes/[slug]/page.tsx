@@ -4,6 +4,7 @@ import { getAllEpisodes, getEpisodeBySlug } from "@/lib/episodes";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import EpisodeSearch from "@/components/EpisodeSearch";
+import Script from "next/script";
 
 const EpisodePlayer = dynamic(() => import("@/components/EpisodePlayer"), { ssr: false });
 
@@ -83,11 +84,9 @@ export default async function EpisodePage({ params }: { params: { slug: string }
 
   return (
     <div className="container py-12 space-y-6">
-      <script
-        type="application/ld+json"
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
-      />
+      <Script id="episode-jsonld" type="application/ld+json">
+        {JSON.stringify(ld)}
+      </Script>
       {coverImage && (
         <Image
           src={coverImage}
