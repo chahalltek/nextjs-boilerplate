@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from "next/image";
 import Link from 'next/link';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 
 export type Episode = {
   slug: string;
@@ -87,7 +88,7 @@ export default function EpisodeLayout({ episode }: Props) {
         <div
           className="w-full"
           dangerouslySetInnerHTML={{
-            __html: episode.externalPlayerEmbedHtml,
+            __html: sanitizeHtml(episode.externalPlayerEmbedHtml),
           }}
         />
       ) : null}
@@ -99,7 +100,7 @@ export default function EpisodeLayout({ episode }: Props) {
           </h2>
           <div
             className="prose prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: episode.showNotesHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.showNotesHtml) }}
           />
         </section>
       )}
@@ -196,7 +197,7 @@ export default function EpisodeLayout({ episode }: Props) {
             <div
               ref={transcriptRef}
               className="prose prose-invert mt-4 max-w-none"
-              dangerouslySetInnerHTML={{ __html: episode.transcriptHtml }}
+               dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.transcriptHtml) }}
             />
           ) : (
             <p className="mt-2 text-white/70">Transcript hidden</p>

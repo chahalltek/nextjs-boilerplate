@@ -38,11 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main id="main" className="container py-8">{children}</main>
         <Footer />
-        <script
-          type="application/ld+json"
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(seriesLd) }}
-        />
+        <Script id="series-jsonld" type="application/ld+json">
+          {JSON.stringify(seriesLd)}
+        </Script>
         {gaId && (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
