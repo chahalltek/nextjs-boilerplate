@@ -4,10 +4,10 @@ export const dynamic = "error"; // build-time render only
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import dynamic from "next/dynamic";
+import loadDynamic from "next/dynamic";
 
 // Load TrendingTicker on the client to avoid build-time network calls
-const TrendingTicker = dynamic(() => import("@/components/TrendingTicker"), {
+const TrendingTicker = loadDynamic(() => import("@/components/TrendingTicker"), {
   ssr: false,
   loading: () => <div className="text-center text-white/50">Loading…</div>,
 });
