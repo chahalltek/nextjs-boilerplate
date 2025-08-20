@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { sendEmail, isEmailConfigured } from "@/lib/email/mailer";
 
-export const runtime = "nodejs"; // mailers require Node, not Edge
+export const runtime = "nodejs"; // mailers need Node runtime
 
 type Body = {
   name?: string;
@@ -17,11 +17,6 @@ const ok = (data: any = {}) => NextResponse.json({ ok: true, ...data });
 const err = (message: string, status = 400) =>
   NextResponse.json({ ok: false, error: message }, { status });
 
-/**
- * GET /api/contact
- * - Quick health check for config
- * - /api/contact?echo=1 will return masked env previews
- */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const echo = url.searchParams.get("echo") === "1";
@@ -45,11 +40,6 @@ export async function GET(req: Request) {
   });
 }
 
-/**
- * POST /api/contact
- * Body: { name, email, reason, subject?, message, company? }
- * Query: dryRun=1 (optional) to test without sending
- */
 export async function POST(req: Request) {
   try {
     const url = new URL(req.url);
@@ -57,7 +47,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as Body;
 
-    // Honeypot — if filled, silently succeed
+    // Honeypot (bot trap)
     if (body.company && body.company.trim()) return ok({ skipped: true });
 
     const name = (body.name || "").trim();
@@ -71,10 +61,9 @@ export async function POST(req: Request) {
       }`;
 
     if (!email) return err("Email is required.");
-    if (!message || message.length < 5) return err("Message is too short.");
+    if (message.length < 5) return err("Message is too short.");
     if (message.length > 5000) return err("Message is too long.");
 
-    // Where to send incoming contact messages
     const TO =
       process.env.CONTACT_TO ||
       process.env.SUPPORT_INBOX ||
@@ -123,7 +112,7 @@ export async function POST(req: Request) {
       subject,
       text,
       html,
-      headers: { "Reply-To": email }, // reply from your inbox hits the user
+      headers: { "Reply-To": email },
     });
 
     if (!res.ok) return err(res.error || "Email send failed", 502);
