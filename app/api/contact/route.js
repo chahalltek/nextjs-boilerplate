@@ -1,23 +1,14 @@
-// app/api/contact/route.ts
+// app/api/contact/route.js
 import { NextResponse } from "next/server";
 import { sendEmail, isEmailConfigured } from "@/lib/email/mailer";
 
 export const runtime = "nodejs"; // mailers need Node runtime
 
-type Body = {
-  name?: string;
-  email?: string;
-  subject?: string;
-  reason?: string;
-  message?: string;
-  company?: string; // honeypot
-};
-
-const ok = (data: any = {}) => NextResponse.json({ ok: true, ...data });
-const err = (message: string, status = 400) =>
+const ok = (data = {}) => NextResponse.json({ ok: true, ...data });
+const err = (message, status = 400) =>
   NextResponse.json({ ok: false, error: message }, { status });
 
-export async function GET(req: Request) {
+export async function GET(req) {
   const url = new URL(req.url);
   const echo = url.searchParams.get("echo") === "1";
 
@@ -40,22 +31,21 @@ export async function GET(req: Request) {
   });
 }
 
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
     const url = new URL(req.url);
     const dryRun = url.searchParams.get("dryRun") === "1";
-
-    const body = (await req.json().catch(() => ({}))) as Body;
+    const body = (await req.json().catch(() => ({}))) || {};
 
     // Honeypot (bot trap)
-    if (body.company && body.company.trim()) return ok({ skipped: true });
+    if (body.company && String(body.company).trim()) return ok({ skipped: true });
 
-    const name = (body.name || "").trim();
-    const email = (body.email || "").trim();
-    const reason = (body.reason || "").trim();
-    const message = (body.message || "").trim();
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim();
+    const reason = String(body.reason || "").trim();
+    const message = String(body.message || "").trim();
     const subject =
-      (body.subject || "").trim() ||
+      String(body.subject || "").trim() ||
       `New contact message${name ? ` from ${name}` : ""}${
         reason ? ` — ${reason}` : ""
       }`;
@@ -69,18 +59,9 @@ export async function POST(req: Request) {
       process.env.SUPPORT_INBOX ||
       process.env.ADMIN_EMAIL;
 
-    if (!TO) {
-      return err(
-        "Server inbox not configured. Set CONTACT_TO (or SUPPORT_INBOX / ADMIN_EMAIL) in env.",
-        500
-      );
-    }
-    if (!isEmailConfigured()) {
-      return err(
-        "Email provider not configured. Set RESEND_API_KEY and RESEND_FROM.",
-        500
-      );
-    }
+    if (!TO) return err("CONTACT_TO (or SUPPORT_INBOX/ADMIN_EMAIL) not set.", 500);
+    if (!isEmailConfigured())
+      return err("RESEND_API_KEY / RESEND_FROM not configured.", 500);
 
     const text = [
       `From: ${name || "Anonymous"} <${email}>`,
@@ -116,9 +97,8 @@ export async function POST(req: Request) {
     });
 
     if (!res.ok) return err(res.error || "Email send failed", 502);
-
     return ok({ id: res.id });
-  } catch (e: any) {
+  } catch (e) {
     console.error("[contact] unexpected error:", e);
     return err(e?.message || "Unexpected server error", 500);
   }
@@ -126,8 +106,8 @@ export async function POST(req: Request) {
 
 /* ---------------- utils ---------------- */
 
-function escapeHtml(s: string) {
-  return s
+function escapeHtml(s) {
+  return String(s)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -135,8 +115,7 @@ function escapeHtml(s: string) {
     .replaceAll("'", "&#039;");
 }
 
-function maskEmail(e?: string) {
-  if (!e) return "";
-  const [u = "", d = ""] = e.split("@");
+function maskEmail(e = "") {
+  const [u = "", d = ""] = String(e).split("@");
   return `${u.slice(0, 2)}***@${d}`;
 }
