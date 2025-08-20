@@ -88,7 +88,7 @@ export default function EpisodeLayout({ episode }: Props) {
         <div
           className="w-full"
           dangerouslySetInnerHTML={{
-            __html: sanitizeHtml(episode.externalPlayerEmbedHtml),
+        __html: sanitizeHtml(episode.externalPlayerEmbedHtml),
           }}
         />
       ) : null}
@@ -100,7 +100,7 @@ export default function EpisodeLayout({ episode }: Props) {
           </h2>
           <div
             className="prose prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.showNotesHtml) }}
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.showNotesHtml) }}
           />
         </section>
       )}
@@ -197,7 +197,7 @@ export default function EpisodeLayout({ episode }: Props) {
             <div
               ref={transcriptRef}
               className="prose prose-invert mt-4 max-w-none"
-               dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.transcriptHtml) }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(episode.transcriptHtml) }}
             />
           ) : (
             <p className="mt-2 text-white/70">Transcript hidden</p>

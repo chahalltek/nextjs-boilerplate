@@ -34,7 +34,7 @@ export default function ContactForm() {
   return (
     <>
       {status === "success" ? (
-        <p className="mt-4 text-green-400">Your message was sent. We'll follow up shortly.</p>
+       <p className="mt-4 text-green-400">Your message was sent. We&apos;ll follow up shortly.</p>
       ) : (
         <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-w-xl">
           <div>

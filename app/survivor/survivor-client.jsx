@@ -419,7 +419,7 @@ export function SurvivorTicker({ season = 46 }) {
             className="flex items-center gap-2 flex-shrink-0"
           >
             <span className="font-semibold">Week {item.ep}:</span>
-            {item.name}'s torch snuffed — {item.remaining} left
+             {item.name}&rsquo;s torch snuffed — {item.remaining} left
           </span>
         ))}
       </div>
