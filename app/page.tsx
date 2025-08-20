@@ -4,26 +4,21 @@ export const dynamic = "error"; // build-time render only
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import NextDynamic from "next/dynamic";
-import SubscribeCta from "@/components/SubscribeCta";
+import dynamic from "next/dynamic";
 
-// Load TrendingTicker on the client only to avoid build-time fetches/timeouts
-const TrendingTicker = NextDynamic(() => import("@/components/TrendingTicker"), {
+// Load TrendingTicker on the client to avoid build-time network calls
+const TrendingTicker = dynamic(() => import("@/components/TrendingTicker"), {
   ssr: false,
-  loading: () => (
-    <div className="text-center text-sm text-white/60">Loading…</div>
-  ),
+  loading: () => <div className="text-center text-white/50">Loading…</div>,
 });
 
 export default function HomePage() {
-  const posts =
-    (() => {
-      try {
-        return getAllPosts().slice(0, 3);
-      } catch {
-        return [];
-      }
-    })() || [];
+  let posts: any[] = [];
+  try {
+    posts = getAllPosts().slice(0, 3);
+  } catch {
+    posts = [];
+  }
 
   return (
     <div className="space-y-16">
@@ -150,12 +145,6 @@ export default function HomePage() {
           ))}
         </div>
       </section>
-// app/page.tsx (somewhere in the page)
-
-// ...
-<section className="container">
-  <SubscribeCta tag="starter-pack" source="/" />
-</section>
 
       {/* CTA STRIP */}
       <section className="container my-4">
