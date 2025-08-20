@@ -5,47 +5,32 @@ import Logo from "./Logo";
 export default function SiteFooter() {
   const year = new Date().getFullYear();
 
-  // Match header order:
-  // Start/Sit → Weekly Recap → Survivor → Hold ’em Fold ’em → Stats → Blog → 101 → About → Search
-  const nav = [
+  // Condensed footer nav (not a copy of the header mega-nav)
+  const primaryLinks = [
     { href: "/start-sit", label: "Start/Sit" },
-    { href: "/roster", label: "Lineup Lab" },
-    { href: "/cws", label: "Weekly\u00A0Recap", title: "Coulda, Woulda, Shoulda" },
     { href: "/survivor", label: "Survivor" },
-    { href: "/holdem-foldem", label: "Hold\u00A0\u2019em\u00A0Fold\u00A0\u2019em", title: "Who to stash, who to trash" },
-    { href: "/stats", label: "Stats" },
     { href: "/blog", label: "Blog" },
-    { href: "/101", label: "101", title: "Fantasy Football 101" },
     { href: "/about", label: "About" },
-    { href: "/search", label: "Search" },
+  ];
+
+  const utilityLinks = [
+    { href: "/subscribe", label: "Subscribe" },
+    { href: "/contact", label: "Contact" },
+    { href: "/blog/rss", label: "RSS" },
   ];
 
   return (
-    // Hidden on mobile, shown from md and up
-    <footer className="mt-16 border-t border-white/10 hidden md:block">
-      <div className="container py-6">
-        {/* One row that wraps on small screens (desktop/tablet only due to md:block) */}
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-          {/* Brand */}
+    <footer className="mt-16 border-t border-white/10">
+      <div className="container py-8 space-y-6">
+        {/* Brand row */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Link href="/" className="flex items-center gap-2">
             <Logo size={24} />
             <span className="font-semibold">Hey Skol Sister</span>
           </Link>
 
-          {/* Links + Facebook button */}
-          <nav className="flex items-center gap-6">
-            {nav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                title={n.title}
-                className="text-white/80 hover:text-white"
-              >
-                {n.label}
-              </Link>
-            ))}
-
-            {/* Bigger, labeled Facebook link */}
+          {/* Keep Facebook as-is (unchanged) */}
+          <div className="sm:ml-auto">
             <a
               href="https://www.facebook.com/profile.php?id=61578258645337"
               target="_blank"
@@ -62,14 +47,41 @@ export default function SiteFooter() {
               </svg>
               <span className="text-sm">Facebook</span>
             </a>
+          </div>
+        </div>
+
+        {/* Link groups */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
+            {primaryLinks.map((n) => (
+              <Link
+                key={n.href}
+                href={n.href}
+                className="text-white/80 hover:text-white text-sm"
+              >
+                {n.label}
+              </Link>
+            ))}
           </nav>
 
-          {/* Podcast CTAs removed (hidden until launch) */}
+          <nav aria-label="Footer utilities" className="flex flex-wrap gap-x-6 gap-y-2 sm:justify-end">
+            {utilityLinks.map((n) => (
+              <Link
+                key={n.href}
+                href={n.href}
+                className="text-white/70 hover:text-white text-sm"
+              >
+                {n.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
 
-          {/* Copyright pushed to the far right on wide screens */}
-          <div className="ml-auto text-xs text-white/50">
-            © {year} Hey Skol Sister. All rights reserved.
-          </div>
+        {/* Small print */}
+        <div className="text-xs text-white/50 flex flex-col sm:flex-row gap-2 sm:items-center">
+          <span>© {year} Hey Skol Sister. All rights reserved.</span>
+          <span className="hidden sm:inline">•</span>
+          <Link href="#top" className="underline/30 hover:underline">Back to top</Link>
         </div>
       </div>
     </footer>
