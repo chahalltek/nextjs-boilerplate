@@ -1,48 +1,92 @@
-// app/api/subscribe/route.js
+// app/blog/page.jsx
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-import { kv } from "@vercel/kv";
-import crypto from "crypto";
-import { NextResponse } from "next/server";
+import Link from "next/link";
+import matter from "gray-matter";
+import { listDir, getFile } from "@/lib/github";
+import SubscribeCta from "@/components/SubscribeCta";
 
-function isEmail(s) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s || "");
+const DIR = "content/posts";
+const b64 = (s) => Buffer.from(s || "", "base64").toString("utf8");
+
+function toTime(dateStr) {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr);
+  if (!isNaN(d)) return d.getTime();
+  const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  return 0;
 }
-function codeFromEmail(email) {
-  const h = crypto.createHash("sha256").update(String(email).toLowerCase()).digest("base64url");
-  return h.slice(0, 10);
-}
 
-export async function POST(req) {
-  try {
-    const body = (await req.json().catch(() => ({}))) || {};
-    const email = String(body.email || "").trim().toLowerCase();
-    const tag = String(body.tag || "").trim().toLowerCase();
-    const source = String(body.source || "");
+async function fetchPosts() {
+  const items = await listDir(DIR).catch(() => []);
+  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
 
-    if (!isEmail(email)) {
-      return NextResponse.json({ ok: false, error: "Invalid email" }, { status: 400 });
-    }
+  const posts = [];
+  for (const f of files) {
+    const file = await getFile(f.path).catch(() => null);
+    if (!file?.contentBase64) continue;
 
-    const code = codeFromEmail(email);
-    const now = new Date().toISOString();
+    const raw = b64(file.contentBase64);
+    const parsed = matter(raw);
+    const fm = parsed.data || {};
 
-    // core record
-    await kv.hset(`sub:email:${email}`, { email, createdAt: now, lastSeenAt: now });
-    await kv.sadd("sub:all", email);
+    if (fm.draft === true) continue;
 
-    if (tag) await kv.sadd(`sub:tag:${tag}`, email);
-    if (source) await kv.sadd(`sub:source:${source}`, email);
-
-    // referral
-    await kv.set(`ref:email:${email}`, code);
-    await kv.set(`ref:code:${code}`, email);
-
-    return NextResponse.json({ ok: true, code });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Server error" },
-      { status: 500 }
-    );
+    posts.push({
+      slug: f.name.replace(/\.md$/, ""),
+      title: fm.title || f.name.replace(/\.md$/, ""),
+      date: fm.date || "",
+      excerpt: fm.excerpt || "",
+    });
   }
+
+  // newest first
+  posts.sort((a, b) => toTime(b.date) - toTime(a.date));
+  return posts;
+}
+
+export default async function BlogIndexPage() {
+  const posts = await fetchPosts();
+
+  return (
+    <div className="container max-w-5xl py-10 space-y-8">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">Blog</h1>
+        <Link
+          href="/blog/rss"
+          title="RSS feed"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white hover:bg-white/10"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+            <path d="M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z" />
+          </svg>
+          RSS
+        </Link>
+      </div>
+
+      <SubscribeCta variant="starter-pack" />
+
+      {posts.length === 0 ? (
+        <div className="text-white/70">No posts yet. Check back soon!</div>
+      ) : (
+        <div className="grid gap-4">
+          {posts.map((p) => (
+            <Link
+              key={p.slug}
+              href={`/blog/${encodeURIComponent(p.slug)}`}
+              className="card p-5 block hover:bg-white/5"
+            >
+              <div className="text-xs text-white/50">{p.date}</div>
+              <div className="font-semibold">{p.title}</div>
+              {p.excerpt && <div className="text-white/70 mt-1">{p.excerpt}</div>}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <SubscribeCta variant="starter-pack" />
+    </div>
+  );
 }
