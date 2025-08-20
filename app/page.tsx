@@ -4,10 +4,10 @@ export const dynamic = "error"; // build-time render only
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 
 // Load client bits without SSR to avoid build-time network/handlers
-const TrendingTicker = dynamic(() => import("@/components/TrendingTicker"), { ssr: false });
+nextDynamic(() => import("@/components/TrendingTicker"), { ssr: false });
 const StarterPackForm = dynamic(() => import("@/app/starter-pack/StarterPackForm"), { ssr: false });
 
 export default function HomePage() {
