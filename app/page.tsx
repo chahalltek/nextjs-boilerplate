@@ -4,21 +4,21 @@ export const dynamic = "error"; // build-time render only
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import loadDynamic from "next/dynamic";
+import dynamic from "next/dynamic";
 
-// Load TrendingTicker on the client to avoid build-time network calls
-const TrendingTicker = loadDynamic(() => import("@/components/TrendingTicker"), {
-  ssr: false,
-  loading: () => <div className="text-center text-white/50">Loading…</div>,
-});
+// Load client bits without SSR to avoid build-time network/handlers
+const TrendingTicker = dynamic(() => import("@/components/TrendingTicker"), { ssr: false });
+const StarterPackForm = dynamic(() => import("@/app/starter-pack/StarterPackForm"), { ssr: false });
 
 export default function HomePage() {
-  let posts: any[] = [];
-  try {
-    posts = getAllPosts().slice(0, 3);
-  } catch {
-    posts = [];
-  }
+  const posts =
+    (() => {
+      try {
+        return getAllPosts().slice(0, 3);
+      } catch {
+        return [];
+      }
+    })() || [];
 
   return (
     <div className="space-y-16">
@@ -75,6 +75,25 @@ export default function HomePage() {
         <Feature title="Actionable Picks" desc="Tiered Start/Sit with confidence levels you can use on Sunday morning." />
         <Feature title="Waiver + Trades" desc="Spot contingent value and stash upside before your league-mates." />
         <Feature title="Vikings Vibes" desc="Data-driven—but with plenty of purple. Skol!" />
+      </section>
+
+      {/* STARTER PACK CTA */}
+      <section className="container">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 md:p-6 grid md:grid-cols-[1fr,360px] gap-6 items-start">
+          <div>
+            <h2 className="text-xl font-semibold">Skol Starter Pack</h2>
+            <p className="text-white/70 mt-2 text-sm">
+              New to fantasy (or just want a cheat sheet)? Get our 1-page Starter Pack PDF:
+              draft basics, weekly checklist, and common mistakes to avoid.
+            </p>
+            <ul className="list-disc list-inside text-white/70 text-sm mt-2 space-y-1">
+              <li>Draft & lineup fundamentals</li>
+              <li>Waiver/Trades quick tips</li>
+              <li>Glossary of must-know terms</li>
+            </ul>
+          </div>
+          <StarterPackForm tag="starter-pack" source="home-cta" successRedirect="/refer?from=home-cta" />
+        </div>
       </section>
 
       {/* PROMO CARDS */}
