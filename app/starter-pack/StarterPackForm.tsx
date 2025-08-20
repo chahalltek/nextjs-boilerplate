@@ -1,25 +1,18 @@
-// app/starter-pack/StarterPackForm.tsx
+// app/starter-pack/StarterPackForm.jsx
 "use client";
 
 import { useState } from "react";
-
-type Props = {
-  tag?: string;        // e.g. "starter-pack"
-  source?: string;     // e.g. "starter-pack-page"
-  successRedirect?: string; // optional path like "/refer?from=starter-pack"
-};
 
 export default function StarterPackForm({
   tag = "starter-pack",
   source = "starter-pack-page",
   successRedirect,
-}: Props) {
+}) {
   const [email, setEmail] = useState("");
-  const [status, setStatus] =
-    useState<"idle" | "sending" | "ok" | "error">("idle");
+  const [status, setStatus] = useState("idle"); // idle | sending | ok | error
   const [msg, setMsg] = useState("");
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e) {
     e.preventDefault();
     setStatus("sending");
     setMsg("");
@@ -30,15 +23,11 @@ export default function StarterPackForm({
         body: JSON.stringify({ email, tag, source }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setStatus("ok");
       setMsg("✅ Check your inbox for the Starter Pack!");
-      if (successRedirect) {
-        window.location.href = successRedirect;
-      }
-    } catch (err: any) {
+      if (successRedirect) window.location.href = successRedirect;
+    } catch (err) {
       setStatus("error");
       setMsg(err?.message || "Something went wrong");
     }
