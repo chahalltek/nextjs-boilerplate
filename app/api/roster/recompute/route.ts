@@ -13,13 +13,9 @@ export async function GET(request: NextRequest): Promise<Response> {
   try {
     const sp = request.nextUrl.searchParams;
     const id = sp.get("id") || "";
-    const weekStr = sp.get("week") || "";
-    const notifyFlag = (sp.get("notify") || "").toLowerCase();
-    const dryRunFlag = (sp.get("dryRun") || "").toLowerCase();
-
-    const week = Number(weekStr);
-    const notify = notifyFlag === "1" || notifyFlag === "true" || notifyFlag === "yes";
-    const dryRun = dryRunFlag === "1" || dryRunFlag === "true" || dryRunFlag === "yes";
+    const week = Number(sp.get("week") || "");
+    const notify = ["1", "true", "yes"].includes((sp.get("notify") || "").toLowerCase());
+    const dryRun = ["1", "true", "yes"].includes((sp.get("dryRun") || "").toLowerCase());
 
     if (!id || !Number.isFinite(week) || week <= 0) {
       return NextResponse.json({ ok: false, error: "Missing or invalid id/week" }, { status: 400 });
@@ -33,7 +29,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     // Compute lineup
     const lineup = await computeLineup(roster, week);
 
-    // Save (unless dry-run)
+    // Save unless dry-run
     if (!dryRun) {
       await saveWeeklyLineup(id, week, lineup);
     }
@@ -44,14 +40,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       if (isEmailConfigured()) {
         const names = await getLineupNames(id, week).catch(() => ({}));
         const subject = `Lineup Lab — Week ${week} starters`;
-        const text = renderLineupText(lineup, names);
-        const html = renderLineupHtml(lineup, names);
-        emailed = await sendEmail({
-          to: roster.email,
-          subject,
-          text,
-          html,
-        });
+        const coachName = roster.name || "Coach";
+        const text = renderLineupText(lineup, names, coachName, week);
+        const html = renderLineupHtml(lineup, names, coachName, week);
+        emailed = await sendEmail({ to: roster.email, subject, text, html });
       } else {
         emailed = { ok: false, error: "Email not configured" };
       }
