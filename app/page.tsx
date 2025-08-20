@@ -1,13 +1,18 @@
 // app/page.tsx
-// Render this page dynamically at request-time to avoid build-time network timeouts.
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = "error"; // build-time render only
 
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import TrendingTicker from "@/components/TrendingTicker";
+import dynamic from "next/dynamic";
+
+// Load TrendingTicker on the client only to avoid build-time fetches/timeouts
+const TrendingTicker = dynamic(() => import("@/components/TrendingTicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="text-center text-sm text-white/60">Loading…</div>
+  ),
+});
 
 export default function HomePage() {
   const posts =

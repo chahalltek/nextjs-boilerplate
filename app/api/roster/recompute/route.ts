@@ -4,6 +4,7 @@ import { getRoster, saveWeeklyLineup, getLineupNames } from "@/lib/roster/store"
 import { computeLineup } from "@/lib/roster/compute";
 import { renderLineupHtml, renderLineupText } from "@/lib/roster/email";
 import { sendEmail, isEmailConfigured } from "@/lib/email/mailer";
+import type { WeeklyLineup } from "@/lib/roster/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     // Compute lineup
-    const lineup = await computeLineup(roster, week);
+    const lineup: WeeklyLineup = await computeLineup(roster, week);
 
     // Save unless dry-run
     if (!dryRun) {
@@ -41,8 +42,9 @@ export async function GET(request: NextRequest): Promise<Response> {
         const names = await getLineupNames(id, week).catch(() => ({}));
         const subject = `Lineup Lab — Week ${week} starters`;
         const coachName = roster.name || "Coach";
-        const text = renderLineupText(lineup, names, coachName, week);
-        const html = renderLineupHtml(lineup, names, coachName, week);
+        // correct arg order: (coachName, week, lineup, names)
+        const text = renderLineupText(coachName, week, lineup, names);
+        const html = renderLineupHtml(coachName, week, lineup, names);
         emailed = await sendEmail({ to: roster.email, subject, text, html });
       } else {
         emailed = { ok: false, error: "Email not configured" };
