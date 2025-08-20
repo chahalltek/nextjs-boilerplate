@@ -1,6 +1,4 @@
 // lib/email/mailer.ts
-import { Resend } from "resend";
-
 type SendArgs = {
   to: string | string[];
   subject: string;
@@ -10,6 +8,12 @@ type SendArgs = {
   headers?: Record<string, string>;
 };
 
+/**
+ * Minimal Resend HTTP mailer (no SDK).
+ * Required env:
+ *   RESEND_API_KEY   = re_xxx...
+ *   RESEND_FROM      = "Lineup Lab <onboarding@resend.dev>"  // use onboarding@resend.dev until your domain is verified
+ */
 export async function sendEmail({
   to,
   subject,
@@ -18,39 +22,47 @@ export async function sendEmail({
   from,
   headers = {},
 }: SendArgs): Promise<{ ok: boolean; id?: string; error?: string }> {
-  const API_KEY = process.env.RESEND_API_KEY;
-  const FROM = from || process.env.RESEND_FROM || "onboarding@resend.dev";
+  const API_KEY = (process.env.RESEND_API_KEY || "").trim();
+  const FROM = (from || process.env.RESEND_FROM || "onboarding@resend.dev").trim();
 
-  if (!API_KEY) {
-    return { ok: false, error: "RESEND_API_KEY missing" };
-  }
+  if (!API_KEY) return { ok: false, error: "RESEND_API_KEY missing" };
+  if (!FROM) return { ok: false, error: "RESEND_FROM missing" };
+
+  // Resend requires at least one of html/text
+  if (!html && !text) text = "(empty message)";
+
+  const body = {
+    from: FROM,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    text,
+    html,
+    headers,
+  };
 
   try {
-    const resend = new Resend(API_KEY);
-    const result = await resend.emails.send({
-      from: FROM,
-      to: Array.isArray(to) ? to : [to],
-      subject,
-      text,
-      html,
-      headers,
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     });
 
-    if (result.error) {
-      // Resend SDK gives a structured error
-      const msg =
-        (result.error as any)?.message ||
-        (typeof result.error === "string" ? result.error : "Unknown send error");
+    const data = (await res.json().catch(() => ({}))) as any;
+
+    if (!res.ok) {
+      // Resend responds with { message: "..." } on errors
+      const msg = data?.message || `HTTP ${res.status}`;
       return { ok: false, error: msg };
     }
-
-    return { ok: true, id: result.data?.id };
+    return { ok: true, id: data?.id };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
 }
 
-/** Quick config probe (does NOT validate the key with Resend) */
 export function isEmailConfigured() {
-  return Boolean(process.env.RESEND_API_KEY && (process.env.RESEND_FROM || "onboarding@resend.dev"));
+  return Boolean((process.env.RESEND_API_KEY || "").trim() && (process.env.RESEND_FROM || "").trim());
 }
