@@ -59,14 +59,14 @@ export default function AdminPollsPage() {
     setForm({
       slug: poll.slug,
       question: poll.question || "",
-      options: (poll.options || []).map(o => (typeof o === "string" ? o : o.label || "")),
+      options: (poll.options || []).map((o) => (typeof o === "string" ? o : o.label || "")),
       active: !!poll.active,
       closesAt: poll.closesAt || "",
     });
   }
 
   function setOption(idx, val) {
-    setForm(f => {
+    setForm((f) => {
       const next = [...f.options];
       next[idx] = val;
       return { ...f, options: next };
@@ -74,7 +74,7 @@ export default function AdminPollsPage() {
   }
 
   function addOption() {
-    setForm(f => ({ ...f, options: [...f.options, ""] }));
+    setForm((f) => ({ ...f, options: [...f.options, ""] }));
   }
 
   async function save(e) {
@@ -84,7 +84,7 @@ export default function AdminPollsPage() {
 
     const payload = {
       question: form.question,
-      options: form.options.filter(Boolean).map(s => ({ label: s })),
+      options: form.options.filter(Boolean).map((s) => ({ label: s })),
       active: !!form.active,
       closesAt: form.closesAt || null,
     };
@@ -110,13 +110,23 @@ export default function AdminPollsPage() {
     setSaving(false);
   }
 
+  // Make active using the CURRENT SERVER VERSION of that poll (not the editor form)
   async function makeActive(slug) {
     setMsg("");
+    const resLoad = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, { credentials: "include" });
+    const cur = await resLoad.json().catch(() => ({}));
+    if (!resLoad.ok || !cur.ok) { setMsg(cur.error || `Load failed (${resLoad.status})`); return; }
+
     const res = await fetch(`/api/admin/polls/${encodeURIComponent(slug)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ question: form.question || "(unchanged)", options: form.options.filter(Boolean).map(s => ({ label: s })), active: true }),
+      body: JSON.stringify({
+        question: cur.poll.question,
+        options: (cur.poll.options || []).map((o) => (typeof o === "string" ? { label: o } : o)),
+        active: true,
+        closesAt: cur.poll.closesAt || null,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) { setMsg(data.error || `Activate failed (${res.status})`); return; }
@@ -137,7 +147,7 @@ export default function AdminPollsPage() {
       credentials: "include",
       body: JSON.stringify({
         question: cur.poll.question,
-        options: (cur.poll.options || []).map(o => (typeof o === "string" ? { label: o } : o)),
+        options: (cur.poll.options || []).map((o) => (typeof o === "string" ? { label: o } : o)),
         active: false,
         closesAt: cur.poll.closesAt || null,
       }),
@@ -162,6 +172,11 @@ export default function AdminPollsPage() {
     loadList();
   }
 
+  function resetForm() {
+    setForm(emptyForm);
+    setMsg("");
+  }
+
   return (
     <div className="container mx-auto max-w-6xl py-8">
       {/* Header */}
@@ -175,7 +190,7 @@ export default function AdminPollsPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[320px,1fr] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-[360px,1fr] gap-6">
         {/* Left: list */}
         <div className="card p-4 min-h-[320px]">
           <div className="text-lg font-semibold mb-2">Existing polls</div>
@@ -185,14 +200,23 @@ export default function AdminPollsPage() {
             <div className="text-white/60">No polls yet.</div>
           ) : (
             <ul className="space-y-1">
-              {sorted.map(p => (
+              {sorted.map((p) => (
                 <li key={p.slug} className="flex items-center justify-between gap-2">
-                  <button
-                    className="text-left flex-1 py-1 hover:text-white text-white/80"
-                    onClick={() => load(p.slug)}
-                  >
-                    {p.slug} {p.active && <span className="ml-2 text-xs text-emerald-400">● active</span>}
-                  </button>
+                  <div className="flex-1 truncate">
+                    <button
+                      className="text-left py-1 hover:text-white text-white/80 truncate"
+                      onClick={() => load(p.slug)}
+                      title="Load into editor"
+                    >
+                      {p.slug}{" "}
+                      {p.active ? (
+                        <span className="ml-2 text-xs text-emerald-400">● active</span>
+                      ) : (
+                        <span className="ml-2 text-xs text-white/50">inactive</span>
+                      )}
+                    </button>
+                  </div>
+
                   {p.active ? (
                     <button
                       className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
@@ -210,8 +234,17 @@ export default function AdminPollsPage() {
                       Activate
                     </button>
                   )}
+
                   <button
                     className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                    onClick={() => load(p.slug)}
+                    title="Edit this poll"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20 text-red-300"
                     onClick={() => remove(p.slug)}
                     title="Delete"
                   >
@@ -225,13 +258,24 @@ export default function AdminPollsPage() {
 
         {/* Right: editor */}
         <form onSubmit={save} className="card p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Create / Edit Poll</h2>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-3 py-1.5 rounded border border-white/20 text-white/80 hover:text-white hover:bg-white/10"
+            >
+              New Poll
+            </button>
+          </div>
+
           <div>
             <label className="block text-sm text-white/70 mb-1">Slug</label>
             <input
               className="input w-full"
               value={form.slug}
               onChange={(e) =>
-                setForm(f => ({
+                setForm((f) => ({
                   ...f,
                   slug: e.target.value
                     .toLowerCase()
@@ -241,7 +285,9 @@ export default function AdminPollsPage() {
               }
               placeholder="week-1"
             />
-            <p className="text-xs text-white/50 mt-1">Saved as <code>data/polls/&lt;slug&gt;.json</code></p>
+            <p className="text-xs text-white/50 mt-1">
+              Saved as <code>data/polls/&lt;slug&gt;.json</code>
+            </p>
           </div>
 
           <div>
@@ -249,7 +295,7 @@ export default function AdminPollsPage() {
             <input
               className="input w-full"
               value={form.question}
-              onChange={(e) => setForm(f => ({ ...f, question: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))}
               placeholder="Who wins this week?"
             />
           </div>
@@ -266,7 +312,11 @@ export default function AdminPollsPage() {
                   placeholder={`Option ${i + 1}`}
                 />
               ))}
-              <button type="button" onClick={addOption} className="px-3 py-1.5 rounded border border-white/20 text-white/80 hover:text-white hover:bg-white/10">
+              <button
+                type="button"
+                onClick={addOption}
+                className="px-3 py-1.5 rounded border border-white/20 text-white/80 hover:text-white hover:bg-white/10"
+              >
                 + Add option
               </button>
             </div>
@@ -276,7 +326,7 @@ export default function AdminPollsPage() {
             <input
               type="checkbox"
               checked={form.active}
-              onChange={(e) => setForm(f => ({ ...f, active: e.target.checked }))}
+              onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
             />
             Make active after save
           </label>
