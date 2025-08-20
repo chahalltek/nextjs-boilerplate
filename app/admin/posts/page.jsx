@@ -13,10 +13,10 @@ export default function AdminPostsPage() {
   const [content, setContent] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
 
-  // NEW
+  // NEW flags/fields
   const [tags, setTags] = useState("");
-  const [draft, setDraft] = useState(false);
-  const [publishAt, setPublishAt] = useState(""); // HTML datetime-local (local timezone)
+  const [draft, setDraft] = useState(false); // treated as "Inactive (hidden)"
+  const [publishAt, setPublishAt] = useState(""); // datetime-local
 
   // list + UI state
   const [posts, setPosts] = useState([]);
@@ -40,10 +40,7 @@ export default function AdminPostsPage() {
     );
   }, [posts, filter]);
 
-  const isExisting = useMemo(
-    () => posts.some((p) => p.slug === slug),
-    [posts, slug]
-  );
+  const isExisting = useMemo(() => posts.some((p) => p.slug === slug), [posts, slug]);
 
   useEffect(() => {
     loadList();
@@ -108,7 +105,6 @@ export default function AdminPostsPage() {
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "";
-    // yyyy-MM-ddThh:mm for datetime-local
     const pad = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
@@ -129,14 +125,13 @@ export default function AdminPostsPage() {
   }
 
   function parseCoverFromContent(md) {
-    // If content starts with a cover image markdown, extract it: ![...](url)
     const lines = (md || "").split("\n");
     if (lines.length === 0) return { cover: "", body: md };
     const first = lines[0].trim();
     const m = first.match(/^!\[[^\]]*\]\(([^)]+)\)/);
     if (m) {
       const cover = m[1];
-      const body = lines.slice(2).join("\n"); // drop image line and one blank line that editor added
+      const body = lines.slice(2).join("\n");
       return { cover, body };
     }
     return { cover: "", body: md };
@@ -167,7 +162,6 @@ export default function AdminPostsPage() {
       setTags(Array.isArray(p.tags) ? p.tags.join(", ") : (p.tags || ""));
       setPublishAt(fromIsoToLocal(p.publishAt || ""));
 
-      // content / cover extraction fallback
       let c = p.content || "";
       let inferredCover = p.coverUrl || "";
       if (!inferredCover) {
@@ -202,8 +196,8 @@ export default function AdminPostsPage() {
           excerpt,
           content: coverUrl ? `![cover image](${coverUrl})\n\n${content}` : content,
           date: date || undefined,
-          tags: tags || undefined,           // comma-separated OK
-          draft,
+          tags: tags || undefined,  // comma-separated OK
+          draft,                    // ← “Inactive (hidden)” toggle
           publishAt: toIsoIfSet(publishAt) || undefined,
         }),
       });
@@ -217,7 +211,7 @@ export default function AdminPostsPage() {
       }
       setCommitSha(data.commit || "");
       setSaveMsg("✅ Saved! (Git commit created)");
-      await loadList(); // refresh list (title/dates may change)
+      await loadList(); // refresh titles/dates/flags
       setSelectedSlug(slug);
     } catch (err) {
       setSaveMsg(`❌ ${err.message}`);
@@ -228,7 +222,7 @@ export default function AdminPostsPage() {
 
   async function onDelete() {
     if (!slug) return;
-    if (!confirm(`Delete post “${slug}”? This will commit a removal in content/posts.`)) return;
+    if (!confirm(`Delete post “${slug}”? This commits a removal in content/posts.`)) return;
     setDeleting(true);
     setSaveMsg("");
     try {
@@ -262,7 +256,7 @@ export default function AdminPostsPage() {
       </div>
 
       <div className="grid md:grid-cols-[320px,1fr] gap-6">
-        {/* LEFT: List */}
+        {/* LEFT: Existing posts list */}
         <aside className="rounded-xl border border-white/10 bg-white/5">
           <div className="p-3 border-b border-white/10">
             <input
@@ -287,14 +281,19 @@ export default function AdminPostsPage() {
                     onClick={() => loadForEdit(p.slug)}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium truncate">{p.title || p.slug}</div>
-                      {p.draft && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 border border-white/10">Draft</span>}
+                      <div className="font-medium truncate">
+                        {p.title || p.slug}
+                      </div>
+                      {p.draft && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 border border-white/10">
+                          Inactive
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-white/60 mt-0.5">
                       {p.date ? new Date(p.date).toLocaleDateString() : "—"}
                       {p.publishAt ? ` • Publishes ${new Date(p.publishAt).toLocaleString()}` : ""}
                     </div>
-                    <div className="text-[11px] text-white/40 truncate">{p.slug}</div>
                   </button>
                 </li>
               ))}
@@ -302,13 +301,7 @@ export default function AdminPostsPage() {
           </div>
 
           <div className="p-3 border-t border-white/10 flex gap-2">
-            <button
-              className="px-3 py-2 rounded border border-white/20 hover:bg-white/10"
-              onClick={clearForm}
-              title="Start a new post"
-            >
-              New Post
-            </button>
+            {/* Removed “New Post” per request */}
             <button
               className="px-3 py-2 rounded border border-white/20 hover:bg-white/10"
               onClick={loadList}
@@ -319,10 +312,12 @@ export default function AdminPostsPage() {
           </div>
         </aside>
 
-        {/* RIGHT: Editor */}
+        {/* RIGHT: Editor for selected/new post */}
         <form onSubmit={onSave} className="space-y-5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">{isExisting ? "Edit Post" : "Create Post"}</h2>
+            <h2 className="text-lg font-semibold">
+              {isExisting ? "Edit Post" : "Create Post"}
+            </h2>
             <div className="flex items-center gap-2">
               {slug && (
                 <Link
@@ -390,7 +385,7 @@ export default function AdminPostsPage() {
                   checked={draft}
                   onChange={(e) => setDraft(e.target.checked)}
                 />
-                <label htmlFor="draft" className="text-sm text-white/70">Draft (hidden)</label>
+                <label htmlFor="draft" className="text-sm text-white/70">Inactive (hidden)</label>
               </div>
               <div>
                 <label className="block text-sm text-white/70 mb-1">Publish at</label>
@@ -444,6 +439,8 @@ export default function AdminPostsPage() {
             </button>
             {saveMsg && <span className="text-sm">{saveMsg}</span>}
             {commitSha && <span className="text-xs text-white/50">commit: {commitSha.slice(0, 7)}</span>}
+            {/* Optional quick clear if you want to start a brand-new post */}
+            {/* <button type="button" className="px-3 py-2 rounded border border-white/20 hover:bg-white/10" onClick={clearForm}>New Post</button> */}
           </div>
 
           <p className="text-xs text-white/40">
