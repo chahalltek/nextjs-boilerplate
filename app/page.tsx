@@ -1,5 +1,8 @@
 // app/page.tsx
-export const dynamic = "error"; // build-time render
+// Render this page dynamically at request-time to avoid build-time network timeouts.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import Link from "next/link";
 import Logo from "@/components/Logo";
