@@ -1,8 +1,9 @@
 // app/refer/page.tsx
 import { Suspense } from "react";
 import Link from "next/link";
+import ReferClient from "./ReferClient";
 
-export const dynamic = "force-static"; // this page itself is static; the client subcomponent reads search params
+export const dynamic = "force-static";
 
 export default function ReferPage() {
   return (
@@ -13,9 +14,7 @@ export default function ReferPage() {
         we’ll show your shareable link below.
       </p>
 
-      {/* Client subcomponent that uses useSearchParams, wrapped in Suspense (required) */}
       <Suspense fallback={<div className="text-white/60">Loading…</div>}>
-        {/* @ts-expect-error Server/Client boundary */}
         <ReferClient />
       </Suspense>
 

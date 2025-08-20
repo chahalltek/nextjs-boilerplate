@@ -1,7 +1,8 @@
-// app/starter-pack/page.tsx
+// app/starter-pack/page.jsx
 import { Suspense } from "react";
+import StarterPackForm from "./StarterPackForm";
 
-export const dynamic = "force-static"; // keeps SSG fast; client handles interactivity
+export const dynamic = "force-static";
 
 export default function StarterPackPage() {
   return (
@@ -12,7 +13,6 @@ export default function StarterPackPage() {
       </p>
 
       <Suspense fallback={<div className="text-white/60">Loading form…</div>}>
-        {/* No function props passed across the boundary */}
         <StarterPackForm tag="starter-pack" source="starter-pack-page" />
       </Suspense>
     </div>

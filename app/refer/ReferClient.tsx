@@ -8,7 +8,6 @@ export default function ReferClient() {
   const params = useSearchParams();
   const code = params.get("ref") || params.get("code") || "";
 
-  // persist ref code for future visits
   useEffect(() => {
     if (!code) return;
     try {
@@ -18,8 +17,7 @@ export default function ReferClient() {
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    const origin = window.location.origin;
-    const url = new URL(origin);
+    const url = new URL(window.location.origin);
     url.pathname = "/";
     if (code) url.searchParams.set("ref", code);
     return url.toString();
