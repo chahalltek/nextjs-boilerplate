@@ -1,207 +1,424 @@
-// app/cws/page.jsx
-import { listDir, getFile } from "@/lib/github";
-import matter from "gray-matter";
+// app/admin/cws/page.jsx
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
-import NflScheduleTicker from "@/components/NflScheduleTicker";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// Adds <link rel="alternate" type="application/rss+xml" href="/cws/rss">
-export const metadata = {
-  title: "Weekly Recap — Hey Skol Sister",
-  description:
-    "Coulda, Woulda, Shoulda: weekly fantasy recaps, lessons learned, and community reactions.",
-  alternates: {
-    types: {
-      "application/rss+xml": "/cws/rss",
-    },
-  },
+const emptyForm = {
+  slug: "",
+  title: "",
+  excerpt: "",
+  date: "",
+  content: "",
+  draft: false,
+  active: true,
+  publishAt: "", // datetime-local
+  coverUrl: "",
 };
 
-const DIR = "content/recaps";
-const b64 = (s) => Buffer.from(s || "", "base64").toString("utf8");
+export default function AdminCwsPage() {
+  const [recaps, setRecaps] = useState([]);
+  const [form, setForm] = useState(emptyForm);
+  const [msg, setMsg] = useState("");
+  const [loadingList, setLoadingList] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+  const [commitSha, setCommitSha] = useState("");
+  const fileInputRef = useRef(null);
 
-async function fetchPublishedRecaps() {
-  const items = await listDir(DIR).catch(() => []);
-  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
+  const sorted = useMemo(
+    () => [...recaps].sort((a, b) => a.slug.localeCompare(b.slug)),
+    [recaps]
+  );
 
-  const recaps = [];
-  for (const f of files) {
-    const file = await getFile(f.path).catch(() => null);
-    if (!file?.contentBase64) continue;
-    const raw = b64(file.contentBase64);
-    const parsed = matter(raw);
-    const fm = parsed.data || {};
-    if (fm.published === false) continue;
-
-    recaps.push({
-      slug: f.name.replace(/\.md$/, ""),
-      title: fm.title || f.name,
-      date: fm.date || "",
-      excerpt: fm.excerpt || "",
-      content: parsed.content || "",
-    });
+  function toIsoIfSet(dtLocal) {
+    if (!dtLocal) return "";
+    const d = new Date(dtLocal.replace(" ", "T"));
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString();
   }
 
-  // newest first
-  recaps.sort((a, b) => (b.date || b.slug).localeCompare(a.date || a.slug));
-  return recaps;
-}
+  async function loadList() {
+    setLoadingList(true);
+    setMsg("");
+    const res = await fetch("/api/admin/recaps", { credentials: "include" });
+    if (res.status === 401) {
+      window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      setMsg(data.error || `Load failed (${res.status})`);
+    } else {
+      setRecaps(data.recaps || []);
+    }
+    setLoadingList(false);
+  }
 
-function RssBadge() {
+  useEffect(() => { loadList(); }, []);
+
+  async function load(slug) {
+    setMsg("");
+    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, { credentials: "include" });
+    if (res.status === 401) {
+      window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      setMsg(data.error || `Load failed (${res.status})`);
+      return;
+    }
+    const { recap } = data;
+    // Accept either 'active' or legacy 'published' flags
+    const active =
+      recap.active ?? (recap.published !== false);
+
+    setForm({
+      slug: recap.slug,
+      title: recap.title || "",
+      excerpt: recap.excerpt || "",
+      date: recap.date || "",
+      content: recap.content || "",
+      draft: !!recap.draft,
+      active: !!active,
+      publishAt: recap.publishAt ? recap.publishAt.replace("Z", "") : "",
+      coverUrl: recap.coverUrl || "",
+    });
+    setCommitSha("");
+  }
+
+  function setField(k, v) {
+    setForm(f => ({ ...f, [k]: v }));
+  }
+
+  function onPickFile() {
+    fileInputRef.current?.click();
+  }
+
+  async function onFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadMsg("Uploading…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/uploads", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        if (res.status === 401) {
+          window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+          return;
+        }
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      setField("coverUrl", data.url);
+      setUploadMsg("✅ Uploaded! (copied below)");
+    } catch (err) {
+      setUploadMsg(`❌ ${err.message}`);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setMsg("");
+    setCommitSha("");
+
+    if (!form.slug.trim()) return setMsg("❌ Please provide a slug.");
+    if (!form.title.trim() || !form.content.trim()) return setMsg("❌ Please provide a title and content.");
+
+    setSaving(true);
+    try {
+      const contentWithCover = form.coverUrl
+        ? `![cover image](${form.coverUrl})\n\n${form.content}`
+        : form.content;
+
+      const payload = {
+        title: form.title,
+        excerpt: form.excerpt || undefined,
+        content: contentWithCover,
+        date: form.date || undefined,
+        draft: !!form.draft,
+        active: !!form.active,
+        // write published too for legacy consumers
+        published: !!form.active,
+        publishAt: toIsoIfSet(form.publishAt) || undefined,
+        coverUrl: form.coverUrl || undefined,
+      };
+
+      const res = await fetch(`/api/admin/recaps/${encodeURIComponent(form.slug)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        if (res.status === 401) {
+          window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+          return;
+        }
+        throw new Error(data.error || `Save failed (${res.status})`);
+      }
+      setCommitSha(data.commit || "");
+      setMsg("✅ Saved!");
+      loadList();
+    } catch (err) {
+      setMsg(`❌ ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function makeActive(slug) {
+    setMsg("");
+    // Load current, then PUT with active:true
+    const curRes = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, { credentials: "include" });
+    const cur = await curRes.json().catch(() => ({}));
+    if (!curRes.ok || !cur.ok) { setMsg(cur.error || `Load failed (${curRes.status})`); return; }
+
+    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        ...cur.recap,
+        active: true,
+        published: true,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Activate failed (${res.status})`); return; }
+    setMsg("✅ Activated");
+    loadList();
+  }
+
+  async function hide(slug) {
+    setMsg("");
+    const curRes = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, { credentials: "include" });
+    const cur = await curRes.json().catch(() => ({}));
+    if (!curRes.ok || !cur.ok) { setMsg(cur.error || `Load failed (${curRes.status})`); return; }
+
+    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        ...cur.recap,
+        active: false,
+        published: false,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Hide failed (${res.status})`); return; }
+    setMsg("✅ Hidden");
+    loadList();
+  }
+
+  async function remove(slug) {
+    if (!confirm(`Delete recap "${slug}"? This cannot be undone.`)) return;
+    setMsg("");
+    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) { setMsg(data.error || `Delete failed (${res.status})`); return; }
+    setMsg("🗑️ Deleted");
+    setForm(emptyForm);
+    loadList();
+  }
+
   return (
-    <Link
-      href="/cws/rss"
-      title="RSS feed"
-      className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white hover:bg-white/10"
-    >
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        className="h-4 w-4"
-        fill="currentColor"
-      >
-        <path d="M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z" />
-      </svg>
-      RSS
-    </Link>
-  );
-}
-
-function CwsExplainer() {
-  return (
-    <section className="card p-6 mb-8">
-      <h2 className="text-xl font-bold mb-3">
-        What is “Weekly Recap” (aka CWS)?
-      </h2>
-      <p className="text-white/80">
-        CWS stands for <em>Coulda, Woulda, Shoulda</em> — the spiritual cousin
-        of Survivor confessionals and the official diary of fantasy football
-        regret.
-      </p>
-
-      <div className="mt-5 space-y-6 text-white/80">
-        <div>
-          <p className="font-semibold">How to play along</p>
-          <div className="h-2" />
-          <ul className="list-disc pl-5 mt-3 space-y-1">
-            <li>
-              <strong>Step 1:</strong> Set your lineup with confidence. (What
-              could go wrong?)
-            </li>
-            <li>
-              <strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve
-              all been there.)
-            </li>
-            <li>
-              <strong>Step 3:</strong> Post your recap: what happened, your bold
-              takes, and the <em>one tiny decision</em> that changed everything.
-            </li>
-            <li>
-              <strong>Step 4:</strong> React to others with empathy, stats,
-              memes, and kicker therapy.
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <p className="font-semibold">House rules</p>
-          <div className="h-2" />
-          <ul className="list-disc pl-5 mt-3 space-y-1">
-            <li>
-              Be kind. We’re here to laugh, learn, and commiserate — not
-              blindside each other.
-            </li>
-            <li>
-              Screenshots welcome. Bonus points for dramatic “before/after”
-              energy.
-            </li>
-            <li>
-              Ties are broken by the best GIF, the spiciest stat, or the most
-              creative “shoulda.”
-            </li>
-          </ul>
-        </div>
+    <div className="container mx-auto max-w-6xl py-8">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Admin — CWS</h1>
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/20"
+        >
+          <span aria-hidden>←</span> Admin Home
+        </Link>
       </div>
-    </section>
-  );
-}
 
-export default async function CwsIndexPage() {
-  const recaps = await fetchPublishedRecaps();
-  const [latest, ...older] = recaps;
-
-  return (
-    <div className="space-y-10">
-    <div className="space-y-2">
-        <p className="text-center text-sm text-white/60">
-          NFL schedule this week
-        </p>
-        <NflScheduleTicker />
-      </div>
-      <div className="max-w-5xl mx-auto py-10 space-y-10">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Weekly Recap</h1>
-          <RssBadge />
-        </div>
-
- {!latest ? (
-          <>
-            <div className="text-white/70">No recaps yet. Check back soon!</div>
-            <CwsExplainer />
-          </>
-        ) : (
-          <>
-            {/* Latest full */}
-            <article className="card p-5 space-y-3">
-              <div className="text-sm text-white/60">{latest.date}</div>
-              <h2 className="text-xl font-semibold">{latest.title}</h2>
-              {latest.excerpt && (
-                <p className="text-white/80">{latest.excerpt}</p>
-              )}
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown>{latest.content}</ReactMarkdown>
-              </div>
-              <div>
-                <Link
-                  href={`/cws/${encodeURIComponent(latest.slug)}`}
-                  className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
-                >
-                  Open comments & reactions →
-                </Link>
-              </div>
-              </article>
-              
-            {/* Explainer */}
-            <CwsExplainer />
-
-            {/* Older tiles */}
-            {older.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Previous Weeks</h3>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {older.map((r) => (
-                    <Link
-                      key={r.slug}
-                      href={`/cws/${encodeURIComponent(r.slug)}`}
-                      className="card p-4 block hover:bg-white/5"
+      <div className="grid grid-cols-1 md:grid-cols-[320px,1fr] gap-6">
+        {/* Left: list */}
+        <div className="card p-4 min-h-[320px]">
+          <div className="text-lg font-semibold mb-2">Existing recaps</div>
+          {loadingList ? (
+            <div className="text-white/60">Loading…</div>
+          ) : sorted.length === 0 ? (
+            <div className="text-white/60">No recaps yet.</div>
+          ) : (
+            <ul className="space-y-1">
+              {sorted.map((r) => (
+                <li key={r.slug} className="flex items-center justify-between gap-2">
+                  <button
+                    className="text-left flex-1 py-1 hover:text-white text-white/80"
+                    onClick={() => load(r.slug)}
+                    title="Edit"
+                  >
+                    {r.slug} {r.active !== false && r.published !== false && (
+                      <span className="ml-2 text-xs text-emerald-400">● active</span>
+                    )}
+                  </button>
+                  {r.active !== false && r.published !== false ? (
+                    <button
+                      className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                      onClick={() => hide(r.slug)}
+                      title="Set inactive"
                     >
-                      <div className="text-xs text-white/50">{r.date}</div>
-                      <div className="font-medium">{r.title}</div>
-                      {r.excerpt && (
-                        <div className="text-sm text-white/70 mt-1">
-                          {r.excerpt}
-                        </div>
-                      )}
-                    </Link>
-                  ))}
-                </div>
+                      Hide
+                    </button>
+                  ) : (
+                    <button
+                      className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                      onClick={() => makeActive(r.slug)}
+                      title="Set active"
+                    >
+                      Activate
+                    </button>
+                  )}
+                  <button
+                    className="text-xs px-2 py-1 rounded bg-white/10 border border-white/20 hover:bg-white/20"
+                    onClick={() => remove(r.slug)}
+                    title="Delete"
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Right: editor */}
+        <form onSubmit={save} className="card p-4 space-y-4">
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Slug</label>
+            <input
+              className="input w-full"
+              value={form.slug}
+              onChange={(e) =>
+                setField(
+                  "slug",
+                  e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, "-").replace(/--+/g, "-")
+                )
+              }
+              placeholder="week-1"
+            />
+            <p className="text-xs text-white/50 mt-1">
+              Saved as <code>content/recaps/&lt;slug&gt;.md</code>
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Title</label>
+            <input
+              className="input w-full"
+              value={form.title}
+              onChange={(e) => setField("title", e.target.value)}
+              placeholder="Week 1 — Coulda Woulda Shoulda"
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Date</label>
+              <input
+                className="input w-full"
+                type="date"
+                value={form.date}
+                onChange={(e) => setField("date", e.target.value)}
+              />
+            </div>
+            <label className="inline-flex items-center gap-2 text-sm mt-7 sm:mt-0">
+              <input
+                type="checkbox"
+                checked={form.draft}
+                onChange={(e) => setField("draft", e.target.checked)}
+              />
+              Draft
+            </label>
+            <div>
+              <label className="block text-sm text-white/70 mb-1">Publish at</label>
+              <input
+                className="input w-full"
+                type="datetime-local"
+                value={form.publishAt}
+                onChange={(e) => setField("publishAt", e.target.value)}
+              />
+              <p className="text-xs text-white/40 mt-1">Future time to auto-publish.</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Excerpt</label>
+            <input
+              className="input w-full"
+              value={form.excerpt}
+              onChange={(e) => setField("excerpt", e.target.value)}
+              placeholder="Short summary (optional)"
+            />
+          </div>
+
+          {/* Upload cover */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onPickFile}
+                className="px-3 py-1.5 rounded border border-white/20 text-white/80 hover:text-white hover:bg-white/10"
+              >
+                Upload image
+              </button>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} className="hidden" />
+              {uploadMsg && <span className="text-sm text-white/70">{uploadMsg}</span>}
+            </div>
+            {form.coverUrl && (
+              <div className="text-sm">
+                <div className="text-white/70">Image URL:</div>
+                <code className="break-all">{form.coverUrl}</code>
               </div>
             )}
-          </>
-        )}
+          </div>
+
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Content (Markdown)</label>
+            <textarea
+              className="input w-full min-h-[240px]"
+              value={form.content}
+              onChange={(e) => setField("content", e.target.value)}
+              placeholder="Write your recap…"
+            />
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.active}
+              onChange={(e) => setField("active", e.target.checked)}
+            />
+            Active (visible)
+          </label>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={saving || !form.slug || !form.title || !form.content}
+              className="px-4 py-2 rounded bg-white/10 text-white border border-white/20 hover:bg-white/20 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save Recap"}
+            </button>
+            {msg && <span className="text-sm">{msg}</span>}
+            {commitSha && <span className="text-xs text-white/50">commit: {commitSha.slice(0,7)}</span>}
+          </div>
+
+          <p className="text-xs text-white/40">Tip: future “Publish at” times will auto-publish via Vercel Cron.</p>
+        </form>
       </div>
     </div>
   );
