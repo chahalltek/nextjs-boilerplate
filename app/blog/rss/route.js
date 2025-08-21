@@ -1,4 +1,4 @@
-// app/blog/rss/route.ts
+// app/blog/rss/route.js
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,7 +8,7 @@ import { listDir, getFile } from "@/lib/github";
 
 const SITE = "https://www.heyskolsister.com";
 const DIR = "content/posts";
-const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
+const b64 = (s) => Buffer.from(s || "", "base64").toString("utf8");
 
 function rfc822(dateStr = "") {
   const d = new Date(dateStr);
@@ -17,7 +17,7 @@ function rfc822(dateStr = "") {
 
 function toTime(dateStr = "") {
   const d = new Date(dateStr);
-  if (!isNaN(d as any)) return d.getTime();
+  if (!isNaN(d.getTime())) return d.getTime();
   const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
   return 0;
@@ -25,16 +25,9 @@ function toTime(dateStr = "") {
 
 async function fetchPosts() {
   const items = await listDir(DIR).catch(() => []);
-  const files = items.filter((it: any) => it.type === "file" && /\.mdx?$/i.test(it.name));
+  const files = items.filter((it) => it.type === "file" && /\.mdx?$/i.test(it.name));
 
-  const posts: Array<{
-    slug: string;
-    title: string;
-    date: string;
-    excerpt: string;
-    html: string; // full content as HTML
-  }> = [];
-
+  const posts = [];
   for (const f of files) {
     const file = await getFile(f.path).catch(() => null);
     if (!file?.contentBase64) continue;
@@ -44,15 +37,14 @@ async function fetchPosts() {
     const fm = parsed.data || {};
     if (fm.draft === true) continue;
 
-    // Try to render Markdown to HTML (prefers 'marked' if installed)
+    // Try to render Markdown to HTML; fallback to <pre> if 'marked' isn't installed
     let html = "";
     try {
-      const { marked } = await import("marked"); // npm i marked
+      const { marked } = await import("marked"); // optional dependency
       html = marked.parse(parsed.content || "");
     } catch {
-      // Fallback: wrap raw markdown for readers that can handle it
-      const esc = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const esc = (s) =>
+        String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       html = `<pre>${esc(parsed.content || "")}</pre>`;
     }
 
@@ -84,9 +76,9 @@ export async function GET() {
   <pubDate>${rfc822(p.date)}</pubDate>
   <description><![CDATA[ ${desc} ]]></description>
   <content:encoded><![CDATA[ ${p.html} ]]></content:encoded>
-</item>`;
+</item>`.trim();
     })
-    .join("");
+    .join("\n");
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="/rss.xsl"?>
