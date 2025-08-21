@@ -14,7 +14,6 @@ function rfc822(dateStr = "") {
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? new Date().toUTCString() : d.toUTCString();
 }
-
 function toTime(dateStr = "") {
   const d = new Date(dateStr);
   if (!isNaN(d.getTime())) return d.getTime();
@@ -22,53 +21,42 @@ function toTime(dateStr = "") {
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
   return 0;
 }
+const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+// tiny markdown→HTML: paragraphs + line breaks (enough for feeds)
+function mdToHtml(md = "") {
+  const blocks = md.trim().split(/\n\s*\n/);
+  return blocks.map(b => `<p>${esc(b).replace(/\n/g,"<br/>")}</p>`).join("\n");
+}
 
 async function fetchPosts() {
   const items = await listDir(DIR).catch(() => []);
-  const files = items.filter((it) => it.type === "file" && /\.mdx?$/i.test(it.name));
-
+  const files = items.filter(it => it.type === "file" && /\.mdx?$/i.test(it.name));
   const posts = [];
   for (const f of files) {
     const file = await getFile(f.path).catch(() => null);
     if (!file?.contentBase64) continue;
-
     const raw = b64(file.contentBase64);
     const parsed = matter(raw);
     const fm = parsed.data || {};
     if (fm.draft === true) continue;
-
-    // Try to render Markdown to HTML; fallback to <pre> if 'marked' isn't installed
-    let html = "";
-    try {
-      const { marked } = await import("marked"); // optional dependency
-      html = marked.parse(parsed.content || "");
-    } catch {
-      const esc = (s) =>
-        String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      html = `<pre>${esc(parsed.content || "")}</pre>`;
-    }
-
     posts.push({
       slug: f.name.replace(/\.(md|mdx)$/i, ""),
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      html,
+      html: mdToHtml(parsed.content || ""),
     });
   }
-
   posts.sort((a, b) => toTime(b.date) - toTime(a.date));
   return posts;
 }
 
 export async function GET() {
   const posts = await fetchPosts();
-
-  const itemsXml = posts
-    .map((p) => {
-      const url = `${SITE}/blog/${encodeURIComponent(p.slug)}`;
-      const desc = p.excerpt || p.title;
-      return `
+  const itemsXml = posts.map(p => {
+    const url = `${SITE}/blog/${encodeURIComponent(p.slug)}`;
+    const desc = p.excerpt || p.title;
+    return `
 <item>
   <title><![CDATA[ ${p.title} ]]></title>
   <link>${url}</link>
@@ -77,11 +65,9 @@ export async function GET() {
   <description><![CDATA[ ${desc} ]]></description>
   <content:encoded><![CDATA[ ${p.html} ]]></content:encoded>
 </item>`.trim();
-    })
-    .join("\n");
+  }).join("\n");
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/xsl" href="/rss.xsl"?>
 <rss version="2.0"
   xmlns:content="http://purl.org/rss/1.0/modules/content/"
   xmlns:atom="http://www.w3.org/2005/Atom">
@@ -94,7 +80,6 @@ export async function GET() {
     ${itemsXml}
   </channel>
 </rss>`;
-
   return new Response(xml, {
     headers: {
       "Content-Type": "application/rss+xml; charset=utf-8",
