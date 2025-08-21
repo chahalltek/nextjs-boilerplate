@@ -1,14 +1,12 @@
-// app/api/starter-pack/route.ts
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
-export const runtime = "nodejs";         // needed if you later attach files, keeps it off the Edge
-export const dynamic = "force-dynamic";  // avoid caching
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM =
-  process.env.EMAIL_FROM || "Hey Skol Sister <onboarding@resend.dev>";
+const FROM = process.env.EMAIL_FROM || "Hey Skol Sister <onboarding@resend.dev>";
 const DOWNLOAD_URL =
   process.env.STARTER_PACK_URL ||
   `${process.env.NEXT_PUBLIC_SITE_URL || ""}/starter-pack.pdf`;
@@ -19,13 +17,25 @@ function isEmail(v: string) {
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
+    const { email, tag, source } = await req.json();
 
     if (!email || !isEmail(email)) {
-      return NextResponse.json(
-        { ok: false, error: "Please enter a valid email." },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Please enter a valid email." }, { status: 400 });
+    }
+
+    // (Optional) Try to register the subscriber using your existing endpoint.
+    // Failures here won't block the email.
+    try {
+      const base = process.env.NEXT_PUBLIC_SITE_URL || "";
+      if (base) {
+        await fetch(new URL("/api/subscribe", base), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, tag, source }),
+        });
+      }
+    } catch (e) {
+      console.warn("[starter-pack] subscribe forwarding failed:", e);
     }
 
     const { error } = await resend.emails.send({
@@ -54,18 +64,12 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("[Resend] send error:", error);
-      return NextResponse.json(
-        { ok: false, error: "Could not send email. Please try again." },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: "Could not send email. Please try again." }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("starter-pack POST error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Bad request." },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
   }
 }
