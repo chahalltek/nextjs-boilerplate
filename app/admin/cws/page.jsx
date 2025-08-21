@@ -1,22 +1,23 @@
+// app/admin/cws/page.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 export default function AdminCwsPage() {
+  // ---------- list state ----------
   const [items, setItems] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState("");
 
-  // editor state
+  // ---------- editor state ----------
+  const [editing, setEditing] = useState(false);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [excerpt, setExcerpt] = useState("");
   const [published, setPublished] = useState(false);
   const [content, setContent] = useState("");
-  const [editing, setEditing] = useState(false); // are we editing an existing recap?
-
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
@@ -24,13 +25,26 @@ export default function AdminCwsPage() {
 
   // ---------- helpers ----------
   function normalizeSlug(s) {
-    return s
+    return String(s)
       .toLowerCase()
-      .replace(/[^a-z0-9\-]/g, "-")
-      .replace(/--+/g, "-")
-      .replace(/^-+|-+$/g, "");
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
   }
 
+  function resetForm() {
+    setEditing(false);
+    setSlug("");
+    setTitle("");
+    setExcerpt("");
+    setContent("");
+    setPublished(false);
+    setDate(new Date().toISOString().slice(0, 10));
+    setSaveMsg("");
+    contentRef.current?.focus();
+  }
+
+  // ---------- load list ----------
   async function load() {
     setLoadingList(true);
     setListError("");
@@ -63,102 +77,7 @@ export default function AdminCwsPage() {
     return arr;
   }, [items]);
 
-  function resetForm() {
-    setSlug("");
-    setTitle("");
-    setDate(new Date().toISOString().slice(0, 10));
-    setExcerpt("");
-    setPublished(false);
-    setContent("");
-    setEditing(false);
-    setSaveMsg("");
-  }
-
-  function startEditLocalFields(it) {
-  setSlug(it.slug || "");
-  setTitle(it.title || "");
-  setDate(it.date || new Date().toISOString().slice(0, 10));
-  setExcerpt(it.excerpt || "");
-  setPublished(!!it.published);
-  setSaveMsg("");
-  setEditing(true);
-  setTimeout(() => contentRef.current?.focus(), 0);
-}
-
-async function startEdit(it) {
-  // fill what we already know
-  startEditLocalFields(it);
-
-  // if list payload didn’t include content, fetch it now
-  if (it.content && typeof it.content === "string") {
-    setContent(it.content);
-    return;
-  }
-
-  setContent(""); // clear while loading
-  try {
-    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(it.slug)}`, {
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.ok && typeof data.content === "string") {
-      setContent(data.content);
-    } else {
-      setContent("");
-      setSaveMsg(`❌ Could not load content for "${it.slug}"`);
-    }
-  } catch (e) {
-    setContent("");
-    setSaveMsg(`❌ ${e?.message || "Failed to load content"}`);
-  }
-}
-
-  }
-
-  // ---------- mutations ----------
-  async function onSave(e) {
-    e.preventDefault();
-    setSaveMsg("");
-    if (!slug.trim() || !title.trim() || !content.trim()) {
-      setSaveMsg("❌ Please provide slug, title, and content.");
-      return;
-    }
-    setSaving(true);
-    try {
-      // API accepts POST for create *or* update (overwrites existing file)
-      const res = await fetch("/api/admin/recaps", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug: normalizeSlug(slug),
-          title,
-          date,
-          excerpt,
-          published,
-          content,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 401) {
-        window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
-        return;
-      }
-      if (!res.ok || !data.ok) throw new Error(data.error || `Save failed (${res.status})`);
-
-      setSaveMsg("✅ Saved!");
-      await load();
-      // stay in edit mode (handy), or reset—choose one:
-      // resetForm();
-    } catch (e) {
-      setSaveMsg(`❌ ${e.message || String(e)}`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
+  // ---------- actions ----------
   async function togglePublish(slug, nextPublished) {
     try {
       const res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, {
@@ -193,9 +112,91 @@ async function startEdit(it) {
       }
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
       await load();
-      if (editing && slug === normalizeSlug(slug)) resetForm();
     } catch (e) {
       alert(`Failed to delete: ${e.message || e}`);
+    }
+  }
+
+  // Prefill editor with full content via API
+  async function startEdit(it) {
+    setSaveMsg("");
+    setEditing(true);
+    setSlug(it.slug);
+    setTitle(it.title || "");
+    setDate(it.date || new Date().toISOString().slice(0, 10));
+    setExcerpt(it.excerpt || "");
+    setPublished(!!it.published);
+    setContent(""); // temporary while fetching
+
+    try {
+      const res = await fetch(`/api/admin/recaps/${encodeURIComponent(it.slug)}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+        return;
+      }
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const d = data.data || {};
+      if (d.slug) setSlug(d.slug);
+      if (d.title) setTitle(d.title);
+      if (d.date) setDate(d.date);
+      if (typeof d.published === "boolean") setPublished(d.published);
+      if (d.excerpt != null) setExcerpt(d.excerpt);
+      setContent(d.content || "");
+      contentRef.current?.focus();
+    } catch (e) {
+      setSaveMsg(`❌ Failed to load content for edit: ${e.message || e}`);
+    }
+  }
+
+  async function onSave(e) {
+    e.preventDefault();
+    setSaveMsg("");
+    if (!slug.trim() || !title.trim() || !content.trim()) {
+      setSaveMsg("❌ Please provide slug, title, and content.");
+      return;
+    }
+    setSaving(true);
+    try {
+      let res, data;
+      if (editing) {
+        res = await fetch(`/api/admin/recaps/${encodeURIComponent(slug)}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, date, excerpt, published, content }),
+        });
+      } else {
+        res = await fetch("/api/admin/recaps", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: normalizeSlug(slug),
+            title,
+            date,
+            excerpt,
+            published,
+            content,
+          }),
+        });
+      }
+      data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        window.location.href = `/admin/login?from=${encodeURIComponent("/admin/cws")}`;
+        return;
+      }
+      if (!res.ok || !data.ok) throw new Error(data.error || `Save failed (${res.status})`);
+      setSaveMsg("✅ Saved! (Git commit created)");
+      await load();
+      if (!editing) resetForm();
+    } catch (e) {
+      setSaveMsg(`❌ ${e.message || String(e)}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -212,7 +213,7 @@ async function startEdit(it) {
         </Link>
       </div>
 
-      {/* Existing recaps (now shown FIRST) */}
+      {/* Existing recaps */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Existing Recaps</h2>
@@ -280,9 +281,7 @@ async function startEdit(it) {
       {/* Editor */}
       <form onSubmit={onSave} className="card p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {editing ? "Edit Recap" : "Create Recap"}
-          </h2>
+          <h2 className="text-lg font-semibold">{editing ? "Edit Recap" : "Create Recap"}</h2>
           {editing && (
             <button
               type="button"
