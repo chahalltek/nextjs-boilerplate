@@ -28,6 +28,7 @@ function useHoverIntent() {
 export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { openKey, open, closeSoon, closeNow } = useHoverIntent();
+  const groups = Array.isArray(navGroups) ? navGroups : []; // <- guard
 
   useEffect(() => {
     const onEsc = (e) => {
