@@ -28,6 +28,51 @@ function normalizeSlug(s) {
     .replace(/^-|-$/g, "");
 }
 
+// -- Parse YAML-ish front matter and extract meta + body
+function parseFrontMatter(md = "") {
+  const fm = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+  if (!fm) return { meta: {}, body: md };
+  const yaml = fm[1];
+  const body = md.slice(fm[0].length);
+  const meta = {};
+  yaml.split("\n").forEach((line) => {
+    const m = line.match(/^\s*([A-Za-z_][\w-]*)\s*:\s*(.*)\s*$/);
+    if (!m) return;
+    let key = m[1];
+    let val = m[2].trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (/^\[(.*)\]$/.test(val)) {
+      const inner = val.slice(1, -1);
+      meta[key] = inner
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (key.toLowerCase() === "tags" && val.includes(",")) {
+      meta[key] = val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (["draft", "published"].includes(key)) {
+      meta[key] = /^(true|yes|on|1)$/i.test(val);
+    } else {
+      meta[key] = val;
+    }
+  });
+  // normalize common aliases
+  if (meta.published !== undefined && meta.draft === undefined) meta.draft = !meta.published;
+  if (meta.coverImage && !meta.coverUrl) meta.coverUrl = meta.coverImage;
+  return { meta, body };
+}
+
+// -- If content starts with a cover image, pull it out and return the clean body
+function stripInjectedCover(md = "") {
+  const m = md.match(/^\s*!\[[^\]]*\]\(([^)]+)\)\s*\n{1,2}/); // leading markdown image
+  if (!m) return { body: md, coverUrl: "" };
+  return { body: md.slice(m[0].length), coverUrl: m[1] };
+}
+
 export default function AdminPostsPage() {
   // ---------- list state ----------
   const [list, setList] = useState([]); // [{slug,title,draft?,publishAt?,date?,excerpt?}, ...]
@@ -166,16 +211,27 @@ export default function AdminPostsPage() {
         }
         throw new Error(data.error || `Load failed (${res.status})`);
       }
+
       const d = data.data || data; // be flexible on shape
+      const md = d.content || d.raw || "";
+
+      const { meta, body: afterFm } = parseFrontMatter(md);
+      const { body: cleanBody, coverUrl: coverFromBody } = stripInjectedCover(afterFm);
+
       setSlug(d.slug || slugToLoad);
-      setTitle(d.title || "");
-      setExcerpt(d.excerpt || "");
-      setDate(d.date || "");
-      setContent(d.content || "");
-      setCoverUrl(d.coverUrl || "");
-      setTags(Array.isArray(d.tags) ? d.tags.join(", ") : d.tags || "");
-      setDraft(Boolean(d.draft));
-      setPublishAt(fromIsoToLocal(d.publishAt || ""));
+      setTitle(d.title ?? meta.title ?? "");
+      setExcerpt(d.excerpt ?? meta.excerpt ?? "");
+      setDate(d.date ?? meta.date ?? "");
+      setDraft(d.draft ?? meta.draft ?? false);
+      setPublishAt(fromIsoToLocal(d.publishAt ?? meta.publishAt ?? ""));
+      setTags(
+        Array.isArray(d.tags)
+          ? d.tags.join(", ")
+          : d.tags ?? (Array.isArray(meta.tags) ? meta.tags.join(", ") : meta.tags ?? "")
+      );
+      setCoverUrl(d.coverUrl ?? meta.coverUrl ?? coverFromBody ?? "");
+      setContent(cleanBody || ""); // show body without front-matter/cover line
+
       setSaveMsg("✅ Loaded");
       contentRef.current?.focus();
     } catch (err) {
