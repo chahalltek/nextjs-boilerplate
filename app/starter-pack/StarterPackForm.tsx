@@ -66,8 +66,8 @@ export default function StarterPackForm({
     className="
       inline-flex items-center gap-2
       px-5 py-2.5 rounded-xl
-      bg-[color:var(--skol-gold)] text-black font-semibold
-      shadow-sm ring-1 ring-black/10
+      bg-[color:var(--skol-gold)] text-white font-semibold
+      shadow-sm ring-1 ring-white/10
       hover:shadow-md hover:brightness-105
       active:translate-y-[1px]
       disabled:opacity-50 disabled:cursor-not-allowed
