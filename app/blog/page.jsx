@@ -1,6 +1,8 @@
 // app/blog/page.jsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;                // never ISR this page
+export const fetchCache = "force-no-store"; // default all fetches to no-store
 
 import Link from "next/link";
 import matter from "gray-matter";
@@ -21,7 +23,8 @@ function toTime(dateStr) {
 
 async function fetchPosts() {
   const items = await listDir(DIR).catch(() => []);
-  const files = items.filter((it) => it.type === "file" && it.name.endsWith(".md"));
+  // accept .md or .mdx, any case
+  const files = items.filter((it) => it.type === "file" && /\.mdx?$/i.test(it.name));
 
   const posts = [];
   for (const f of files) {
@@ -32,11 +35,28 @@ async function fetchPosts() {
     const parsed = matter(raw);
     const fm = parsed.data || {};
 
-    if (fm.draft === true) continue;
+    // Normalize booleans possibly saved as strings
+    const draftStr = String(fm.draft ?? "").toLowerCase().trim();
+    const activeStr = String(fm.active ?? "true").toLowerCase().trim();
+
+    const draft =
+      fm.draft === true ||
+      draftStr === "true" || draftStr === "1" || draftStr === "yes";
+
+    const active =
+      fm.active === true ||
+      (activeStr !== "false" && activeStr !== "0" && activeStr !== "no");
+
+    // Hide drafts or explicitly inactive posts
+    if (draft || !active) continue;
+
+    // Hide future-scheduled posts if publishAt is in the future
+    const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
+    if (publishAt && Date.now() < publishAt.getTime()) continue;
 
     posts.push({
-      slug: f.name.replace(/\.md$/, ""),
-      title: fm.title || f.name.replace(/\.md$/, ""),
+      slug: f.name.replace(/\.(md|mdx)$/i, ""),
+      title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
     });
