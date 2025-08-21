@@ -7,7 +7,7 @@ import Link from "next/link";
 function chipColor(status) {
   if (status === "active") return "text-emerald-400";
   if (status === "scheduled") return "text-sky-400";
-  return "text-white/50";
+  return "text-white/50"; // inactive
 }
 
 function computeStatus(post) {
@@ -20,27 +20,37 @@ function computeStatus(post) {
   return "active";
 }
 
+function normalizeSlug(s) {
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 export default function AdminPostsPage() {
   // ---------- list state ----------
-  const [list, setList] = useState([]); // [{slug,title,draft?,publishAt?,date?}, ...]
+  const [list, setList] = useState([]); // [{slug,title,draft?,publishAt?,date?,excerpt?}, ...]
   const [loadingList, setLoadingList] = useState(false);
   const [listMsg, setListMsg] = useState("");
   const [q, setQ] = useState("");
 
   // ---------- editor state ----------
+  const [editing, setEditing] = useState(false);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [date, setDate] = useState("");
   const [content, setContent] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
-  const [tags, setTags] = useState("");
+  const [tags, setTags] = useState(""); // comma-separated in UI
   const [draft, setDraft] = useState(false);
   const [publishAt, setPublishAt] = useState(""); // datetime-local
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [commitSha, setCommitSha] = useState("");
   const fileInputRef = useRef(null);
+  const contentRef = useRef(null);
 
   // ---------- list fetch ----------
   async function loadList() {
@@ -53,7 +63,6 @@ export default function AdminPostsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      // Expect data.posts: [{slug,title,draft?,publishAt?,date?}, ...]
       setList(Array.isArray(data.posts) ? data.posts : []);
     } catch (err) {
       setListMsg(`❌ ${err.message || "Failed to load"}`);
@@ -70,9 +79,7 @@ export default function AdminPostsPage() {
     const qq = q.trim().toLowerCase();
     if (!qq) return list;
     return list.filter((p) =>
-      [p.title, p.slug, p.excerpt]
-        .filter(Boolean)
-        .some((s) => String(s).toLowerCase().includes(qq))
+      [p.title, p.slug, p.excerpt].filter(Boolean).some((s) => String(s).toLowerCase().includes(qq))
     );
   }, [list, q]);
 
@@ -120,12 +127,14 @@ export default function AdminPostsPage() {
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "";
-    // yyyy-MM-ddThh:mm
     const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+      d.getMinutes()
+    )}`;
   }
 
   function resetEditor(newSlug = "") {
+    setEditing(false);
     setSlug(newSlug);
     setTitle("");
     setExcerpt("");
@@ -137,11 +146,13 @@ export default function AdminPostsPage() {
     setPublishAt("");
     setCommitSha("");
     setSaveMsg("");
+    contentRef.current?.focus();
   }
 
   // ---------- row actions ----------
   async function onEdit(slugToLoad) {
     setSaveMsg("Loading post…");
+    setEditing(true);
     try {
       const res = await fetch(`/api/admin/posts/${encodeURIComponent(slugToLoad)}?raw=1`, {
         credentials: "include",
@@ -155,17 +166,18 @@ export default function AdminPostsPage() {
         }
         throw new Error(data.error || `Load failed (${res.status})`);
       }
-      // Expect shape similar to what the PUT endpoint accepts
-      setSlug(data.slug || slugToLoad);
-      setTitle(data.title || "");
-      setExcerpt(data.excerpt || "");
-      setDate(data.date || "");
-      setContent(data.content || "");
-      setCoverUrl(data.coverUrl || "");
-      setTags(Array.isArray(data.tags) ? data.tags.join(", ") : (data.tags || ""));
-      setDraft(Boolean(data.draft));
-      setPublishAt(fromIsoToLocal(data.publishAt || ""));
+      const d = data.data || data; // be flexible on shape
+      setSlug(d.slug || slugToLoad);
+      setTitle(d.title || "");
+      setExcerpt(d.excerpt || "");
+      setDate(d.date || "");
+      setContent(d.content || "");
+      setCoverUrl(d.coverUrl || "");
+      setTags(Array.isArray(d.tags) ? d.tags.join(", ") : d.tags || "");
+      setDraft(Boolean(d.draft));
+      setPublishAt(fromIsoToLocal(d.publishAt || ""));
       setSaveMsg("✅ Loaded");
+      contentRef.current?.focus();
     } catch (err) {
       setSaveMsg(`❌ ${err.message}`);
     }
@@ -196,11 +208,7 @@ export default function AdminPostsPage() {
   }
 
   async function onToggleVisibility(row) {
-    // Hide => set draft:true ; Show => draft:false
-    const nextDraft = !computeStatus(row) || computeStatus(row) === "active" ? true : row.draft ? false : true;
-    // Simpler: flip row.draft
-    const desired = !row.draft;
-
+    const desired = !row.draft; // flip draft flag
     try {
       const res = await fetch(`/api/admin/posts/${encodeURIComponent(row.slug)}`, {
         method: "PATCH",
@@ -216,10 +224,7 @@ export default function AdminPostsPage() {
         }
         throw new Error(data.error || `Update failed (${res.status})`);
       }
-      // Refresh list entry locally
-      setList((prev) =>
-        prev.map((p) => (p.slug === row.slug ? { ...p, draft: desired } : p))
-      );
+      setList((prev) => prev.map((p) => (p.slug === row.slug ? { ...p, draft: desired } : p)));
     } catch (err) {
       alert(err.message || "Failed to update visibility");
     }
@@ -233,6 +238,14 @@ export default function AdminPostsPage() {
     if (!slug.trim()) return setSaveMsg("❌ Please provide a slug.");
     if (!title.trim() || !content.trim()) return setSaveMsg("❌ Please provide a title and content.");
 
+    const tagsArray =
+      typeof tags === "string"
+        ? tags
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/posts/${encodeURIComponent(slug)}`, {
@@ -244,7 +257,7 @@ export default function AdminPostsPage() {
           excerpt,
           content: coverUrl ? `![cover image](${coverUrl})\n\n${content}` : content,
           date: date || undefined,
-          tags: tags || undefined, // comma-separated ok
+          tags: tagsArray.length ? tagsArray : undefined,
           draft,
           publishAt: toIsoIfSet(publishAt) || undefined,
         }),
@@ -268,6 +281,7 @@ export default function AdminPostsPage() {
           draft,
           publishAt: toIsoIfSet(publishAt) || undefined,
           date: date || undefined,
+          excerpt,
         };
         const i = prev.findIndex((p) => p.slug === slug);
         if (i >= 0) {
@@ -277,6 +291,8 @@ export default function AdminPostsPage() {
         }
         return [row, ...prev];
       });
+
+      setEditing(true); // remain in edit mode after save
     } catch (err) {
       setSaveMsg(`❌ ${err.message}`);
     } finally {
@@ -284,6 +300,7 @@ export default function AdminPostsPage() {
     }
   }
 
+  // ---------- UI ----------
   return (
     <div className="container max-w-5xl py-10 space-y-8">
       <div className="flex items-center justify-between gap-4">
@@ -293,7 +310,7 @@ export default function AdminPostsPage() {
         </Link>
       </div>
 
-      {/* Existing posts (list) */}
+      {/* Existing posts (list FIRST) */}
       <section className="rounded-xl border border-white/10 bg-white/5">
         <div className="p-4 border-b border-white/10 flex items-center gap-3">
           <input
@@ -304,6 +321,13 @@ export default function AdminPostsPage() {
           />
           <button onClick={loadList} className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
             Refresh
+          </button>
+          <button
+            onClick={() => resetEditor("")}
+            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
+            title="Start a new post"
+          >
+            + New post
           </button>
         </div>
 
@@ -352,7 +376,7 @@ export default function AdminPostsPage() {
 
       {/* Create / Edit form */}
       <section className="space-y-5">
-        <h2 className="text-lg font-semibold">Create / Edit Post</h2>
+        <h2 className="text-lg font-semibold">{editing ? "Edit Post" : "Create Post"}</h2>
 
         <form onSubmit={onSave} className="space-y-5">
           <div className="card p-5">
@@ -361,11 +385,7 @@ export default function AdminPostsPage() {
               className="input w-full"
               placeholder="my-first-post"
               value={slug}
-              onChange={(e) =>
-                setSlug(
-                  e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, "-").replace(/--+/g, "-")
-                )
-              }
+              onChange={(e) => setSlug(normalizeSlug(e.target.value))}
             />
             <p className="text-xs text-white/50 mt-1">
               File will be saved as <code>content/posts/&lt;slug&gt;.md</code>
@@ -456,6 +476,7 @@ export default function AdminPostsPage() {
             <div>
               <label className="block text-sm text-white/70 mb-1">Content (Markdown)</label>
               <textarea
+                ref={contentRef}
                 className="input w-full min-h-[240px]"
                 placeholder="Write your post in Markdown…"
                 value={content}
