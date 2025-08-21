@@ -74,17 +74,47 @@ export default function AdminCwsPage() {
     setSaveMsg("");
   }
 
-  function startEdit(it) {
-    setSlug(it.slug || "");
-    setTitle(it.title || "");
-    setDate(it.date || new Date().toISOString().slice(0, 10));
-    setExcerpt(it.excerpt || "");
-    setPublished(!!it.published);
-    setContent(it.content || "");
-    setEditing(true);
-    setSaveMsg("");
-    // focus editor
-    setTimeout(() => contentRef.current?.focus(), 0);
+  function startEditLocalFields(it) {
+  setSlug(it.slug || "");
+  setTitle(it.title || "");
+  setDate(it.date || new Date().toISOString().slice(0, 10));
+  setExcerpt(it.excerpt || "");
+  setPublished(!!it.published);
+  setSaveMsg("");
+  setEditing(true);
+  setTimeout(() => contentRef.current?.focus(), 0);
+}
+
+async function startEdit(it) {
+  // fill what we already know
+  startEditLocalFields(it);
+
+  // if list payload didn’t include content, fetch it now
+  if (it.content && typeof it.content === "string") {
+    setContent(it.content);
+    return;
+  }
+
+  setContent(""); // clear while loading
+  try {
+    const res = await fetch(`/api/admin/recaps/${encodeURIComponent(it.slug)}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok && typeof data.content === "string") {
+      setContent(data.content);
+    } else {
+      setContent("");
+      setSaveMsg(`❌ Could not load content for "${it.slug}"`);
+    }
+  } catch (e) {
+    setContent("");
+    setSaveMsg(`❌ ${e?.message || "Failed to load content"}`);
+  }
+}
+
   }
 
   // ---------- mutations ----------

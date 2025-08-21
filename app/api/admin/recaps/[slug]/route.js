@@ -9,22 +9,50 @@ export const dynamic = "force-dynamic";
 
 const DIR = "content/recaps";
 
-export async function GET(_req, { params }) {
+// keep slugs safe and consistent
+function cleanSlug(s = "") {
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9\-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function b64ToUtf8(b64 = "") {
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+function utf8ToB64(s = "") {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
+/**
+ * GET /api/admin/recaps/[slug]
+ * Returns front-matter + raw markdown content for editor prefill.
+ */
+export async function GET(req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
   try {
-    const slug = params?.slug;
-    const path = `${DIR}/${slug}.md`;
-    const file = await getFile(path);
-    if (!file) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    const slug = cleanSlug(params?.slug);
+    if (!slug) {
+      return NextResponse.json({ ok: false, error: "Bad slug" }, { status: 400 });
+    }
 
-    const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
+    const path = `${DIR}/${slug}.md`;
+    const file = await getFile(path).catch(() => null);
+    if (!file?.contentBase64) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+
+    const raw = b64ToUtf8(file.contentBase64);
     const parsed = matter(raw);
+
     return NextResponse.json({
       ok: true,
       data: {
         slug,
+        // expose the front-matter we know about (others pass through too)
         ...parsed.data,
         content: parsed.content || "",
       },
@@ -34,16 +62,25 @@ export async function GET(_req, { params }) {
   }
 }
 
+/**
+ * PUT /api/admin/recaps/[slug]
+ * Upserts the recap with provided front-matter + content.
+ */
 export async function PUT(request, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
   try {
-    const slug = params?.slug;
-    const path = `${DIR}/${slug}.md`;
+    const slug = cleanSlug(params?.slug);
+    if (!slug) {
+      return NextResponse.json({ ok: false, error: "Bad slug" }, { status: 400 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const { title, date, excerpt, published, content } = body || {};
-    if (!title) return NextResponse.json({ ok: false, error: "Missing title" }, { status: 400 });
+    if (!title) {
+      return NextResponse.json({ ok: false, error: "Missing title" }, { status: 400 });
+    }
 
     const md = matter.stringify(content || "", {
       title,
@@ -52,33 +89,39 @@ export async function PUT(request, { params }) {
       published: !!published,
     });
 
-    const base64 = Buffer.from(md, "utf8").toString("base64");
     const gh = await commitFile({
-      path,
-      contentBase64: base64,
+      path: `${DIR}/${slug}.md`,
+      contentBase64: utf8ToB64(md),
       message: `recap update: ${slug}`,
     });
+
     return NextResponse.json({ ok: true, commit: gh.commit });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
 }
 
+/**
+ * PATCH /api/admin/recaps/[slug]
+ * Convenience toggle for { published } without resending content.
+ */
 export async function PATCH(request, { params }) {
-  // convenience: toggle published without resending content
   const denied = requireAdmin();
   if (denied) return denied;
 
   try {
-    const slug = params?.slug;
-    const path = `${DIR}/${slug}.md`;
+    const slug = cleanSlug(params?.slug);
+    if (!slug) {
+      return NextResponse.json({ ok: false, error: "Bad slug" }, { status: 400 });
+    }
 
-    const file = await getFile(path);
+    const path = `${DIR}/${slug}.md`;
+    const file = await getFile(path).catch(() => null);
     if (!file?.contentBase64) {
       return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
 
-    const raw = Buffer.from(file.contentBase64, "base64").toString("utf8");
+    const raw = b64ToUtf8(file.contentBase64);
     const parsed = matter(raw);
     const body = await request.json().catch(() => ({}));
     const { published } = body || {};
@@ -88,10 +131,9 @@ export async function PATCH(request, { params }) {
       published: !!published,
     });
 
-    const base64 = Buffer.from(md, "utf8").toString("base64");
     const gh = await commitFile({
       path,
-      contentBase64: base64,
+      contentBase64: utf8ToB64(md),
       message: `recap publish: ${slug} -> ${!!published}`,
     });
 
@@ -101,14 +143,25 @@ export async function PATCH(request, { params }) {
   }
 }
 
+/**
+ * DELETE /api/admin/recaps/[slug]
+ * Deletes the recap file.
+ */
 export async function DELETE(_req, { params }) {
   const denied = requireAdmin();
   if (denied) return denied;
 
   try {
-    const slug = params?.slug;
-    const path = `${DIR}/${slug}.md`;
-    const gh = await deleteFile({ path, message: `recap delete: ${slug}` });
+    const slug = cleanSlug(params?.slug);
+    if (!slug) {
+      return NextResponse.json({ ok: false, error: "Bad slug" }, { status: 400 });
+    }
+
+    const gh = await deleteFile({
+      path: `${DIR}/${slug}.md`,
+      message: `recap delete: ${slug}`,
+    });
+
     return NextResponse.json({ ok: true, commit: gh.commit });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
