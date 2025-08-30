@@ -15,9 +15,9 @@ type Lineup = {
     string,
     {
       playerId: string;
-      position: string; // server may put the SLOT here; prefer meta.pos for truth
+      position: string; // may be slot-like; prefer meta.pos
       points: number;
-      confidence: number; // 0..1
+      confidence: number;
       tier: "A" | "B" | "C" | "D";
       note?: string;
       breakdown?: {
@@ -565,27 +565,34 @@ function RecommendationView({ lu }: { lu: Lineup }) {
   );
   const meta = usePlayerNames(allIds);
 
-  // Treat meta position as the ground truth; only fall back to server detail if meta is missing.
-  const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
+  const norm = (s?: string) =>
+    (s || "").toUpperCase().replace(/\s+/g, "").replace("D/ST", "DST").replace("DEF", "DST");
+  const isFlexEligible = (p?: string) => {
+    const P = norm(p);
+    return P === "RB" || P === "WR" || P === "TE";
+  };
   const fitsSlot = (slot: string, pos?: string) => {
-    if (!pos) return false;
-    if (slot === "FLEX") return pos === "RB" || pos === "WR" || pos === "TE";
-    if (slot === "DST") return isDstLike(pos);
-    return pos === slot;
+    const S = norm(slot);
+    const P = norm(pos);
+    if (!P) return false; // if unknown, try strict first; we’ll fallback to raw list when empty
+    if (S === "FLEX") return isFlexEligible(P);
+    if (S === "DST") return P === "DST";
+    return P === S;
   };
 
-  // Build filtered per-slot lists
-  const filtered: Record<string, string[]> = {};
+  // Per-slot lists with strict filtering; fallback to raw if strict is empty.
+  const lists: Record<string, string[]> = {};
   for (const slot of order) {
     const raw = lu.slots?.[slot] || [];
-    filtered[slot] = raw.filter((pid) => {
-      const truePos = meta.map[pid]?.pos || lu.details?.[pid]?.position; // ⬅️ prefer meta
+    const strict = raw.filter((pid) => {
+      const truePos = meta.map[pid]?.pos || lu.details?.[pid]?.position;
       return fitsSlot(slot, truePos);
     });
+    lists[slot] = strict.length ? strict : raw;
   }
 
-  // Bench = everything not used in filtered slots
-  const used = new Set<string>(order.flatMap((s) => filtered[s]));
+  // Bench = everything not used in chosen lists
+  const used = new Set<string>(order.flatMap((s) => lists[s]));
   const benchIds = allIds.filter((pid) => !used.has(pid));
 
   return (
@@ -596,9 +603,9 @@ function RecommendationView({ lu }: { lu: Lineup }) {
         {order.map((slot) => (
           <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
             <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-            {filtered[slot]?.length ? (
+            {lists[slot]?.length ? (
               <ul className="grid gap-1">
-                {filtered[slot].map((pid) => {
+                {lists[slot].map((pid) => {
                   const d = lu.details?.[pid];
                   const label = `${meta.map[pid]?.name || pid}${
                     meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
