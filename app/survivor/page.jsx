@@ -8,9 +8,14 @@ import SurvivorOptIn from "@/components/SurvivorOptIn";
 export const dynamic = "force-dynamic";
 
 export default async function SurvivorLanding() {
-  const seasonId = "S47"; // change if you use route param later
+  const seasonId = "S49"; // change if you use a route param later
   const season = await getSeason(seasonId);
   const locked = season ? new Date() >= new Date(season.lockAt) : false;
+
+  // Build the correct destination for the bracket page
+  const bracketHref = season
+    ? `/survivor/bracket?season=${encodeURIComponent(season.id)}`
+    : "/survivor/bracket";
 
   return (
     <main className="container max-w-3xl py-10 space-y-6">
@@ -63,7 +68,7 @@ export default async function SurvivorLanding() {
 
           <div className="flex flex-wrap gap-3">
             {!locked ? (
-              <Link href="/survivor/bracket" className="btn-gold inline-flex items-center justify-center">
+              <Link href={bracketHref} className="btn-gold inline-flex items-center justify-center">
                 Enter Bracket
               </Link>
             ) : (
@@ -146,7 +151,7 @@ export default async function SurvivorLanding() {
         {!season ? (
           <Link href="/subscribe" className="btn-gold">Notify me when the bracket opens</Link>
         ) : !locked ? (
-          <Link href="/survivor/bracket" className="btn-gold">Enter Bracket</Link>
+          <Link href={bracketHref} className="btn-gold">Enter Bracket</Link>
         ) : (
           <Link href="/survivor/leaderboard" className="cta-card">
             <span className="cta-title">View Leaderboard →</span>
