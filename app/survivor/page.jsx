@@ -31,22 +31,22 @@ export default async function SurvivorLanding({ searchParams }) {
         </p>
       </header>
 
-      {/* S49 cast hero */}
-      <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
-        <div className="relative w-full aspect-[3/2] sm:aspect-[16/9]">
-          <Image
-            src="/survivor/s49-cast.webp" // place in /public/survivor/
-            alt="Survivor 49 cast on the beach"
-            fill
-            sizes="(max-width: 768px) 100vw, 768px"
-            className="object-cover"
-            priority
-          />
-        </div>
-        <figcaption className="p-2 text-[11px] text-white/60 text-right">
-          Survivor 49 cast • Photo: CBS
-        </figcaption>
-      </figure>
+     {/* S49 cast hero (tighter) */}
+<figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
+  <div className="relative w-full aspect-[3/2] sm:aspect-[21/9] lg:aspect-[24/9] max-h-[320px] sm:max-h-[300px]">
+    <Image
+      src="/survivor/s49-cast.webp"
+      alt="Survivor 49 cast on the beach"
+      fill
+      sizes="(max-width: 768px) 100vw, 768px"
+      className="object-cover"
+      priority
+    />
+  </div>
+  <figcaption className="p-2 text-[11px] text-white/60 text-right">
+    Survivor 49 cast • Photo: CBS
+  </figcaption>
+</figure>
 
       <section className="container my-8">
         <SurvivorOptIn />
