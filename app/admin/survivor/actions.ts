@@ -1,52 +1,61 @@
-// app/admin/survivor/page.tsx (or ./actions.ts)
+// app/admin/survivor/actions.ts
+"use server";
+
 import { revalidatePath } from "next/cache";
-import { slugify } from "@/lib/util/slugify";            // tiny helper shown below if you don't have one
-import { seedSeason } from "@/lib/survivor/store";       // <- your existing persistence fn
+import { redirect } from "next/navigation";
+import { setSeason, appendBoot, recomputeLeaderboard } from "@/lib/survivor/store";
 
-type SeedResult = { ok: true; count: number } | { ok: false; error: string };
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
 
-export async function seedSeasonAction(_prevState: SeedResult | null, formData: FormData): Promise<SeedResult> {
-  "use server";
+export async function seedSeason(formData: FormData) {
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
+  const seasonName = String(formData.get("seasonName") || "").trim();
+  const lockAtLocal = String(formData.get("lockAt") || "").trim();
+  const contestantsRaw = String(formData.get("contestants") || "").trim();
+  if (!seasonId || !lockAtLocal || !contestantsRaw) return;
 
-  try {
-    const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
-    const seasonName = String(formData.get("seasonName") || "").trim();
-    const lockLocal = String(formData.get("lockLocal") || "").trim();
-    const contestantsRaw = String(formData.get("contestants") || "");
-
-    if (!seasonId) return { ok: false, error: "Season ID is required." };
-    if (!contestantsRaw.trim()) return { ok: false, error: "Add at least one contestant." };
-
-    // Parse "Name | custom-id" (custom-id optional)
-    const contestants = contestantsRaw
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [namePart, idPart] = line.split("|").map((s) => s?.trim()).filter(Boolean) as [string?, string?];
-        const name = namePart || "";
-        const id = idPart || slugify(name);
-        return { id, name };
-      });
-
-    // Convert local input to ISO (accepts datetime-local string or free text Date parsable)
-    const lockAt = lockLocal ? new Date(lockLocal).toISOString() : undefined;
-
-    // Persist
-    await seedSeason({
-      id: seasonId,
-      name: seasonName || seasonId,
-      lockAt,
-      contestants,
+  const contestants = contestantsRaw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name, custom] = line.split("|").map((v) => v.trim());
+      return { id: (custom || slugify(name || "")).toLowerCase(), name: name || "" };
     });
 
-    // Refresh admin + public survivor pages
-    revalidatePath("/admin/survivor");
-    revalidatePath("/survivor");   // adjust if your public page differs
-
-    return { ok: true, count: contestants.length };
-  } catch (err: any) {
-    console.error("seedSeasonAction error:", err);
-    return { ok: false, error: err?.message || "Failed to save season." };
+  // ensure unique ids
+  const seen = new Set<string>();
+  for (const c of contestants) {
+    let base = c.id || "player";
+    let n = 1;
+    while (seen.has(c.id)) c.id = `${base}-${++n}`;
+    seen.add(c.id);
   }
+
+  await setSeason({
+    id: seasonId,
+    name: seasonName || `Survivor ${seasonId}`,
+    lockAt: new Date(lockAtLocal).toISOString(),
+    contestants,
+    actualBootOrder: [],
+  });
+
+  revalidatePath("/admin/survivor");
+  redirect(`/admin/survivor?season=${encodeURIComponent(seasonId)}`);
+}
+
+export async function addBoot(formData: FormData) {
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
+  const contestantId = String(formData.get("contestantId") || "").trim();
+  if (!seasonId || !contestantId) return;
+  await appendBoot(seasonId, contestantId);
+  revalidatePath("/admin/survivor");
+}
+
+export async function rescore(formData: FormData) {
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
+  if (!seasonId) return;
+  await recomputeLeaderboard(seasonId);
+  revalidatePath("/admin/survivor");
 }
