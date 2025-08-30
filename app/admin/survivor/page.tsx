@@ -11,6 +11,20 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
 }
 
+function toLocalDateTimeInputValue(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.valueOf())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  // yyyy-MM-ddTHH:mm (browser-local time; no seconds)
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
 /* ---------------- server actions (do NOT export) ---------------- */
 async function actionSeedSeason(formData: FormData) {
   "use server";
@@ -20,11 +34,8 @@ async function actionSeedSeason(formData: FormData) {
   const lockAtLocal = String(formData.get("lockAt") || "").trim();
   const contestantsRaw = String(formData.get("contestants") || "").trim();
 
-  if (!seasonId) return;
-  if (!lockAtLocal) return;
-  if (!contestantsRaw) return;
+  if (!seasonId || !lockAtLocal || !contestantsRaw) return;
 
-  // Parse contestants: "Name | custom-id" (custom id optional)
   const contestants = contestantsRaw
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -57,9 +68,9 @@ async function actionSeedSeason(formData: FormData) {
     actualBootOrder: [],
   });
 
-  // Make sure the page shows fresh data and jumps to the saved season
+  // Revalidate and bounce back with a banner flag
   revalidatePath("/admin/survivor");
-  redirect(`/admin/survivor?season=${encodeURIComponent(seasonId)}`);
+  redirect(`/admin/survivor?season=${encodeURIComponent(seasonId)}&saved=1`);
 }
 
 async function actionAddBoot(formData: FormData) {
@@ -87,6 +98,7 @@ export default async function SurvivorAdminPage({
 }) {
   const qpSeason = typeof searchParams?.season === "string" ? searchParams!.season : undefined;
   const currentSeasonId = (qpSeason || "S47").toUpperCase();
+  const saved = searchParams?.saved === "1";
 
   const season = await getSeason(currentSeasonId);
 
@@ -97,11 +109,19 @@ export default async function SurvivorAdminPage({
         <p className="text-white/70">Seed the season and manage weekly results.</p>
       </header>
 
+      {saved && (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 text-green-200 text-sm px-3 py-2">
+          Season saved successfully.
+        </div>
+      )}
+
       {/* Status */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-2">
         <div className="font-semibold">Season status</div>
         {!season ? (
-          <p className="text-sm text-white/70">No season found for <span className="font-mono">{currentSeasonId}</span>.</p>
+          <p className="text-sm text-white/70">
+            No season found for <span className="font-mono">{currentSeasonId}</span>.
+          </p>
         ) : (
           <div className="text-sm text-white/80 space-y-1">
             <div>
@@ -147,6 +167,7 @@ export default async function SurvivorAdminPage({
             <input
               type="datetime-local"
               name="lockAt"
+              defaultValue={toLocalDateTimeInputValue(season?.lockAt)}
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
