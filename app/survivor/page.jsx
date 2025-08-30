@@ -1,4 +1,4 @@
-// app/survivor/page.tsx (SurvivorLanding)
+// app/survivor/page.tsx
 import Link from "next/link";
 import Image from "next/image";
 import Countdown from "@/components/Countdown";
@@ -7,15 +7,23 @@ import SurvivorOptIn from "@/components/SurvivorOptIn";
 
 export const dynamic = "force-dynamic";
 
-export default async function SurvivorLanding() {
-  const seasonId = "S49"; // change if you use a route param later
-  const season = await getSeason(seasonId);
-  const locked = season ? new Date() >= new Date(season.lockAt) : false;
+type Search = { searchParams?: Record<string, string | string[] | undefined> };
 
-  // Build the correct destination for the bracket page
-  const bracketHref = season
-    ? `/survivor/bracket?season=${encodeURIComponent(season.id)}`
-    : "/survivor/bracket";
+export default async function SurvivorLanding({ searchParams }: Search) {
+  // Choose season: URL ?season=..., or env, or default to S49
+  const envSeason =
+    (process.env.NEXT_PUBLIC_SURVIVOR_SEASON_ID ||
+      process.env.SURVIVOR_SEASON_ID ||
+      "S49") as string;
+
+  const seasonId =
+    (typeof searchParams?.season === "string"
+      ? searchParams.season
+      : envSeason) || "S49";
+
+  const season = await getSeason(seasonId.toUpperCase());
+  const locked = season ? new Date() >= new Date(season.lockAt) : false;
+  const openForEntries = !!season && !locked;
 
   return (
     <main className="container max-w-3xl py-10 space-y-6">
@@ -30,7 +38,7 @@ export default async function SurvivorLanding() {
       <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
         <div className="relative w-full aspect-[3/2] sm:aspect-[16/9]">
           <Image
-            src="/survivor/s49-cast.webp" // place the file in /public/survivor/
+            src="/survivor/s49-cast.webp"
             alt="Survivor 49 cast on the beach"
             fill
             sizes="(max-width: 768px) 100vw, 768px"
@@ -52,7 +60,8 @@ export default async function SurvivorLanding() {
         <>
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
             <div className="text-sm text-white/80">
-              Bracket lock:{" "}
+              Season: <span className="font-semibold">{season.id}</span>{" "}
+              • Lock:{" "}
               <span className="font-semibold">
                 {new Date(season.lockAt).toLocaleString()}
               </span>
@@ -67,9 +76,9 @@ export default async function SurvivorLanding() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            {!locked ? (
-              <Link href={bracketHref} className="btn-gold inline-flex items-center justify-center">
-                Enter Bracket
+            {openForEntries ? (
+              <Link href="/survivor/bracket" className="btn-gold inline-flex items-center justify-center">
+                Play the Game
               </Link>
             ) : (
               <button
@@ -97,9 +106,10 @@ export default async function SurvivorLanding() {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">How it works</h2>
         <ol className="list-decimal pl-5 space-y-2 text-white/80 text-sm">
+          <li>You have 4 weeks go get to know the players before the bracket locks 10/24.</li>
+          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>Drag contestants into your predicted boot order from first out to last out.</li>
           <li>Pick your Final 3 (and their exact order: Winner → Second → Third).</li>
-          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>We score your bracket after each episode and update the leaderboard.</li>
         </ol>
       </section>
@@ -146,12 +156,12 @@ export default async function SurvivorLanding() {
         </div>
       </section>
 
-      {/* Secondary actions at bottom */}
+      {/* Bottom CTA */}
       <div className="flex flex-wrap gap-3">
         {!season ? (
           <Link href="/subscribe" className="btn-gold">Notify me when the bracket opens</Link>
-        ) : !locked ? (
-          <Link href={bracketHref} className="btn-gold">Enter Bracket</Link>
+        ) : openForEntries ? (
+          <Link href="/survivor/bracket" className="btn-gold">Play the Game</Link>
         ) : (
           <Link href="/survivor/leaderboard" className="cta-card">
             <span className="cta-title">View Leaderboard →</span>
