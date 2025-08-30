@@ -1,4 +1,6 @@
+// app/survivor/page.tsx (SurvivorLanding)
 import Link from "next/link";
+import Image from "next/image";
 import Countdown from "@/components/Countdown";
 import { getSeason } from "@/lib/survivor/store";
 import SurvivorOptIn from "@/components/SurvivorOptIn";
@@ -18,9 +20,27 @@ export default async function SurvivorLanding() {
           Predict the full boot order and Final 3. Scores update weekly after each episode.
         </p>
       </header>
+
+      {/* S49 cast hero */}
+      <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
+        <div className="relative w-full aspect-[3/2] sm:aspect-[16/9]">
+          <Image
+            src="/survivor/s49-cast.webp" // place the file in /public/survivor/
+            alt="Survivor 49 cast on the beach"
+            fill
+            sizes="(max-width: 768px) 100vw, 768px"
+            className="object-cover"
+            priority
+          />
+        </div>
+        <figcaption className="p-2 text-[11px] text-white/60 text-right">
+          Survivor 49 cast • Photo: CBS
+        </figcaption>
+      </figure>
+
       <section className="container my-8">
-  <SurvivorOptIn />
-</section>
+        <SurvivorOptIn />
+      </section>
 
       {/* Lock status + actions (only if a season exists) */}
       {season ? (
@@ -64,7 +84,7 @@ export default async function SurvivorLanding() {
         </>
       ) : (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-      Season 49 premieres on September 24 at 8PM ET!
+          Season 49 premieres on September 24 at 8PM ET!
         </div>
       )}
 
