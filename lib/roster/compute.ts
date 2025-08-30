@@ -1,3 +1,4 @@
+// lib/roster/compute.ts
 import type { UserRoster, WeeklyLineup, AdminOverrides, Position } from "./types";
 import { getRosterMeta } from "./store";
 
@@ -5,19 +6,24 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 type Proj = { pts_ppr?: number; injury_status?: string; opp_rank?: number };
 
+/** Fetch projections (PPR) from Sleeper for a given week. */
 async function fetchProjectionsMap(week: number): Promise<Record<string, Proj>> {
-  const url = `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`;
-  const res = await fetch(url, { cache: "no-store" });
-  const rows = (await res.json().catch(() => [])) as any[];
-  const out: Record<string, Proj> = {};
-  for (const r of rows) {
-    out[r.player_id] = {
-      pts_ppr: r.stats?.pts_ppr,
-      injury_status: r.injury_status,
-      opp_rank: r.opponent_rank,
-    };
+  try {
+    const url = `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`;
+    const res = await fetch(url, { cache: "no-store" });
+    const rows = (await res.json().catch(() => [])) as any[];
+    const out: Record<string, Proj> = {};
+    for (const r of rows) {
+      out[r.player_id] = {
+        pts_ppr: r.stats?.pts_ppr,
+        injury_status: r.injury_status,
+        opp_rank: r.opponent_rank,
+      };
+    }
+    return out;
+  } catch {
+    return {};
   }
-  return out;
 }
 
 function tierFrom(points: number): "A" | "B" | "C" | "D" {
@@ -34,22 +40,29 @@ function confidence(points: number, injury?: string) {
   return Number(c.toFixed(2));
 }
 
+/** Normalize a raw position string from any source into our Position union (or undefined). */
+function normalizePos(raw?: string): Position | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  const s = raw.toUpperCase().replace(/\s+/g, "");
+  if (s === "QB" || s === "RB" || s === "WR" || s === "TE" || s === "K") return s as Position;
+  if (s === "DST" || s === "DEF" || s === "D/ST" || s === "DST/DEF" || s === "DDEF") return "DST";
+  if (s === "PK") return "K";
+  return undefined;
+}
+
 /** Normalize whatever getRosterMeta(id) returns into a plain { [pid]: { pos?: string } } map. */
-function coercePosMap(
-  meta: unknown
-): Record<string, { pos?: string }> {
+function coercePosMap(meta: unknown): Record<string, { pos?: string }> {
   const out: Record<string, { pos?: string }> = {};
   if (!meta || typeof meta !== "object") return out;
 
   const m = meta as any;
 
-  // Common shapes we support:
   // 1) { names: { [pid]: { pos?: string, ... } }, ... }
   if (m.names && typeof m.names === "object") {
     for (const [pid, v] of Object.entries(m.names as Record<string, any>)) {
       if (v && typeof v === "object") {
-        if (typeof v.pos === "string") out[pid] = { pos: v.pos };
-        else out[pid] = { pos: undefined };
+        const pos = normalizePos((v as any).pos) ?? (typeof (v as any).pos === "string" ? (v as any).pos : undefined);
+        out[pid] = { pos };
       }
     }
     return out;
@@ -58,12 +71,21 @@ function coercePosMap(
   // 2) Flat map: { [pid]: { pos?: string, ... }, name?: string, ... }
   for (const [key, v] of Object.entries(m)) {
     if (v && typeof v === "object" && "pos" in (v as any)) {
-      const pos = (v as any).pos;
-      out[key] = typeof pos === "string" ? { pos } : { pos: undefined };
+      const posRaw = (v as any).pos;
+      const pos = normalizePos(typeof posRaw === "string" ? posRaw : undefined) ?? (typeof posRaw === "string" ? posRaw : undefined);
+      out[key] = { pos };
     }
   }
 
   return out;
+}
+
+/** rough position guess from cached meta */
+function guessPos(pid: string, meta: Record<string, { pos?: string }>): Position {
+  const n = normalizePos(meta?.[pid]?.pos);
+  if (n) return n;
+  // Fallback to something safe (WR) so player isn't dropped; UI/filters will still work.
+  return "WR";
 }
 
 export async function computeLineup(
@@ -152,6 +174,7 @@ export async function computeLineup(
     FLEX: [],
   };
 
+  // Respect pinned FLEX first
   const pins = roster.pins?.FLEX || [];
   for (const pid of pins) {
     if (
@@ -165,6 +188,8 @@ export async function computeLineup(
       if (slots.FLEX.length >= want.FLEX) break;
     }
   }
+
+  // Fill remaining FLEX
   if (slots.FLEX.length < want.FLEX) {
     const need = want.FLEX - slots.FLEX.length;
     const pool = rows
@@ -192,7 +217,7 @@ export async function computeLineup(
     .sort((a, b) => b.pts - a.pts)
     .map((r) => r.pid);
 
-  // totals
+  // Totals
   type SlotKey = keyof WeeklyLineup["slots"];
   const slotTotals = Object.fromEntries(
     (Object.keys(slots) as SlotKey[]).map((k) => {
@@ -213,13 +238,4 @@ export async function computeLineup(
     scores: total,
     recommendedAt: new Date().toISOString(),
   };
-}
-
-/** rough position guess from cached meta */
-function guessPos(pid: string, meta: Record<string, { pos?: string }>): Position {
-  const pos = meta?.[pid]?.pos;
-  if (pos === "QB" || pos === "RB" || pos === "WR" || pos === "TE" || pos === "DST" || pos === "K") {
-    return pos;
-  }
-  return "WR";
 }
