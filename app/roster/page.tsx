@@ -15,7 +15,7 @@ type Lineup = {
     string,
     {
       playerId: string;
-      position: string;
+      position: string; // server's idea of the slot it put them in
       points: number;
       confidence: number;
       tier: "A" | "B" | "C" | "D";
@@ -55,7 +55,7 @@ export default function RosterHome() {
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
-  // send this on save so the server can cache names/pos/team
+  // sent on save so the server can cache names/pos/team
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
@@ -545,76 +545,101 @@ function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
 
 function RecommendationView({ lu }: { lu: Lineup }) {
   const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
-  // Trust API slots. Collect all starters + bench for name lookups.
-  const startersAll = useMemo(() => order.flatMap((s) => lu.slots?.[s] || []), [lu, order]);
-  const allIds = useMemo(
-    () => Array.from(new Set([...(startersAll || []), ...(lu.bench || [])])),
-    [startersAll, lu.bench]
-  );
+
+  // Collect every id that appears anywhere in the payload
+  const allIds = useMemo(() => {
+    const raw = order.flatMap((s) => lu.slots?.[s] || []);
+    const b = lu.bench || [];
+    const fromDetails = Object.keys(lu.details || {});
+    return Array.from(new Set([...raw, ...b, ...fromDetails]));
+  }, [lu, order]);
+
+  // Load names/positions for all ids we might display
   const meta = usePlayerNames(allIds);
 
-  // Bench = everything not listed in any slot from the API
-  const used = new Set(startersAll);
-  const benchIds = allIds.filter((pid) => !used.has(pid));
-
-  const labelFor = (pid: string) => {
-    const m = meta.map[pid];
-    const name = m?.name || pid;
-    const pos = m?.pos || lu.details?.[pid]?.position;
-    const team = m?.team;
-    return name + (pos ? ` — ${pos}` : "") + (team ? ` (${team})` : "");
+  // Normalize positions & filter each server-provided slot
+  const normPos = (p?: string) => {
+    const s = (p || "").toUpperCase().replace(/\s+/g, "");
+    if (s === "D/ST" || s === "DST" || s === "DEF" || s === "DEFENSE") return "DST";
+    if (s === "PK" || s === "KICKER") return "K";
+    if (s === "QB" || s === "RB" || s === "WR" || s === "TE" || s === "K") return s;
+    return undefined;
   };
+  const isDstLike = (pos?: string) => normPos(pos) === "DST";
+  const fitsSlot = (slot: string, pos?: string) => {
+    const p = normPos(pos);
+    if (!p) return false;
+    if (slot === "FLEX") return p === "RB" || p === "WR" || p === "TE";
+    if (slot === "DST") return p === "DST";
+    return p === slot;
+  };
+
+  const filtered: Record<string, string[]> = {};
+  for (const slot of order) {
+    const raw = lu.slots?.[slot] || [];
+    filtered[slot] = raw.filter((pid) => {
+      const clientPos = normPos(meta.map[pid]?.pos);
+      const serverPos = normPos(lu.details?.[pid]?.position);
+      return fitsSlot(slot, clientPos ?? serverPos);
+    });
+  }
+
+  // Bench = everything not used after filtering
+  const used = new Set<string>(order.flatMap((s) => filtered[s]));
+  const benchIds = allIds.filter((pid) => !used.has(pid));
 
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {order.map((slot) => {
-          const ids = lu.slots?.[slot] || [];
-          return (
-            <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
-              <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-              {ids.length ? (
-                <ul className="grid gap-1">
-                  {ids.map((pid) => {
-                    const d = lu.details?.[pid];
-                    return (
-                      <li key={pid} className="flex items-center justify-between text-sm">
-                        <span className="truncate" title={explainLine(d)}>{labelFor(pid)}</span>
-                        {d && (
-                          <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
-                            {d.points.toFixed(1)} pts · {Math.round((d.confidence ?? 0) * 100)}% · {d.tier}
-                            {d.breakdown?.matchupTier && (
-                              <span
-                                className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
-                                  d.breakdown.matchupTier === "Green"
-                                    ? "bg-green-700/40 border-green-400/30"
-                                    : d.breakdown.matchupTier === "Yellow"
-                                    ? "bg-yellow-700/40 border-yellow-400/30"
-                                    : "bg-red-700/40 border-red-400/30"
-                                }`}
-                                title={
-                                  d.breakdown.oppRank != null
-                                    ? `Opponent rank: ${d.breakdown.oppRank}`
-                                    : "Matchup context"
-                                }
-                              >
-                                {d.breakdown.matchupTier}
-                              </span>
-                            )}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <div className="text-sm text-white/50">—</div>
-              )}
-            </div>
-          );
-        })}
+        {order.map((slot) => (
+          <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
+            <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
+            {filtered[slot]?.length ? (
+              <ul className="grid gap-1">
+                {filtered[slot].map((pid) => {
+                  const d = lu.details?.[pid];
+                  const label = `${meta.map[pid]?.name || pid}${
+                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
+                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
+                  return (
+                    <li key={pid} className="flex items-center justify-between text-sm">
+                      <span className="truncate" title={explainLine(d)}>
+                        {label}
+                      </span>
+                      {d && (
+                        <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
+                          {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
+                          {d.breakdown?.matchupTier && (
+                            <span
+                              className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
+                                d.breakdown.matchupTier === "Green"
+                                  ? "bg-green-700/40 border-green-400/30"
+                                  : d.breakdown.matchupTier === "Yellow"
+                                  ? "bg-yellow-700/40 border-yellow-400/30"
+                                  : "bg-red-700/40 border-red-400/30"
+                              }`}
+                              title={
+                                d.breakdown.oppRank != null
+                                  ? `Opponent rank: ${d.breakdown.oppRank}`
+                                  : "Matchup context"
+                              }
+                            >
+                              {d.breakdown.matchupTier}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="text-sm text-white/50">—</div>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Bench */}
@@ -623,7 +648,11 @@ function RecommendationView({ lu }: { lu: Lineup }) {
         {benchIds.length ? (
           <ul className="grid gap-1 text-sm">
             {benchIds.map((pid) => (
-              <li key={pid} className="truncate">{labelFor(pid)}</li>
+              <li key={pid} className="truncate">
+                {(meta.map[pid]?.name || pid) +
+                  (meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : "") +
+                  (meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : "")}
+              </li>
             ))}
           </ul>
         ) : (
