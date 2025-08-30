@@ -102,9 +102,10 @@ export default async function SurvivorLanding({ searchParams }) {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">How it works</h2>
         <ol className="list-decimal pl-5 space-y-2 text-white/80 text-sm">
+          <li>You have four weeks to get to know the players. The bracket locks 10/24.</li>
+          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>Drag contestants into your predicted boot order from first out to last out.</li>
           <li>Pick your Final 3 (and their exact order: Winner → Second → Third).</li>
-          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>We score your bracket after each episode and update the leaderboard.</li>
         </ol>
       </section>
