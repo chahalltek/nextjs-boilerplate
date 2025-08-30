@@ -229,13 +229,23 @@ export default function RosterHome() {
   }
 
   async function recomputeNow() {
-    if (!id) return;
-    await fetch("/api/roster/recompute", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, week, notify: true }),
-    });
+  if (!id) return;
+  try {
+    const url = `/api/roster/recompute?id=${encodeURIComponent(id)}&week=${encodeURIComponent(
+      String(week)
+    )}&notify=1`;
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      alert(data.error || `Recompute failed (${res.status})`);
+      return;
+    }
+    // refresh the on-screen lineup after recompute
+    await loadRecommendation();
+  } catch (err: any) {
+    alert(err?.message || "Recompute failed");
   }
+}
 
   const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
