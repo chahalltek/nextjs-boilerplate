@@ -2,8 +2,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-// If you keep your nav config in lib/nav, import it. Otherwise inline your items here.
+import { usePathname } from "next/navigation";
 import { navGroups } from "@/lib/nav"; // [{ key, label, items:[{title, href, desc?}] }]
 
 function useHoverIntent() {
@@ -26,9 +27,12 @@ function useHoverIntent() {
 }
 
 export default function Header() {
+  const pathname = usePathname();
+  const showHero = pathname === "/"; // only show the 16:9 band on the homepage
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const { openKey, open, closeSoon, closeNow } = useHoverIntent();
-  const groups = Array.isArray(navGroups) ? navGroups : []; // <- guard
+  const groups = Array.isArray(navGroups) ? navGroups : [];
 
   useEffect(() => {
     const onEsc = (e) => {
@@ -42,107 +46,154 @@ export default function Header() {
   }, [closeNow]);
 
   return (
-    <header className="sticky top-0 z-50 bg-black/70 backdrop-blur supports-[backdrop-filter]:bg-black/50">
-      <div className="container flex items-center justify-between py-3">
-        <Link href="/" className="font-bold text-white">Hey Skol Sister</Link>
+    <>
+      {/* Sticky top nav */}
+      <header className="sticky top-0 z-50 bg-black/70 backdrop-blur supports-[backdrop-filter]:bg-black/50">
+        <div className="container flex items-center justify-between py-3">
+          <Link href="/" className="font-bold text-white">
+            Hey Skol Sister
+          </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-6">
-          {navGroups.map((g) => (
-            <div
-              key={g.key}
-              className="relative"
-              onMouseEnter={() => open(g.key)}
-              onMouseLeave={closeSoon}
-              onFocus={() => open(g.key)}
-              onBlur={closeSoon}
-            >
-              <button
-                className="px-2 py-1 rounded hover:bg-white/10 text-white/90"
-                aria-expanded={openKey === g.key}
-                aria-haspopup="true"
-              >
-                {g.label}
-              </button>
-
-              {/* Flyout */}
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center gap-6">
+            {groups.map((g) => (
               <div
-                className={`absolute left-0 top-full mt-2 transition-opacity ${
-                  openKey === g.key ? "opacity-100 visible" : "opacity-0 invisible"
-                }`}
+                key={g.key}
+                className="relative"
                 onMouseEnter={() => open(g.key)}
                 onMouseLeave={closeSoon}
+                onFocus={() => open(g.key)}
+                onBlur={closeSoon}
               >
-                {/* Hover bridge to prevent gap-close */}
-                <div className="absolute -top-2 left-0 right-0 h-2" aria-hidden />
+                <button
+                  className="px-2 py-1 rounded hover:bg-white/10 text-white/90"
+                  aria-expanded={openKey === g.key}
+                  aria-haspopup="true"
+                >
+                  {g.label}
+                </button>
 
-                <div className="min-w-56 rounded-xl border border-white/10 bg-zinc-900 shadow-xl z-50 p-2">
+                {/* Flyout */}
+                <div
+                  className={`absolute left-0 top-full mt-2 transition-opacity ${
+                    openKey === g.key ? "opacity-100 visible" : "opacity-0 invisible"
+                  }`}
+                  onMouseEnter={() => open(g.key)}
+                  onMouseLeave={closeSoon}
+                >
+                  {/* Hover bridge to prevent gap-close */}
+                  <div className="absolute -top-2 left-0 right-0 h-2" aria-hidden />
+
+                  <div className="min-w-56 rounded-xl border border-white/10 bg-zinc-900 shadow-xl z-50 p-2">
+                    {g.items.map((it) => (
+                      <Link
+                        key={it.href}
+                        href={it.href}
+                        className="block rounded-lg px-3 py-2 hover:bg-white/10 text-white"
+                        onClick={closeNow}
+                      >
+                        <div className="font-medium">{it.title}</div>
+                        {it.desc && (
+                          <div className="text-xs text-white/60">{it.desc}</div>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* CTA */}
+            <Link
+              href="/starter-pack"
+              className="rounded-xl border border-white/20 px-3 py-1.5 hover:bg-white/10 text-white"
+            >
+              Starter Pack
+            </Link>
+          </nav>
+
+          {/* Mobile toggle */}
+          <button
+            className="md:hidden px-3 py-2 rounded border border-white/20 text-white"
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((v) => !v)}
+          >
+            Menu
+          </button>
+        </div>
+
+        {/* Mobile panel */}
+        <div
+          className={`md:hidden border-t border-white/10 bg-zinc-950 ${
+            mobileOpen ? "block" : "hidden"
+          }`}
+        >
+          <div className="container py-3 space-y-5">
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div className="text-xs uppercase text-white/40 mb-1">
+                  {g.label}
+                </div>
+                <div className="grid">
                   {g.items.map((it) => (
                     <Link
                       key={it.href}
                       href={it.href}
-                      className="block rounded-lg px-3 py-2 hover:bg-white/10 text-white"
-                      onClick={closeNow}
+                      className="px-2 py-2 rounded hover:bg-white/10 text-white"
+                      onClick={() => setMobileOpen(false)}
                     >
-                      <div className="font-medium">{it.title}</div>
-                      {it.desc && (
-                        <div className="text-xs text-white/60">{it.desc}</div>
-                      )}
+                      {it.title}
                     </Link>
                   ))}
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+            <Link
+              href="/starter-pack"
+              className="block text-center rounded-xl border border-white/20 px-3 py-2 hover:bg-white/10 text-white"
+              onClick={() => setMobileOpen(false)}
+            >
+              Starter Pack
+            </Link>
+          </div>
+        </div>
+      </header>
 
-          {/* CTA */}
-          <Link
-            href="/starter-pack"
-            className="rounded-xl border border-white/20 px-3 py-1.5 hover:bg-white/10 text-white"
-          >
-            Starter Pack
-          </Link>
-        </nav>
+      {/* Fixed 16:9 hero band (homepage only) */}
+      {showHero && (
+        <section aria-label="Site hero" className="relative w-full aspect-[16/9]">
+          <Image
+            src="/images/header-1920x1080.jpg" // place your cropped image in /public/images/
+            alt="Friday night lights—football field at sunset"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+          {/* Soft vignette/overlay for readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/25 to-black/55" />
 
-        {/* Mobile toggle */}
-        <button
-          className="md:hidden px-3 py-2 rounded border border-white/20 text-white"
-          aria-expanded={mobileOpen}
-          onClick={() => setMobileOpen((v) => !v)}
-        >
-          Menu
-        </button>
-      </div>
-
-      {/* Mobile panel */}
-      <div className={`md:hidden border-t border-white/10 bg-zinc-950 ${mobileOpen ? "block" : "hidden"}`}>
-        <div className="container py-3 space-y-5">
-          {navGroups.map((g) => (
-            <div key={g.key}>
-              <div className="text-xs uppercase text-white/40 mb-1">{g.label}</div>
-              <div className="grid">
-                {g.items.map((it) => (
-                  <Link
-                    key={it.href}
-                    href={it.href}
-                    className="px-2 py-2 rounded hover:bg-white/10 text-white"
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    {it.title}
-                  </Link>
-                ))}
+          {/* Copy */}
+          <div className="absolute inset-x-0 bottom-0">
+            <div className="container py-6 sm:py-10">
+              <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+                Smart tools for fantasy & fun
+              </h1>
+              <p className="mt-2 max-w-2xl text-white/80">
+                Lineup Lab, Survivor Bracket, and more—built to win your week.
+              </p>
+              <div className="mt-4 flex gap-3">
+                <Link href="/roster" className="btn-gold">
+                  Try Lineup Lab
+                </Link>
+                <Link href="/survivor" className="rounded-xl border border-white/20 px-3 py-2 hover:bg-white/10">
+                  Survivor Game
+                </Link>
               </div>
             </div>
-          ))}
-          <Link
-            href="/starter-pack"
-            className="block text-center rounded-xl border border-white/20 px-3 py-2 hover:bg-white/10 text-white"
-            onClick={() => setMobileOpen(false)}
-          >
-            Starter Pack
-          </Link>
-        </div>
-      </div>
-    </header>
+          </div>
+        </section>
+      )}
+    </>
   );
 }
