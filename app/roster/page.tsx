@@ -1,3 +1,4 @@
+// app/roster/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -14,9 +15,9 @@ type Lineup = {
     string,
     {
       playerId: string;
-      position: string;
+      position: string; // "QB" | "RB" | "WR" | "TE" | "DST" | "K"
       points: number;
-      confidence: number;
+      confidence: number; // 0..1
       tier: "A" | "B" | "C" | "D";
       note?: string;
       breakdown?: {
@@ -26,7 +27,6 @@ type Lineup = {
         injury?: string;
         forcedStart?: boolean;
         forcedSit?: boolean;
-        // matchup context
         oppRank?: number;
         matchupTier?: "Green" | "Yellow" | "Red";
       };
@@ -185,7 +185,11 @@ export default function RosterHome() {
       if (id) payload.id = id;
       else payload.email = email;
 
-      const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
+      const res = await fetch("/api/roster", {
+        method: "POST",
+        headers: { "content-type": "application/json" }, // ensure Request.json() works
+        body: JSON.stringify(payload),
+      });
       const data = await res.json();
       if (data.roster?.id) {
         const newId = data.roster.id as string;
@@ -220,7 +224,9 @@ export default function RosterHome() {
     if (!id) return;
     setLoadingRec(true);
     try {
-      const res = await fetch(`/api/roster/recommendation?id=${id}&week=${week}`, { cache: "no-store" });
+      const res = await fetch(`/api/roster/recommendation?id=${encodeURIComponent(id)}&week=${encodeURIComponent(
+        String(week)
+      )}`, { cache: "no-store" });
       const data = await res.json();
       setRecommendation(data.lineup || null);
     } finally {
@@ -229,23 +235,22 @@ export default function RosterHome() {
   }
 
   async function recomputeNow() {
-  if (!id) return;
-  try {
-    const url = `/api/roster/recompute?id=${encodeURIComponent(id)}&week=${encodeURIComponent(
-      String(week)
-    )}&notify=1`;
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) {
-      alert(data.error || `Recompute failed (${res.status})`);
-      return;
+    if (!id) return;
+    try {
+      const url = `/api/roster/recompute?id=${encodeURIComponent(id)}&week=${encodeURIComponent(
+        String(week)
+      )}&notify=1`;
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        alert(data.error || `Recompute failed (${res.status})`);
+        return;
+      }
+      await loadRecommendation(); // refresh UI after recompute
+    } catch (err: any) {
+      alert(err?.message || "Recompute failed");
     }
-    // refresh the on-screen lineup after recompute
-    await loadRecommendation();
-  } catch (err: any) {
-    alert(err?.message || "Recompute failed");
   }
-}
 
   const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
@@ -560,7 +565,7 @@ function RecommendationView({ lu }: { lu: Lineup }) {
   );
   const meta = usePlayerNames(allIds);
 
-  // Guard: only show players who actually fit the slot.
+  // Only show players that actually match the slot (FLEX = RB/WR/TE).
   const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
   const fitsSlot = (slot: string, pos?: string) => {
     if (!pos) return false;
