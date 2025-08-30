@@ -31,15 +31,18 @@ export default async function SurvivorLanding({ searchParams }) {
         </p>
       </header>
 
-     {/* S49 cast hero (tighter) */}
+     {/* S49 cast hero */}
 <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
-  <div className="relative w-full aspect-[3/2] sm:aspect-[21/9] lg:aspect-[24/9] max-h-[320px] sm:max-h-[300px]">
+  {/* Taller aspect on small → gradually flattens on wide screens */}
+  <div className="relative w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[16/9]">
     <Image
       src="/survivor/s49-cast.webp"
       alt="Survivor 49 cast on the beach"
       fill
-      sizes="(max-width: 768px) 100vw, 768px"
+      sizes="(max-width: 1024px) 100vw, 768px"
       className="object-cover"
+      // bias the crop upward so the back row isn't cut off
+      style={{ objectPosition: "50% 18%" }} 
       priority
     />
   </div>
