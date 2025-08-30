@@ -55,7 +55,7 @@ export default function RosterHome() {
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
-  // we send this along on save so the server can cache names/pos/team
+  // send this on save so the server can cache names/pos/team
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
@@ -545,97 +545,85 @@ function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
 
 function RecommendationView({ lu }: { lu: Lineup }) {
   const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
+  // Trust API slots. Collect all starters + bench for name lookups.
+  const startersAll = useMemo(() => order.flatMap((s) => lu.slots?.[s] || []), [lu, order]);
   const allIds = useMemo(
-    () => Array.from(new Set([...(order.flatMap((s) => lu.slots?.[s] || [])), ...(lu.bench || [])])),
-    [lu, order]
+    () => Array.from(new Set([...(startersAll || []), ...(lu.bench || [])])),
+    [startersAll, lu.bench]
   );
   const meta = usePlayerNames(allIds);
 
-  const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
-  const fitsSlot = (slot: string, pos?: string) => {
-    if (!pos) return false;
-    if (slot === "FLEX") return pos === "RB" || pos === "WR" || pos === "TE";
-    if (slot === "DST") return isDstLike(pos);
-    return pos === slot;
-  };
-
-  // IMPORTANT: prefer the client’s player DB (meta.map) for position, fall back to server details
-  const filtered: Record<string, string[]> = {};
-  for (const slot of order) {
-    const raw = lu.slots?.[slot] || [];
-    filtered[slot] = raw.filter((pid) => {
-      const pPos = meta.map[pid]?.pos || lu.details?.[pid]?.position; // <-- prefer client pos map
-      return fitsSlot(slot, pPos);
-    });
-  }
-
-  const used = new Set<string>(order.flatMap((s) => filtered[s]));
+  // Bench = everything not listed in any slot from the API
+  const used = new Set(startersAll);
   const benchIds = allIds.filter((pid) => !used.has(pid));
+
+  const labelFor = (pid: string) => {
+    const m = meta.map[pid];
+    const name = m?.name || pid;
+    const pos = m?.pos || lu.details?.[pid]?.position;
+    const team = m?.team;
+    return name + (pos ? ` — ${pos}` : "") + (team ? ` (${team})` : "");
+  };
 
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {order.map((slot) => (
-          <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
-            <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-            {filtered[slot]?.length ? (
-              <ul className="grid gap-1">
-                {filtered[slot].map((pid) => {
-                  const d = lu.details?.[pid];
-                  const label = `${meta.map[pid]?.name || pid}${
-                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
-                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
-                  return (
-                    <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate" title={explainLine(d)}>
-                        {label}
-                      </span>
-                      {d && (
-                        <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
-                          {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
-                          {d.breakdown?.matchupTier && (
-                            <span
-                              className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
-                                d.breakdown.matchupTier === "Green"
-                                  ? "bg-green-700/40 border-green-400/30"
-                                  : d.breakdown.matchupTier === "Yellow"
-                                  ? "bg-yellow-700/40 border-yellow-400/30"
-                                  : "bg-red-700/40 border-red-400/30"
-                              }`}
-                              title={
-                                d.breakdown.oppRank != null
-                                  ? `Opponent rank: ${d.breakdown.oppRank}`
-                                  : "Matchup context"
-                              }
-                            >
-                              {d.breakdown.matchupTier}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="text-sm text-white/50">—</div>
-            )}
-          </div>
-        ))}
+        {order.map((slot) => {
+          const ids = lu.slots?.[slot] || [];
+          return (
+            <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
+              <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
+              {ids.length ? (
+                <ul className="grid gap-1">
+                  {ids.map((pid) => {
+                    const d = lu.details?.[pid];
+                    return (
+                      <li key={pid} className="flex items-center justify-between text-sm">
+                        <span className="truncate" title={explainLine(d)}>{labelFor(pid)}</span>
+                        {d && (
+                          <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
+                            {d.points.toFixed(1)} pts · {Math.round((d.confidence ?? 0) * 100)}% · {d.tier}
+                            {d.breakdown?.matchupTier && (
+                              <span
+                                className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
+                                  d.breakdown.matchupTier === "Green"
+                                    ? "bg-green-700/40 border-green-400/30"
+                                    : d.breakdown.matchupTier === "Yellow"
+                                    ? "bg-yellow-700/40 border-yellow-400/30"
+                                    : "bg-red-700/40 border-red-400/30"
+                                }`}
+                                title={
+                                  d.breakdown.oppRank != null
+                                    ? `Opponent rank: ${d.breakdown.oppRank}`
+                                    : "Matchup context"
+                                }
+                              >
+                                {d.breakdown.matchupTier}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="text-sm text-white/50">—</div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
+      {/* Bench */}
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
         <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Bench</div>
         {benchIds.length ? (
           <ul className="grid gap-1 text-sm">
             {benchIds.map((pid) => (
-              <li key={pid} className="truncate">
-                {(meta.map[pid]?.name || pid) +
-                  (meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : "") +
-                  (meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : "")}
-              </li>
+              <li key={pid} className="truncate">{labelFor(pid)}</li>
             ))}
           </ul>
         ) : (
@@ -643,6 +631,7 @@ function RecommendationView({ lu }: { lu: Lineup }) {
         )}
       </div>
 
+      {/* Matchup legend */}
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
         <span className="mr-1">Matchup key:</span>
         <span className="inline-flex items-center gap-1">
