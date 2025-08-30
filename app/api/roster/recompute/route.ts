@@ -1,4 +1,4 @@
-// app/api/roster/recompute/route.ts  (only the changed parts)
+// app/api/roster/recompute/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getRoster, saveWeeklyLineup, getLineupNames } from "@/lib/roster/store";
 import { computeLineup } from "@/lib/roster/compute";
@@ -23,12 +23,17 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     const roster = await getRoster(id);
-    if (!roster) return NextResponse.json({ ok: false, error: "Roster not found" }, { status: 404 });
+    if (!roster) {
+      return NextResponse.json({ ok: false, error: "Roster not found" }, { status: 404 });
+    }
 
+    // Compute & persist the lineup unless dry-run
     const lineup: WeeklyLineup = await computeLineup(roster, week);
-    if (!dryRun) await saveWeeklyLineup(id, week, lineup);
+    if (!dryRun) {
+      await saveWeeklyLineup(id, week, lineup);
+    }
 
-    // ---- resolve names for email rendering
+    // Resolve names for rendering (prefer cached names; fall back to /api/players/ids)
     let names: Record<string, { name?: string; pos?: string; team?: string }> =
       (await getLineupNames(id, week).catch(() => ({}))) || {};
 
@@ -38,22 +43,29 @@ export async function GET(request: NextRequest): Promise<Response> {
         new Set([...(order.flatMap((s) => lineup.slots?.[s] || [])), ...(lineup.bench || [])])
       );
       if (allIds.length) {
-        const origin = request.nextUrl.origin; // same host (works on Vercel)
+        const origin = request.nextUrl.origin; // same host in production (Vercel)
         const url = `${origin}/api/players/ids?ids=${encodeURIComponent(allIds.join(","))}`;
-        const res = await fetch(url, { cache: "no-store" });
-        const j = await res.json().catch(() => ({}));
-        names = j?.map || {};
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          const j = await res.json().catch(() => ({}));
+          names = j?.map || {};
+        } catch {
+          // best-effort only
+        }
       }
     }
 
-    // ---- optional email
+    // Optional email
     let emailed: { ok: boolean; id?: string; error?: string } | null = null;
     if (notify && roster.optInEmail && roster.email) {
       if (isEmailConfigured()) {
         const subject = `Lineup Lab — Week ${week} starters`;
         const coachName = roster.name || "Coach";
-        const text = renderLineupText(coachName, week, lineup, names);
-        const html = renderLineupHtml(coachName, week, lineup, names);
+
+        // Pass roster.rules so the email assignment matches the UI exactly
+        const text = renderLineupText(coachName, week, lineup, names, roster.rules);
+        const html = renderLineupHtml(coachName, week, lineup, names, roster.rules);
+
         emailed = await sendEmail({ to: roster.email, subject, text, html });
       } else {
         emailed = { ok: false, error: "Email not configured" };
