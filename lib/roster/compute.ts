@@ -2,6 +2,7 @@
 import type { UserRoster, WeeklyLineup, AdminOverrides, Position } from "./types";
 import { getRosterMeta } from "./store";
 
+const ENSEMBLE_ENABLED = process.env.ENSEMBLE_ENABLED === "true";
 const CURRENT_YEAR = new Date().getFullYear();
 
 type Proj = { pts_ppr?: number; injury_status?: string; opp_rank?: number };
