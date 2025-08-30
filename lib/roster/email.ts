@@ -1,163 +1,77 @@
 // lib/roster/email.ts
-import type { WeeklyLineup } from "@/lib/roster/types";
+import type { WeeklyLineup } from "./types";
 
-// Minimal player metadata used purely for rendering names in emails.
-export type PlayerMeta = {
-  name?: string;
-  pos?: string;
-  team?: string;
-};
+type NameMap = Record<string, { name?: string; pos?: string; team?: string }>;
 
-const ORDER: Array<keyof WeeklyLineup["slots"]> = ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"];
+const ORDER = ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"] as const;
 
-function label(pid: string, metaMap: Record<string, PlayerMeta>) {
-  const m = metaMap[pid] || {};
-  const nm = m.name || pid;
-  const pos = m.pos ? ` — ${m.pos}` : "";
-  const tm = m.team ? ` (${m.team})` : "";
-  return `${nm}${pos}${tm}`;
-}
+const fmt = (d?: WeeklyLineup["details"][string]) =>
+  d ? ` — ${d.points.toFixed(1)} pts • ${Math.round(d.confidence * 100)}% • ${d.tier}` : "";
 
-function section(title: string, rows: string) {
-  return `
-    <div style="border:1px solid #eee;background:#fafafa;border-radius:12px;padding:12px;margin:8px 0;">
-      <div style="font:600 12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; letter-spacing:.04em; color:#666; text-transform:uppercase; margin-bottom:8px;">
-        ${title}
-      </div>
-      ${rows}
-    </div>`;
-}
+export function renderLineupText(teamName: string, week: number, lu: WeeklyLineup, names: NameMap = {}) {
+  const label = (id: string) => {
+    const n = names[id] || {};
+    const parts = [n.name ?? id, n.pos, n.team ? `(${n.team})` : ""].filter(Boolean);
+    return parts.join(" ");
+  };
 
-export function renderEmail(
-  displayName: string,
-  week: number,
-  lu: WeeklyLineup,
-  metaMap: Record<string, PlayerMeta>
-): string {
-  const header = `
-    <div style="text-align:center;margin:8px 0 16px 0;">
-      <div style="font:700 22px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">Lineup Lab — Week ${week}</div>
-      <div style="font:400 14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#555;">
-        Hi ${escapeHtml(displayName)}, here’s your recommended lineup.
-      </div>
-    </div>`;
-
-  const slotSections = ORDER.map((slot) => {
-    const ids = lu.slots?.[slot] || [];
-    if (!ids.length) return section(slot, `<div style="color:#777;font:14px system-ui;">—</div>`);
-    const rows = ids
-      .map((pid) => {
-        const d = lu.details?.[pid];
-        const right =
-          d
-            ? `${d.points.toFixed(1)} pts · ${Math.round(d.confidence * 100)}% · ${d.tier}`
-            : "";
-        return row(label(pid, metaMap), right);
-      })
-      .join("");
-    return section(slot, rows);
-  }).join("");
-
-  const benchRows = (lu.bench || [])
-    .map((pid) => row(label(pid, metaMap), ""))
-    .join("");
-
-  const totals =
-    typeof lu.scores === "number"
-      ? `<div style="margin-top:8px;text-align:right;color:#333;font:600 14px system-ui;">Total starters: ${lu.scores.toFixed?.(2) ?? lu.scores}</div>`
-      : "";
-
-  const footer = `
-    <div style="margin-top:16px;color:#777;font:12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;line-height:1.4">
-      Projections adjust as news breaks. If something meaningfully changes, we’ll resend an update.
-      <br/>This blend of art + science uses projections, injuries, opponent difficulty, and (when needed) human overrides.
-    </div>`;
-
-  return wrap(`${header}${slotSections}${section("Bench", benchRows || `<div style="color:#777;font:14px system-ui;">—</div>`)}${totals}${footer}`);
-}
-
-/** Back-compat wrappers expected by /api/cron/roster-digest */
-export function renderLineupHtml(
-  displayName: string,
-  week: number,
-  lu: WeeklyLineup,
-  metaMap: Record<string, PlayerMeta>
-) {
-  return renderEmail(displayName, week, lu, metaMap);
-}
-
-export function renderLineupText(
-  displayName: string,
-  week: number,
-  lu: WeeklyLineup,
-  metaMap: Record<string, PlayerMeta>
-) {
   const lines: string[] = [];
   lines.push(`Lineup Lab — Week ${week}`);
-  lines.push(`Hi ${displayName}, here’s your recommended lineup.`);
-  lines.push("");
+  lines.push(`Hi ${teamName}, here’s your recommended lineup.\n`);
 
   for (const slot of ORDER) {
+    const ids = lu.slots?.[slot] ?? [];
     lines.push(slot);
-    const ids = lu.slots?.[slot] || [];
-    if (!ids.length) {
-      lines.push("  —");
+    if (ids.length) {
+      for (const id of ids) lines.push(`  - ${label(id)}${fmt(lu.details?.[id])}`);
     } else {
-      for (const pid of ids) {
-        const d = lu.details?.[pid];
-        const right = d ? `${d.points.toFixed(1)} pts · ${Math.round(d.confidence * 100)}% · ${d.tier}` : "";
-        lines.push(`  - ${label(pid, metaMap)}${right ? ` — ${right}` : ""}`);
-      }
+      lines.push("  —");
     }
     lines.push("");
   }
 
-  lines.push("Bench");
-  if (!lu.bench?.length) {
-    lines.push("  —");
-  } else {
-    for (const pid of lu.bench) {
-      lines.push(`  - ${label(pid, metaMap)}`);
-    }
-  }
-
-  if (typeof lu.scores === "number") {
-    lines.push("");
-    lines.push(`Total starters: ${lu.scores.toFixed?.(2) ?? lu.scores}`);
+  if (lu.bench?.length) {
+    lines.push("Bench");
+    for (const id of lu.bench) lines.push(`  - ${label(id)}`);
   }
 
   return lines.join("\n");
 }
 
-/* ---------------- helpers ---------------- */
+export function renderLineupHtml(teamName: string, week: number, lu: WeeklyLineup, names: NameMap = {}) {
+  const label = (id: string) => {
+    const n = names[id] || {};
+    const base = [n.name ?? id, n.pos, n.team ? `(${n.team})` : ""].filter(Boolean).join(" ");
+    return `${base}${fmt(lu.details?.[id])}`;
+  };
 
-function row(left: string, right: string) {
-  return `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:8px;background:#fff;border:1px solid #eee;margin:6px 0;">
-      <span style="font:14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;color:#222;">${escapeHtml(left)}</span>
-      ${right ? `<span style="font:12px system-ui;color:#666;margin-left:12px;white-space:nowrap;">${escapeHtml(right)}</span>` : ""}
-    </div>`;
-}
+  const section = (title: string, ids: string[]) => {
+    const items =
+      ids.length === 0
+        ? `<div style="padding:10px 12px;border:1px solid #eee;border-radius:8px;color:#666">—</div>`
+        : ids
+            .map(
+              (id) =>
+                `<div style="padding:10px 12px;border:1px solid #eee;border-radius:8px;margin-bottom:6px">${label(
+                  id
+                )}</div>`
+            )
+            .join("");
+    return `<h3 style="margin:16px 0 8px 0;font-family:system-ui"> ${title} </h3>${items}`;
+  };
 
-function wrap(inner: string) {
-  return `
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f4f5f7;padding:24px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="background:#ffffff;border:1px solid #e9eaef;border-radius:16px;padding:18px;">
-          <tr><td>
-            ${inner}
-          </td></tr>
-        </table>
-      </td>
-    </tr>
-  </table>`;
-}
+  const body =
+    ORDER.map((slot) => section(slot, lu.slots?.[slot] ?? [])).join("") +
+    (lu.bench?.length ? section("Bench", lu.bench) : "");
 
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return `<!doctype html>
+<html>
+  <body style="background:#f7f7f8;padding:24px">
+    <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #eee;border-radius:12px;padding:20px">
+      <h1 style="text-align:center;font-family:system-ui;margin:8px 0 0 0">Lineup Lab — Week ${week}</h1>
+      <p style="text-align:center;margin:4px 0 16px 0;color:#555">Hi ${teamName}, here’s your recommended lineup.</p>
+      ${body}
+    </div>
+  </body>
+</html>`;
 }

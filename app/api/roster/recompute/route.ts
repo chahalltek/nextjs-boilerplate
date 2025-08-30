@@ -1,4 +1,4 @@
-// app/api/roster/recompute/route.ts
+// app/api/roster/recompute/route.ts  (only the changed parts)
 import { NextRequest, NextResponse } from "next/server";
 import { getRoster, saveWeeklyLineup, getLineupNames } from "@/lib/roster/store";
 import { computeLineup } from "@/lib/roster/compute";
@@ -10,62 +10,46 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET(req: NextRequest) {
-  return handler("GET", req);
-}
-
-export async function POST(req: NextRequest) {
-  return handler("POST", req);
-}
-
-async function handler(method: "GET" | "POST", request: NextRequest) {
+export async function GET(request: NextRequest): Promise<Response> {
   try {
-    let id = "";
-    let week = NaN;
-    let notify = false;
-    let dryRun = false;
-
-    if (method === "GET") {
-      const sp = request.nextUrl.searchParams;
-      id = sp.get("id") || "";
-      week = Number(sp.get("week") || "");
-      notify = ["1", "true", "yes"].includes((sp.get("notify") || "").toLowerCase());
-      dryRun = ["1", "true", "yes"].includes((sp.get("dryRun") || "").toLowerCase());
-    } else {
-      const body = (await request.json().catch(() => ({}))) as {
-        id?: string;
-        week?: number | string;
-        notify?: boolean;
-        dryRun?: boolean;
-      };
-      id = String(body.id || "");
-      week = Number(body.week);
-      notify = Boolean(body.notify);
-      dryRun = Boolean(body.dryRun);
-    }
+    const sp = request.nextUrl.searchParams;
+    const id = sp.get("id") || "";
+    const week = Number(sp.get("week") || "");
+    const notify = ["1", "true", "yes"].includes((sp.get("notify") || "").toLowerCase());
+    const dryRun = ["1", "true", "yes"].includes((sp.get("dryRun") || "").toLowerCase());
 
     if (!id || !Number.isFinite(week) || week <= 0) {
       return NextResponse.json({ ok: false, error: "Missing or invalid id/week" }, { status: 400 });
     }
 
     const roster = await getRoster(id);
-    if (!roster) {
-      return NextResponse.json({ ok: false, error: "Roster not found" }, { status: 404 });
-    }
+    if (!roster) return NextResponse.json({ ok: false, error: "Roster not found" }, { status: 404 });
 
-    // Compute lineup
     const lineup: WeeklyLineup = await computeLineup(roster, week);
+    if (!dryRun) await saveWeeklyLineup(id, week, lineup);
 
-    // Save unless dry-run
-    if (!dryRun) {
-      await saveWeeklyLineup(id, week, lineup);
+    // ---- resolve names for email rendering
+    let names: Record<string, { name?: string; pos?: string; team?: string }> =
+      (await getLineupNames(id, week).catch(() => ({}))) || {};
+
+    if (!names || Object.keys(names).length === 0) {
+      const order = ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"] as const;
+      const allIds = Array.from(
+        new Set([...(order.flatMap((s) => lineup.slots?.[s] || [])), ...(lineup.bench || [])])
+      );
+      if (allIds.length) {
+        const origin = request.nextUrl.origin; // same host (works on Vercel)
+        const url = `${origin}/api/players/ids?ids=${encodeURIComponent(allIds.join(","))}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const j = await res.json().catch(() => ({}));
+        names = j?.map || {};
+      }
     }
 
-    // Optional email
+    // ---- optional email
     let emailed: { ok: boolean; id?: string; error?: string } | null = null;
     if (notify && roster.optInEmail && roster.email) {
       if (isEmailConfigured()) {
-        const names = await getLineupNames(id, week).catch(() => ({}));
         const subject = `Lineup Lab — Week ${week} starters`;
         const coachName = roster.name || "Coach";
         const text = renderLineupText(coachName, week, lineup, names);
@@ -78,7 +62,6 @@ async function handler(method: "GET" | "POST", request: NextRequest) {
 
     return NextResponse.json({ ok: true, id, week, saved: !dryRun, emailed });
   } catch (err: any) {
-    console.error("recompute error", err);
     return NextResponse.json({ ok: false, error: err?.message || "Internal error" }, { status: 500 });
   }
 }

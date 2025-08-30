@@ -55,6 +55,7 @@ export default function RosterHome() {
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
+  // we send this along on save so the server can cache names/pos/team
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
@@ -64,7 +65,7 @@ export default function RosterHome() {
 
   const [myRosters, setMyRosters] = useState<SavedRosterMeta[]>([]);
 
-  // migrate old single id -> list and choose first
+  // migrate any old single-id storage into list
   useEffect(() => {
     const old = localStorage.getItem("rosterId");
     const listRaw = localStorage.getItem("rosterIds");
@@ -81,7 +82,7 @@ export default function RosterHome() {
     if (list[0]?.id) setId(list[0].id);
   }, []);
 
-  // default NFL week
+  // hydrate current NFL week
   useEffect(() => {
     (async () => {
       try {
@@ -92,7 +93,7 @@ export default function RosterHome() {
     })();
   }, []);
 
-  // hydrate on roster id
+  // load roster when id changes
   useEffect(() => {
     async function load() {
       if (!id) {
@@ -121,6 +122,7 @@ export default function RosterHome() {
         setRules({ ...defaultRules, ...(r.rules || {}) });
         setScoring(r.scoring || "PPR");
 
+        // keep local label up to date
         setMyRosters((prev) => {
           const next = [...prev];
           const i = next.findIndex((x) => x.id === r.id);
@@ -176,16 +178,12 @@ export default function RosterHome() {
         optInEmail,
         rules,
         scoring,
-        meta,
+        meta, // send incremental meta so server can cache names/pos/team
       };
       if (id) payload.id = id;
       else payload.email = email;
 
-      const res = await fetch("/api/roster", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.roster?.id) {
         const newId = data.roster.id as string;
@@ -220,10 +218,7 @@ export default function RosterHome() {
     if (!id) return;
     setLoadingRec(true);
     try {
-      const res = await fetch(
-        `/api/roster/recommendation?id=${encodeURIComponent(id)}&week=${encodeURIComponent(String(week))}`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`/api/roster/recommendation?id=${id}&week=${week}`, { cache: "no-store" });
       const data = await res.json();
       setRecommendation(data.lineup || null);
     } finally {
@@ -312,9 +307,7 @@ export default function RosterHome() {
             <ul className="list-disc pl-5 text-white/70 mt-1 space-y-1">
               <li>Search by player name (we map to Sleeper IDs automatically) or paste IDs.</li>
               <li>Save your roster once—update anytime for trades/waivers.</li>
-              <li>
-                Select the week and click <b>Get Recommendation</b>.
-              </li>
+              <li>Select the week and click <b>Get Recommendation</b>.</li>
             </ul>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
@@ -328,14 +321,13 @@ export default function RosterHome() {
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Multiple teams/leagues</div>
             <p className="text-white/70 mt-1">
-              Manage several rosters and switch above. Pin players to FLEX and tweak slot rules per your league.
+              Keep several rosters and switch above. Pin players to FLEX and tweak your slot rules as needed.
             </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Art + Science</div>
             <p className="text-white/70 mt-1">
-              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes or late news
-              matter.
+              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes or late news matter.
             </p>
           </div>
         </div>
@@ -526,7 +518,7 @@ export default function RosterHome() {
             )}
           </div>
 
-          {recommendation && <RecommendationView lu={recommendation} rules={rules} />}
+          {recommendation && <RecommendationView lu={recommendation} />}
         </section>
       )}
     </main>
@@ -551,139 +543,89 @@ function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
   return parts.join(" • ");
 }
 
-function RecommendationView({ lu, rules }: { lu: Lineup; rules: Rules }) {
-  const order = useMemo(() => ["QB", "RB", "WR", "TE", "DST", "K", "FLEX"], []);
+function RecommendationView({ lu }: { lu: Lineup }) {
+  const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
   const allIds = useMemo(
     () => Array.from(new Set([...(order.flatMap((s) => lu.slots?.[s] || [])), ...(lu.bench || [])])),
     [lu, order]
   );
   const meta = usePlayerNames(allIds);
 
-  // Normalize common synonyms
-  const norm = (s?: string) =>
-    (s || "").toUpperCase().replace(/\s+/g, "").replace("D/ST", "DST").replace("DEF", "DST").replace("PK", "K");
-
-  const getPos = (pid: string): "QB" | "RB" | "WR" | "TE" | "DST" | "K" | "" => {
-    const m = norm(meta.map[pid]?.pos);
-    if (m === "QB" || m === "RB" || m === "WR" || m === "TE" || m === "DST" || m === "K") return m;
-    const d = norm(lu.details?.[pid]?.position);
-    if (d === "QB" || d === "RB" || d === "WR" || d === "TE" || d === "DST" || d === "K") return d;
-    return "";
+  const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
+  const fitsSlot = (slot: string, pos?: string) => {
+    if (!pos) return false;
+    if (slot === "FLEX") return pos === "RB" || pos === "WR" || pos === "TE";
+    if (slot === "DST") return isDstLike(pos);
+    return pos === slot;
   };
 
-  const pts = (pid: string) => lu.details?.[pid]?.points ?? 0;
-
-  // Build fresh lineup client-side from positions + rules, if server left slots empty.
-  const lists: Record<string, string[]> = { QB: [], RB: [], WR: [], TE: [], DST: [], K: [], FLEX: [] };
-  const used = new Set<string>();
-
-  const takeTop = (pool: string[], need: number) => pool.slice(0, Math.max(0, need));
-
-  // Fill fixed-position slots
-  (["QB", "RB", "WR", "TE", "DST", "K"] as const).forEach((slot) => {
-    const need = rules[slot] ?? 0;
-    if (need <= 0) return;
-
-    // Prefer the server’s explicit slot list if it already provided enough
-    const server = (lu.slots?.[slot] || []).filter(Boolean);
-    if (server.length >= need) {
-      lists[slot] = takeTop(server, need);
-      server.forEach((id) => used.add(id));
-      return;
-    }
-
-    // Otherwise pick by points among eligible players not yet used
-    const elig = allIds
-      .filter((pid) => !used.has(pid) && getPos(pid) === slot)
-      .sort((a, b) => pts(b) - pts(a));
-    lists[slot] = takeTop(elig, need);
-    lists[slot].forEach((id) => used.add(id));
-  });
-
-  // Fill FLEX
-  const flexNeed = rules.FLEX ?? 0;
-  if (flexNeed > 0) {
-    // Prefer server if provided
-    const serverFlex = (lu.slots?.FLEX || []).filter((pid) => !used.has(pid));
-    if (serverFlex.length >= flexNeed) {
-      lists.FLEX = takeTop(serverFlex, flexNeed);
-      lists.FLEX.forEach((id) => used.add(id));
-    } else {
-      const flexElig = allIds
-        .filter((pid) => !used.has(pid))
-        .filter((pid) => {
-          const p = getPos(pid);
-          return p === "RB" || p === "WR" || p === "TE";
-        })
-        .sort((a, b) => pts(b) - pts(a));
-      lists.FLEX = takeTop(flexElig, flexNeed);
-      lists.FLEX.forEach((id) => used.add(id));
-    }
+  // IMPORTANT: prefer the client’s player DB (meta.map) for position, fall back to server details
+  const filtered: Record<string, string[]> = {};
+  for (const slot of order) {
+    const raw = lu.slots?.[slot] || [];
+    filtered[slot] = raw.filter((pid) => {
+      const pPos = meta.map[pid]?.pos || lu.details?.[pid]?.position; // <-- prefer client pos map
+      return fitsSlot(slot, pPos);
+    });
   }
 
-  // Bench = everything not used in chosen lists
+  const used = new Set<string>(order.flatMap((s) => filtered[s]));
   const benchIds = allIds.filter((pid) => !used.has(pid));
-
-  // Render helper
-  const SlotBlock = ({ title, ids }: { title: string; ids: string[] }) => (
-    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-      <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{title}</div>
-      {ids?.length ? (
-        <ul className="grid gap-1">
-          {ids.map((pid) => {
-            const d = lu.details?.[pid];
-            const label = `${meta.map[pid]?.name || pid}${
-              meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
-            }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
-            return (
-              <li key={pid} className="flex items-center justify-between text-sm">
-                <span className="truncate" title={explainLine(d)}>{label}</span>
-                {d && (
-                  <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
-                    {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
-                    {d.breakdown?.matchupTier && (
-                      <span
-                        className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
-                          d.breakdown.matchupTier === "Green"
-                            ? "bg-green-700/40 border-green-400/30"
-                            : d.breakdown.matchupTier === "Yellow"
-                            ? "bg-yellow-700/40 border-yellow-400/30"
-                            : "bg-red-700/40 border-red-400/30"
-                        }`}
-                        title={
-                          d.breakdown.oppRank != null ? `Opponent rank: ${d.breakdown.oppRank}` : "Matchup context"
-                        }
-                      >
-                        {d.breakdown.matchupTier}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <div className="text-sm text-white/50">—</div>
-      )}
-    </div>
-  );
 
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <SlotBlock title="QB" ids={lists.QB} />
-        <SlotBlock title="RB" ids={lists.RB} />
-        <SlotBlock title="WR" ids={lists.WR} />
-        <SlotBlock title="TE" ids={lists.TE} />
-        <SlotBlock title="FLEX" ids={lists.FLEX} />
-        <SlotBlock title="DST" ids={lists.DST} />
-        <SlotBlock title="K" ids={lists.K} />
+        {order.map((slot) => (
+          <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
+            <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
+            {filtered[slot]?.length ? (
+              <ul className="grid gap-1">
+                {filtered[slot].map((pid) => {
+                  const d = lu.details?.[pid];
+                  const label = `${meta.map[pid]?.name || pid}${
+                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
+                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
+                  return (
+                    <li key={pid} className="flex items-center justify-between text-sm">
+                      <span className="truncate" title={explainLine(d)}>
+                        {label}
+                      </span>
+                      {d && (
+                        <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
+                          {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
+                          {d.breakdown?.matchupTier && (
+                            <span
+                              className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
+                                d.breakdown.matchupTier === "Green"
+                                  ? "bg-green-700/40 border-green-400/30"
+                                  : d.breakdown.matchupTier === "Yellow"
+                                  ? "bg-yellow-700/40 border-yellow-400/30"
+                                  : "bg-red-700/40 border-red-400/30"
+                              }`}
+                              title={
+                                d.breakdown.oppRank != null
+                                  ? `Opponent rank: ${d.breakdown.oppRank}`
+                                  : "Matchup context"
+                              }
+                            >
+                              {d.breakdown.matchupTier}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="text-sm text-white/50">—</div>
+            )}
+          </div>
+        ))}
       </div>
 
-      {/* Bench */}
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
         <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Bench</div>
         {benchIds.length ? (
@@ -701,7 +643,6 @@ function RecommendationView({ lu, rules }: { lu: Lineup; rules: Rules }) {
         )}
       </div>
 
-      {/* Matchup legend */}
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
         <span className="mr-1">Matchup key:</span>
         <span className="inline-flex items-center gap-1">
