@@ -26,6 +26,7 @@ type Lineup = {
         injury?: string;
         forcedStart?: boolean;
         forcedSit?: boolean;
+        // matchup context
         oppRank?: number;
         matchupTier?: "Green" | "Yellow" | "Red";
       };
@@ -59,8 +60,6 @@ export default function RosterHome() {
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<string>("");
-
   const [week, setWeek] = useState(1);
   const [recommendation, setRecommendation] = useState<Lineup | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
@@ -172,9 +171,7 @@ export default function RosterHome() {
   }
 
   async function save() {
-    if (saving) return;
     setSaving(true);
-    setSaveMsg("");
     try {
       const payload: any = {
         name,
@@ -188,27 +185,10 @@ export default function RosterHome() {
       if (id) payload.id = id;
       else payload.email = email;
 
-      const res = await fetch("/api/roster", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const raw = await res.text();
-      let data: any = {};
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        data = { error: raw };
-      }
-
-      if (!res.ok || (data && data.ok === false)) {
-        const reason = data?.error || `${res.status} ${res.statusText}`;
-        throw new Error(reason);
-      }
-
-      const newId = data?.roster?.id as string | undefined;
-      if (newId) {
+      const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (data.roster?.id) {
+        const newId = data.roster.id as string;
         setMyRosters((prev) => {
           const exists = prev.find((r) => r.id === newId);
           const next = exists
@@ -219,11 +199,6 @@ export default function RosterHome() {
         });
         setId(newId);
       }
-
-      setSaveMsg("✅ Saved");
-    } catch (err: any) {
-      console.error("[/api/roster] save failed:", err);
-      setSaveMsg(`❌ ${err?.message || "Save failed"}`);
     } finally {
       setSaving(false);
     }
@@ -257,10 +232,12 @@ export default function RosterHome() {
     if (!id) return;
     await fetch("/api/roster/recompute", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, week, notify: true }),
     });
   }
 
+  const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
 
   return (
@@ -504,7 +481,6 @@ export default function RosterHome() {
               Roster ID: <code className="text-white/70">{id}</code>
             </span>
           )}
-          {saveMsg && <span className="text-sm">{saveMsg}</span>}
         </div>
       </section>
 
@@ -574,6 +550,29 @@ function RecommendationView({ lu }: { lu: Lineup }) {
   );
   const meta = usePlayerNames(allIds);
 
+  // Guard: only show players who actually fit the slot.
+  const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
+  const fitsSlot = (slot: string, pos?: string) => {
+    if (!pos) return false;
+    if (slot === "FLEX") return pos === "RB" || pos === "WR" || pos === "TE";
+    if (slot === "DST") return isDstLike(pos);
+    return pos === slot;
+  };
+
+  // Build filtered per-slot lists
+  const filtered: Record<string, string[]> = {};
+  for (const slot of order) {
+    const raw = lu.slots?.[slot] || [];
+    filtered[slot] = raw.filter((pid) => {
+      const pPos = lu.details?.[pid]?.position || meta.map[pid]?.pos;
+      return fitsSlot(slot, pPos);
+    });
+  }
+
+  // Compute bench = everything not used in filtered slots
+  const used = new Set<string>(order.flatMap((s) => filtered[s]));
+  const benchIds = allIds.filter((pid) => !used.has(pid));
+
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
@@ -582,9 +581,9 @@ function RecommendationView({ lu }: { lu: Lineup }) {
         {order.map((slot) => (
           <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
             <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-            {lu.slots?.[slot]?.length ? (
+            {filtered[slot]?.length ? (
               <ul className="grid gap-1">
-                {lu.slots[slot].map((pid) => {
+                {filtered[slot].map((pid) => {
                   const d = lu.details?.[pid];
                   const label = `${meta.map[pid]?.name || pid}${
                     meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
@@ -631,9 +630,9 @@ function RecommendationView({ lu }: { lu: Lineup }) {
       {/* Bench */}
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
         <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Bench</div>
-        {lu.bench?.length ? (
+        {benchIds.length ? (
           <ul className="grid gap-1 text-sm">
-            {lu.bench.map((pid) => (
+            {benchIds.map((pid) => (
               <li key={pid} className="truncate">
                 {(meta.map[pid]?.name || pid) +
                   (meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : "") +
