@@ -117,7 +117,8 @@ export async function getHistoricalActuals(opts: {
     .map(sanitizeActualRow)
     .filter((r) => Number.isFinite(r.pts_ppr));
 
-  const pastProjectionsBySource: Record<SourceId, ProjectionRow[]> = {};
+  // Build as a Partial so empty {} is allowed when you only use Sleeper.
+  const pastProjectionsBySourcePartial: Partial<Record<SourceId, ProjectionRow[]>> = {};
   if (sourcesForPastProjections.length) {
     const promises = sourcesForPastProjections.map(async (src) => {
       const byWeek = await Promise.all(
@@ -126,10 +127,16 @@ export async function getHistoricalActuals(opts: {
         )
       );
       const flat = byWeek.flat().map(sanitizeProjectionRow);
-      pastProjectionsBySource[src] = flat;
+      pastProjectionsBySourcePartial[src] = flat;
     });
     await Promise.all(promises);
   }
+
+  // Widen to a complete Record with empty buckets for missing sources.
+  const pastProjectionsBySource: Record<SourceId, ProjectionRow[]> = {
+    ...emptySourceBuckets(),
+    ...pastProjectionsBySourcePartial,
+  };
 
   return { actuals, pastProjectionsBySource };
 }
@@ -398,6 +405,18 @@ function sanitizeActualRow(r: ActualRow): ActualRow {
    Small helpers
    =========================== */
 
+function emptySourceBuckets(): Record<SourceId, ProjectionRow[]> {
+  return {
+    BLITZ: [],
+    FTN: [],
+    BAKER: [],
+    ROTO: [],
+    ML: [],
+    CONSENSUS: [],
+    SLEEPER: [],
+  };
+}
+
 function num(v: any): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -442,3 +461,4 @@ function range(a: number, b: number): number[] {
   for (let i = a; i <= b; i++) out.push(i);
   return out;
 }
+
