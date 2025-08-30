@@ -15,7 +15,7 @@ type Lineup = {
     string,
     {
       playerId: string;
-      position: string; // may be slot-like; prefer meta.pos
+      position: string;
       points: number;
       confidence: number;
       tier: "A" | "B" | "C" | "D";
@@ -52,11 +52,9 @@ export default function RosterHome() {
   const [pasteText, setPasteText] = useState("");
   const [optInEmail, setOptInEmail] = useState(true);
 
-  // rules + scoring profile
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
-  // incremental per-roster meta (name/pos/team) to send to server
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
@@ -98,7 +96,6 @@ export default function RosterHome() {
   useEffect(() => {
     async function load() {
       if (!id) {
-        // clear for new roster
         setEmail("");
         setName("");
         setPlayers([]);
@@ -124,7 +121,6 @@ export default function RosterHome() {
         setRules({ ...defaultRules, ...(r.rules || {}) });
         setScoring(r.scoring || "PPR");
 
-        // keep local label updated
         setMyRosters((prev) => {
           const next = [...prev];
           const i = next.findIndex((x) => x.id === r.id);
@@ -180,7 +176,7 @@ export default function RosterHome() {
         optInEmail,
         rules,
         scoring,
-        meta, // send incremental meta to be cached server-side
+        meta,
       };
       if (id) payload.id = id;
       else payload.email = email;
@@ -247,7 +243,7 @@ export default function RosterHome() {
         alert(data.error || `Recompute failed (${res.status})`);
         return;
       }
-      await loadRecommendation(); // refresh UI after recompute
+      await loadRecommendation();
     } catch (err: any) {
       alert(err?.message || "Recompute failed");
     }
@@ -332,8 +328,7 @@ export default function RosterHome() {
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Multiple teams/leagues</div>
             <p className="text-white/70 mt-1">
-              Managing more than one squad? Keep several rosters and switch above. Pin players to FLEX and tweak your slot
-              rules as your league requires.
+              Manage several rosters and switch above. Pin players to FLEX and tweak slot rules per your league.
             </p>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
@@ -428,7 +423,6 @@ export default function RosterHome() {
             </button>
           </div>
 
-          {/* Use onSelect(hit) to capture name/pos/team */}
           <PlayerSearch onSelect={(hit: Hit) => addPlayerFromHit(hit)} />
 
           {showPaste && (
@@ -532,7 +526,7 @@ export default function RosterHome() {
             )}
           </div>
 
-          {recommendation && <RecommendationView lu={recommendation} />}
+          {recommendation && <RecommendationView lu={recommendation} rules={rules} />}
         </section>
       )}
     </main>
@@ -557,96 +551,136 @@ function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
   return parts.join(" • ");
 }
 
-function RecommendationView({ lu }: { lu: Lineup }) {
-  const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
+function RecommendationView({ lu, rules }: { lu: Lineup; rules: Rules }) {
+  const order = useMemo(() => ["QB", "RB", "WR", "TE", "DST", "K", "FLEX"], []);
   const allIds = useMemo(
     () => Array.from(new Set([...(order.flatMap((s) => lu.slots?.[s] || [])), ...(lu.bench || [])])),
     [lu, order]
   );
   const meta = usePlayerNames(allIds);
 
+  // Normalize common synonyms
   const norm = (s?: string) =>
-    (s || "").toUpperCase().replace(/\s+/g, "").replace("D/ST", "DST").replace("DEF", "DST");
-  const isFlexEligible = (p?: string) => {
-    const P = norm(p);
-    return P === "RB" || P === "WR" || P === "TE";
-  };
-  const fitsSlot = (slot: string, pos?: string) => {
-    const S = norm(slot);
-    const P = norm(pos);
-    if (!P) return false; // if unknown, try strict first; we’ll fallback to raw list when empty
-    if (S === "FLEX") return isFlexEligible(P);
-    if (S === "DST") return P === "DST";
-    return P === S;
+    (s || "").toUpperCase().replace(/\s+/g, "").replace("D/ST", "DST").replace("DEF", "DST").replace("PK", "K");
+
+  const getPos = (pid: string): "QB" | "RB" | "WR" | "TE" | "DST" | "K" | "" => {
+    const m = norm(meta.map[pid]?.pos);
+    if (m === "QB" || m === "RB" || m === "WR" || m === "TE" || m === "DST" || m === "K") return m;
+    const d = norm(lu.details?.[pid]?.position);
+    if (d === "QB" || d === "RB" || d === "WR" || d === "TE" || d === "DST" || d === "K") return d;
+    return "";
   };
 
-  // Per-slot lists with strict filtering; fallback to raw if strict is empty.
-  const lists: Record<string, string[]> = {};
-  for (const slot of order) {
-    const raw = lu.slots?.[slot] || [];
-    const strict = raw.filter((pid) => {
-      const truePos = meta.map[pid]?.pos || lu.details?.[pid]?.position;
-      return fitsSlot(slot, truePos);
-    });
-    lists[slot] = strict.length ? strict : raw;
+  const pts = (pid: string) => lu.details?.[pid]?.points ?? 0;
+
+  // Build fresh lineup client-side from positions + rules, if server left slots empty.
+  const lists: Record<string, string[]> = { QB: [], RB: [], WR: [], TE: [], DST: [], K: [], FLEX: [] };
+  const used = new Set<string>();
+
+  const takeTop = (pool: string[], need: number) => pool.slice(0, Math.max(0, need));
+
+  // Fill fixed-position slots
+  (["QB", "RB", "WR", "TE", "DST", "K"] as const).forEach((slot) => {
+    const need = rules[slot] ?? 0;
+    if (need <= 0) return;
+
+    // Prefer the server’s explicit slot list if it already provided enough
+    const server = (lu.slots?.[slot] || []).filter(Boolean);
+    if (server.length >= need) {
+      lists[slot] = takeTop(server, need);
+      server.forEach((id) => used.add(id));
+      return;
+    }
+
+    // Otherwise pick by points among eligible players not yet used
+    const elig = allIds
+      .filter((pid) => !used.has(pid) && getPos(pid) === slot)
+      .sort((a, b) => pts(b) - pts(a));
+    lists[slot] = takeTop(elig, need);
+    lists[slot].forEach((id) => used.add(id));
+  });
+
+  // Fill FLEX
+  const flexNeed = rules.FLEX ?? 0;
+  if (flexNeed > 0) {
+    // Prefer server if provided
+    const serverFlex = (lu.slots?.FLEX || []).filter((pid) => !used.has(pid));
+    if (serverFlex.length >= flexNeed) {
+      lists.FLEX = takeTop(serverFlex, flexNeed);
+      lists.FLEX.forEach((id) => used.add(id));
+    } else {
+      const flexElig = allIds
+        .filter((pid) => !used.has(pid))
+        .filter((pid) => {
+          const p = getPos(pid);
+          return p === "RB" || p === "WR" || p === "TE";
+        })
+        .sort((a, b) => pts(b) - pts(a));
+      lists.FLEX = takeTop(flexElig, flexNeed);
+      lists.FLEX.forEach((id) => used.add(id));
+    }
   }
 
   // Bench = everything not used in chosen lists
-  const used = new Set<string>(order.flatMap((s) => lists[s]));
   const benchIds = allIds.filter((pid) => !used.has(pid));
+
+  // Render helper
+  const SlotBlock = ({ title, ids }: { title: string; ids: string[] }) => (
+    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+      <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{title}</div>
+      {ids?.length ? (
+        <ul className="grid gap-1">
+          {ids.map((pid) => {
+            const d = lu.details?.[pid];
+            const label = `${meta.map[pid]?.name || pid}${
+              meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
+            }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
+            return (
+              <li key={pid} className="flex items-center justify-between text-sm">
+                <span className="truncate" title={explainLine(d)}>{label}</span>
+                {d && (
+                  <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
+                    {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
+                    {d.breakdown?.matchupTier && (
+                      <span
+                        className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
+                          d.breakdown.matchupTier === "Green"
+                            ? "bg-green-700/40 border-green-400/30"
+                            : d.breakdown.matchupTier === "Yellow"
+                            ? "bg-yellow-700/40 border-yellow-400/30"
+                            : "bg-red-700/40 border-red-400/30"
+                        }`}
+                        title={
+                          d.breakdown.oppRank != null ? `Opponent rank: ${d.breakdown.oppRank}` : "Matchup context"
+                        }
+                      >
+                        {d.breakdown.matchupTier}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="text-sm text-white/50">—</div>
+      )}
+    </div>
+  );
 
   return (
     <div className="grid gap-3">
       <div className="text-white/80 text-sm">Recommended Lineup — Week {lu.week}</div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {order.map((slot) => (
-          <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
-            <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-            {lists[slot]?.length ? (
-              <ul className="grid gap-1">
-                {lists[slot].map((pid) => {
-                  const d = lu.details?.[pid];
-                  const label = `${meta.map[pid]?.name || pid}${
-                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
-                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
-                  return (
-                    <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate" title={explainLine(d)}>
-                        {label}
-                      </span>
-                      {d && (
-                        <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
-                          {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
-                          {d.breakdown?.matchupTier && (
-                            <span
-                              className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${
-                                d.breakdown.matchupTier === "Green"
-                                  ? "bg-green-700/40 border-green-400/30"
-                                  : d.breakdown.matchupTier === "Yellow"
-                                  ? "bg-yellow-700/40 border-yellow-400/30"
-                                  : "bg-red-700/40 border-red-400/30"
-                              }`}
-                              title={
-                                d.breakdown.oppRank != null
-                                  ? `Opponent rank: ${d.breakdown.oppRank}`
-                                  : "Matchup context"
-                              }
-                            >
-                              {d.breakdown.matchupTier}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="text-sm text-white/50">—</div>
-            )}
-          </div>
-        ))}
+        <SlotBlock title="QB" ids={lists.QB} />
+        <SlotBlock title="RB" ids={lists.RB} />
+        <SlotBlock title="WR" ids={lists.WR} />
+        <SlotBlock title="TE" ids={lists.TE} />
+        <SlotBlock title="FLEX" ids={lists.FLEX} />
+        <SlotBlock title="DST" ids={lists.DST} />
+        <SlotBlock title="K" ids={lists.K} />
       </div>
 
       {/* Bench */}
