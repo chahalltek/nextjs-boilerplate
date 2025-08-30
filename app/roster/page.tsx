@@ -26,7 +26,6 @@ type Lineup = {
         injury?: string;
         forcedStart?: boolean;
         forcedSit?: boolean;
-        // matchup context
         oppRank?: number;
         matchupTier?: "Green" | "Yellow" | "Red";
       };
@@ -60,6 +59,8 @@ export default function RosterHome() {
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string>("");
+
   const [week, setWeek] = useState(1);
   const [recommendation, setRecommendation] = useState<Lineup | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
@@ -171,7 +172,9 @@ export default function RosterHome() {
   }
 
   async function save() {
+    if (saving) return;
     setSaving(true);
+    setSaveMsg("");
     try {
       const payload: any = {
         name,
@@ -185,10 +188,27 @@ export default function RosterHome() {
       if (id) payload.id = id;
       else payload.email = email;
 
-      const res = await fetch("/api/roster", { method: "POST", body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (data.roster?.id) {
-        const newId = data.roster.id as string;
+      const res = await fetch("/api/roster", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = { error: raw };
+      }
+
+      if (!res.ok || (data && data.ok === false)) {
+        const reason = data?.error || `${res.status} ${res.statusText}`;
+        throw new Error(reason);
+      }
+
+      const newId = data?.roster?.id as string | undefined;
+      if (newId) {
         setMyRosters((prev) => {
           const exists = prev.find((r) => r.id === newId);
           const next = exists
@@ -199,6 +219,11 @@ export default function RosterHome() {
         });
         setId(newId);
       }
+
+      setSaveMsg("✅ Saved");
+    } catch (err: any) {
+      console.error("[/api/roster] save failed:", err);
+      setSaveMsg(`❌ ${err?.message || "Save failed"}`);
     } finally {
       setSaving(false);
     }
@@ -236,7 +261,6 @@ export default function RosterHome() {
     });
   }
 
-  const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
 
   return (
@@ -480,6 +504,7 @@ export default function RosterHome() {
               Roster ID: <code className="text-white/70">{id}</code>
             </span>
           )}
+          {saveMsg && <span className="text-sm">{saveMsg}</span>}
         </div>
       </section>
 
