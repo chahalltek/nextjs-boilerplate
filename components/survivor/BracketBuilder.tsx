@@ -121,40 +121,41 @@ export default function BracketBuilder({
 
   return (
     <div className="space-y-6">
-      {/* Final 3 slots */}
-      <section className="grid gap-2">
-        <h2 className="text-sm opacity-80">Final 3 (Winner → Second → Third)</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[0, 1, 2].map((i) => (
-            <FinalSlot
-              key={i}
-              id={`final-${i}`}
-              label={["Winner", "Second", "Third"][i]}
-              contestant={final3[i] ? byId.get(final3[i]) : undefined}
-              highlightId={activeId}
-              locked={locked}
-              onClear={() =>
-                setFinal3((prev) => {
-                  const next = prev.slice();
-                  next[i] = "";
-                  return next;
-                })
-              }
-            />
-          ))}
-        </div>
-        <p className="text-xs text-white/50">
-          Tip: drag from the list into a slot. Dropping another person replaces the current one.
-        </p>
-      </section>
-
-      {/* Boot order list */}
+      {/* Put BOTH the final slots and the sortable list inside the SAME DndContext */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
+        {/* Final 3 slots */}
+        <section className="grid gap-2">
+          <h2 className="text-sm opacity-80">Final 3 (Winner → Second → Third)</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[0, 1, 2].map((i) => (
+              <FinalSlot
+                key={i}
+                id={`final-${i}`}
+                label={["Winner", "Second", "Third"][i]}
+                contestant={final3[i] ? (byId.get(final3[i]) as Contestant) : undefined}
+                highlightId={activeId}
+                locked={locked}
+                onClear={() =>
+                  setFinal3((prev) => {
+                    const next = prev.slice();
+                    next[i] = "";
+                    return next;
+                  })
+                }
+              />
+            ))}
+          </div>
+          <p className="text-xs text-white/50">
+            Tip: drag from the list into a slot. Dropping another person replaces the current one.
+          </p>
+        </section>
+
+        {/* Boot order list */}
         <SortableContext
           items={order.map((id) => `boot-${id}`)}
           strategy={verticalListSortingStrategy}
