@@ -334,7 +334,7 @@ export default function RosterHome() {
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="font-medium">Art + Science</div>
             <p className="text-white/70 mt-1">
-              Projections, injuries, and matchups power the model; our admins can nudge calls when vibes or late news matter.
+              Our advanced ensemble model combines industry-leading projection systems using weighted averaging, Bayesian updating, and regression stacking. It fuses machine learning predictions and expert consensus to reduce bias and boost predictive accuracy—basically, it’s like letting a bunch of data scientists set your lineup while you sit back and take the credit
             </p>
           </div>
         </div>
