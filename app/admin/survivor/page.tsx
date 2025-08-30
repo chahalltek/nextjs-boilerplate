@@ -1,5 +1,7 @@
 // app/admin/survivor/page.tsx
 import { getSeason, setSeason, appendBoot, recomputeLeaderboard } from "@/lib/survivor/store";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,26 +14,30 @@ function slugify(s: string) {
 /* ---------------- server actions (do NOT export) ---------------- */
 async function actionSeedSeason(formData: FormData) {
   "use server";
-  const seasonId = String(formData.get("seasonId") || "").trim();
+
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
   const seasonName = String(formData.get("seasonName") || "").trim();
   const lockAtLocal = String(formData.get("lockAt") || "").trim();
   const contestantsRaw = String(formData.get("contestants") || "").trim();
-  if (!seasonId || !lockAtLocal || !contestantsRaw) return;
 
-  const lockAt = new Date(lockAtLocal);
+  if (!seasonId) return;
+  if (!lockAtLocal) return;
+  if (!contestantsRaw) return;
+
+  // Parse contestants: "Name | custom-id" (custom id optional)
   const contestants = contestantsRaw
-    .split("\n")
+    .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
     .map((line) => {
       const [name, custom] = line.split("|").map((v) => v.trim());
-      return { id: custom || slugify(name), name };
+      return { id: (custom || slugify(name || "")).toLowerCase(), name: name || "" };
     });
 
   // ensure unique ids
   const seen = new Set<string>();
   for (const c of contestants) {
-    let base = c.id;
+    let base = c.id || "player";
     let n = 1;
     while (seen.has(c.id)) {
       n += 1;
@@ -40,33 +46,48 @@ async function actionSeedSeason(formData: FormData) {
     seen.add(c.id);
   }
 
+  // Convert local datetime to ISO (UTC)
+  const lockAtISO = new Date(lockAtLocal).toISOString();
+
   await setSeason({
     id: seasonId,
-    name: seasonName || `Survivor ${seasonId}`, // ✅ provide required name
-    lockAt: lockAt.toISOString(),
+    name: seasonName || `Survivor ${seasonId}`,
+    lockAt: lockAtISO,
     contestants,
     actualBootOrder: [],
   });
+
+  // Make sure the page shows fresh data and jumps to the saved season
+  revalidatePath("/admin/survivor");
+  redirect(`/admin/survivor?season=${encodeURIComponent(seasonId)}`);
 }
 
 async function actionAddBoot(formData: FormData) {
   "use server";
-  const seasonId = String(formData.get("seasonId") || "").trim();
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
   const contestantId = String(formData.get("contestantId") || "").trim();
   if (!seasonId || !contestantId) return;
   await appendBoot(seasonId, contestantId);
+  revalidatePath("/admin/survivor");
 }
 
 async function actionRescore(formData: FormData) {
   "use server";
-  const seasonId = String(formData.get("seasonId") || "").trim();
+  const seasonId = String(formData.get("seasonId") || "").trim().toUpperCase();
   if (!seasonId) return;
   await recomputeLeaderboard(seasonId);
+  revalidatePath("/admin/survivor");
 }
 
 /* ---------------- page ---------------- */
-export default async function SurvivorAdminPage() {
-  const currentSeasonId = "S47"; // adjust later if you use a route param
+export default async function SurvivorAdminPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const qpSeason = typeof searchParams?.season === "string" ? searchParams!.season : undefined;
+  const currentSeasonId = (qpSeason || "S47").toUpperCase();
+
   const season = await getSeason(currentSeasonId);
 
   return (
@@ -80,7 +101,7 @@ export default async function SurvivorAdminPage() {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-2">
         <div className="font-semibold">Season status</div>
         {!season ? (
-          <p className="text-sm text-white/70">No season found in KV.</p>
+          <p className="text-sm text-white/70">No season found for <span className="font-mono">{currentSeasonId}</span>.</p>
         ) : (
           <div className="text-sm text-white/80 space-y-1">
             <div>

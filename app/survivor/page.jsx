@@ -64,7 +64,7 @@ export default async function SurvivorLanding() {
         </>
       ) : (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-      The current season isn&apos;t configured yet because the season hasn&apos;t started. Subscribe to be notified!
+      Season 49 premieres on September 24 at 8PM ET!
         </div>
       )}
 
