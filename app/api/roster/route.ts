@@ -6,16 +6,19 @@ import type { RosterRules, UserRoster, ScoringProfile } from "@/lib/roster/types
 
 export const runtime = "nodejs";
 
+/* ---------- GET: fetch a roster by id ---------- */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id") || "";
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
   const roster = await getRoster(id);
-  if (!roster) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ roster });
+  if (!roster) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+
+  return NextResponse.json({ ok: true, roster });
 }
 
+/* ---------- POST: create or update a roster ---------- */
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
@@ -28,6 +31,7 @@ export async function POST(req: Request) {
       rules,
       scoring,
       optInEmail,
+      meta, // ignored server-side for now, but safe to receive
     }: {
       id?: string;
       email?: string;
@@ -37,6 +41,7 @@ export async function POST(req: Request) {
       rules?: Partial<RosterRules>;
       scoring?: ScoringProfile;
       optInEmail?: boolean;
+      meta?: Record<string, unknown>;
     } = body || {};
 
     // Validate players -> string[]
@@ -55,26 +60,34 @@ export async function POST(req: Request) {
     let roster: UserRoster;
 
     if (id) {
-      // UPDATE
+      // ---------- UPDATE ----------
       roster = await saveRoster(
         id,
         stripUndef({
           name,
           players: list,
           pins: pinsClean,
-          rules: rulesNorm,          // Full object, not partial
+          rules: rulesNorm,
           scoring,
           optInEmail,
         })
       );
 
-      // Auto-subscribe: prefer explicit email in payload, fall back to stored
-      await subscribeEmail(email || roster.email);
-    } else {
-      // CREATE
-      if (!email) {
-        return NextResponse.json({ error: "email required to create roster" }, { status: 400 });
+      // Try to (re)subscribe but never fail the request because of it
+      if (email || roster.email) {
+        try {
+          await subscribeEmail(email || roster.email);
+        } catch (err) {
+          console.warn("[subscribeEmail] non-fatal:", err);
+        }
       }
+    } else {
+      // ---------- CREATE ----------
+      if (!email || !isPlausibleEmail(email)) {
+        return NextResponse.json({ ok: false, error: "valid email required to create roster" }, { status: 400 });
+      }
+
+      // Create with core fields
       roster = await createRoster(
         stripUndef({
           email,
@@ -89,19 +102,30 @@ export async function POST(req: Request) {
         }
       );
 
-      // Persist optional flags on the freshly created roster
-      if (scoring !== undefined || optInEmail !== undefined) {
-        roster = await saveRoster(roster.id, stripUndef({ scoring, optInEmail }));
+      // Persist optional fields (pins, scoring, optInEmail)
+      if (pinsClean || scoring !== undefined || optInEmail !== undefined) {
+        roster = await saveRoster(
+          roster.id,
+          stripUndef({
+            pins: pinsClean,
+            scoring,
+            optInEmail,
+          })
+        );
       }
 
-      // Auto-subscribe on create
-      await subscribeEmail(email);
+      // Try to subscribe; non-fatal
+      try {
+        await subscribeEmail(email);
+      } catch (err) {
+        console.warn("[subscribeEmail] non-fatal:", err);
+      }
     }
 
-    return NextResponse.json({ roster });
+    return NextResponse.json({ ok: true, roster });
   } catch (e) {
     console.error("roster POST error", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
   }
 }
 
@@ -119,9 +143,13 @@ function normalizeRules(input?: Partial<RosterRules>): RosterRules | undefined {
   if (!input || typeof input !== "object") return undefined;
   const base: RosterRules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 };
   const out: RosterRules = { ...base };
-  for (const key of Object.keys(base) as (keyof RosterRules)[]) {
+  (Object.keys(base) as (keyof RosterRules)[]).forEach((key) => {
     const n = Number((input as any)[key]);
     if (Number.isFinite(n) && n >= 0) out[key] = n;
-  }
+  });
   return out;
+}
+
+function isPlausibleEmail(e: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
