@@ -5,17 +5,20 @@ import { useEffect, useMemo, useState } from "react";
 import PlayerSearch from "@/components/PlayerSearch";
 import { usePlayerNames } from "@/lib/client/usePlayerNames";
 
+/* ---------------- types ---------------- */
+
 type Scoring = "PPR" | "HALF_PPR" | "STD";
 
 type Lineup = {
   week: number;
-  slots: Record<string, string[]>;
+  slots: Record<string, string[]>; // server-proposed slots (may be wrong)
   bench?: string[];
   details?: Record<
     string,
     {
       playerId: string;
-      position: string; // server's idea of the slot it put them in
+      // NOTE: this is a *slot label* from server, not a true position
+      position?: string;
       points: number;
       confidence: number;
       tier: "A" | "B" | "C" | "D";
@@ -41,6 +44,8 @@ const defaultRules: Rules = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 
 type SavedRosterMeta = { id: string; name?: string };
 type Hit = { id: string; name?: string; pos?: string; team?: string };
 
+/* ---------------- page ---------------- */
+
 export default function RosterHome() {
   const [id, setId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -52,10 +57,11 @@ export default function RosterHome() {
   const [pasteText, setPasteText] = useState("");
   const [optInEmail, setOptInEmail] = useState(true);
 
+  // rules + scoring profile
   const [rules, setRules] = useState<Rules>(defaultRules);
   const [scoring, setScoring] = useState<Scoring>("PPR");
 
-  // sent on save so the server can cache names/pos/team
+  // incremental per-roster meta cached by server
   const [meta, setMeta] = useState<Record<string, { name?: string; pos?: string; team?: string }>>({});
 
   const [saving, setSaving] = useState(false);
@@ -65,7 +71,7 @@ export default function RosterHome() {
 
   const [myRosters, setMyRosters] = useState<SavedRosterMeta[]>([]);
 
-  // migrate any old single-id storage into list
+  // migrate local storage: old single id -> list
   useEffect(() => {
     const old = localStorage.getItem("rosterId");
     const listRaw = localStorage.getItem("rosterIds");
@@ -82,7 +88,7 @@ export default function RosterHome() {
     if (list[0]?.id) setId(list[0].id);
   }, []);
 
-  // hydrate current NFL week
+  // current NFL week
   useEffect(() => {
     (async () => {
       try {
@@ -93,10 +99,11 @@ export default function RosterHome() {
     })();
   }, []);
 
-  // load roster when id changes
+  // hydrate on roster id
   useEffect(() => {
     async function load() {
       if (!id) {
+        // clear for new roster
         setEmail("");
         setName("");
         setPlayers([]);
@@ -122,7 +129,7 @@ export default function RosterHome() {
         setRules({ ...defaultRules, ...(r.rules || {}) });
         setScoring(r.scoring || "PPR");
 
-        // keep local label up to date
+        // keep local label updated
         setMyRosters((prev) => {
           const next = [...prev];
           const i = next.findIndex((x) => x.id === r.id);
@@ -178,7 +185,7 @@ export default function RosterHome() {
         optInEmail,
         rules,
         scoring,
-        meta, // send incremental meta so server can cache names/pos/team
+        meta, // send incremental meta to be cached server-side
       };
       if (id) payload.id = id;
       else payload.email = email;
@@ -415,6 +422,7 @@ export default function RosterHome() {
             </button>
           </div>
 
+          {/* Use onSelect(hit) to capture name/pos/team */}
           <PlayerSearch onSelect={(hit: Hit) => addPlayerFromHit(hit)} />
 
           {showPaste && (
@@ -518,7 +526,7 @@ export default function RosterHome() {
             )}
           </div>
 
-          {recommendation && <RecommendationView lu={recommendation} />}
+          {recommendation && <RecommendationView lu={recommendation} rules={rules} />}
         </section>
       )}
     </main>
@@ -543,49 +551,63 @@ function explainLine(d?: NonNullable<Lineup["details"]>[string]) {
   return parts.join(" • ");
 }
 
-function RecommendationView({ lu }: { lu: Lineup }) {
+type RecommendationProps = { lu: Lineup; rules: Rules };
+
+function RecommendationView({ lu, rules }: RecommendationProps) {
   const order = useMemo(() => ["QB", "RB", "WR", "TE", "FLEX", "DST", "K"], []);
-
-  // Collect every id that appears anywhere in the payload
-  const allIds = useMemo(() => {
-    const raw = order.flatMap((s) => lu.slots?.[s] || []);
-    const b = lu.bench || [];
-    const fromDetails = Object.keys(lu.details || {});
-    return Array.from(new Set([...raw, ...b, ...fromDetails]));
-  }, [lu, order]);
-
-  // Load names/positions for all ids we might display
+  const allIds = useMemo(
+    () => Array.from(new Set([...(order.flatMap((s) => lu.slots?.[s] || [])), ...(lu.bench || [])])),
+    [lu, order]
+  );
   const meta = usePlayerNames(allIds);
 
-  // Normalize positions & filter each server-provided slot
-  const normPos = (p?: string) => {
-    const s = (p || "").toUpperCase().replace(/\s+/g, "");
-    if (s === "D/ST" || s === "DST" || s === "DEF" || s === "DEFENSE") return "DST";
-    if (s === "PK" || s === "KICKER") return "K";
-    if (s === "QB" || s === "RB" || s === "WR" || s === "TE" || s === "K") return s;
-    return undefined;
-  };
-  const isDstLike = (pos?: string) => normPos(pos) === "DST";
-  const fitsSlot = (slot: string, pos?: string) => {
-    const p = normPos(pos);
-    if (!p) return false;
-    if (slot === "FLEX") return p === "RB" || p === "WR" || p === "TE";
-    if (slot === "DST") return p === "DST";
-    return p === slot;
+  // Normalize true positions from the player db (ignore server slot labels)
+  const normPos = (pos?: string) => {
+    const p = (pos || "").toUpperCase();
+    if (p === "D/ST" || p === "DEF") return "DST";
+    return p;
   };
 
-  const filtered: Record<string, string[]> = {};
-  for (const slot of order) {
-    const raw = lu.slots?.[slot] || [];
-    filtered[slot] = raw.filter((pid) => {
-      const clientPos = normPos(meta.map[pid]?.pos);
-      const serverPos = normPos(lu.details?.[pid]?.position);
-      return fitsSlot(slot, clientPos ?? serverPos);
-    });
+  // Score helper
+  const points = (pid: string) => lu.details?.[pid]?.points ?? -1;
+
+  // Build a position map and a master ordering by points
+  const byPointsDesc = [...allIds].sort((a, b) => points(b) - points(a));
+  const posOf: Record<string, string> = {};
+  for (const pid of allIds) {
+    posOf[pid] = normPos(meta.map[pid]?.pos);
   }
 
-  // Bench = everything not used after filtering
-  const used = new Set<string>(order.flatMap((s) => filtered[s]));
+  // Greedy fill per rules using true positions
+  const takeTop = (need: number, wantPos: (p: string) => boolean, used: Set<string>) => {
+    const picked: string[] = [];
+    for (const pid of byPointsDesc) {
+      if (picked.length >= need) break;
+      if (used.has(pid)) continue;
+      const p = posOf[pid];
+      if (!p) continue;
+      if (wantPos(p)) {
+        picked.push(pid);
+        used.add(pid);
+      }
+    }
+    return picked;
+  };
+
+  const used = new Set<string>();
+  const assigned: Record<string, string[]> = {
+    QB: takeTop(rules.QB, (p) => p === "QB", used),
+    RB: takeTop(rules.RB, (p) => p === "RB", used),
+    WR: takeTop(rules.WR, (p) => p === "WR", used),
+    TE: takeTop(rules.TE, (p) => p === "TE", used),
+    DST: takeTop(rules.DST, (p) => p === "DST", used),
+    K: takeTop(rules.K, (p) => p === "K", used),
+    FLEX: [], // fill later
+  };
+
+  // FLEX from remaining RB/WR/TE
+  assigned.FLEX = takeTop(rules.FLEX, (p) => p === "RB" || p === "WR" || p === "TE", used);
+
   const benchIds = allIds.filter((pid) => !used.has(pid));
 
   return (
@@ -596,18 +618,17 @@ function RecommendationView({ lu }: { lu: Lineup }) {
         {order.map((slot) => (
           <div key={slot} className="rounded-lg border border-white/10 bg-black/30 p-3">
             <div className="text-xs uppercase tracking-wide text-white/60 mb-2">{slot}</div>
-            {filtered[slot]?.length ? (
+            {assigned[slot]?.length ? (
               <ul className="grid gap-1">
-                {filtered[slot].map((pid) => {
+                {assigned[slot].map((pid) => {
                   const d = lu.details?.[pid];
-                  const label = `${meta.map[pid]?.name || pid}${
-                    meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : ""
-                  }${meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : ""}`;
+                  const label =
+                    (meta.map[pid]?.name || pid) +
+                    (meta.map[pid]?.pos ? ` — ${meta.map[pid]?.pos}` : "") +
+                    (meta.map[pid]?.team ? ` (${meta.map[pid]?.team})` : "");
                   return (
                     <li key={pid} className="flex items-center justify-between text-sm">
-                      <span className="truncate" title={explainLine(d)}>
-                        {label}
-                      </span>
+                      <span className="truncate" title={explainLine(d)}>{label}</span>
                       {d && (
                         <span className="text-xs text-white/60 flex items-center" title={explainLine(d)}>
                           {d.points.toFixed(1)} pts · {Math.round(d.confidence * 100)}% · {d.tier}
