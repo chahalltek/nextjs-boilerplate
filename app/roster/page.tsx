@@ -15,7 +15,7 @@ type Lineup = {
     string,
     {
       playerId: string;
-      position: string; // "QB" | "RB" | "WR" | "TE" | "DST" | "K"
+      position: string; // server may put the SLOT here; prefer meta.pos for truth
       points: number;
       confidence: number; // 0..1
       tier: "A" | "B" | "C" | "D";
@@ -187,7 +187,7 @@ export default function RosterHome() {
 
       const res = await fetch("/api/roster", {
         method: "POST",
-        headers: { "content-type": "application/json" }, // ensure Request.json() works
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -224,9 +224,10 @@ export default function RosterHome() {
     if (!id) return;
     setLoadingRec(true);
     try {
-      const res = await fetch(`/api/roster/recommendation?id=${encodeURIComponent(id)}&week=${encodeURIComponent(
-        String(week)
-      )}`, { cache: "no-store" });
+      const res = await fetch(
+        `/api/roster/recommendation?id=${encodeURIComponent(id)}&week=${encodeURIComponent(String(week))}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
       setRecommendation(data.lineup || null);
     } finally {
@@ -252,7 +253,6 @@ export default function RosterHome() {
     }
   }
 
-  const hasPlayers = players.length > 0;
   const rosterMeta = usePlayerNames(players);
 
   return (
@@ -565,7 +565,7 @@ function RecommendationView({ lu }: { lu: Lineup }) {
   );
   const meta = usePlayerNames(allIds);
 
-  // Only show players that actually match the slot (FLEX = RB/WR/TE).
+  // Treat meta position as the ground truth; only fall back to server detail if meta is missing.
   const isDstLike = (pos?: string) => pos === "DST" || pos === "DEF" || pos === "D/ST";
   const fitsSlot = (slot: string, pos?: string) => {
     if (!pos) return false;
@@ -579,12 +579,12 @@ function RecommendationView({ lu }: { lu: Lineup }) {
   for (const slot of order) {
     const raw = lu.slots?.[slot] || [];
     filtered[slot] = raw.filter((pid) => {
-      const pPos = lu.details?.[pid]?.position || meta.map[pid]?.pos;
-      return fitsSlot(slot, pPos);
+      const truePos = meta.map[pid]?.pos || lu.details?.[pid]?.position; // ⬅️ prefer meta
+      return fitsSlot(slot, truePos);
     });
   }
 
-  // Compute bench = everything not used in filtered slots
+  // Bench = everything not used in filtered slots
   const used = new Set<string>(order.flatMap((s) => filtered[s]));
   const benchIds = allIds.filter((pid) => !used.has(pid));
 
