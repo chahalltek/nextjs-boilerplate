@@ -1,4 +1,4 @@
-// app/survivor/page.tsx
+// app/survivor/page.jsx
 import Link from "next/link";
 import Image from "next/image";
 import Countdown from "@/components/Countdown";
@@ -7,21 +7,18 @@ import SurvivorOptIn from "@/components/SurvivorOptIn";
 
 export const dynamic = "force-dynamic";
 
-type Search = { searchParams?: Record<string, string | string[] | undefined> };
-
-export default async function SurvivorLanding({ searchParams }: Search) {
+export default async function SurvivorLanding({ searchParams }) {
   // Choose season: URL ?season=..., or env, or default to S49
   const envSeason =
-    (process.env.NEXT_PUBLIC_SURVIVOR_SEASON_ID ||
-      process.env.SURVIVOR_SEASON_ID ||
-      "S49") as string;
+    process.env.NEXT_PUBLIC_SURVIVOR_SEASON_ID ||
+    process.env.SURVIVOR_SEASON_ID ||
+    "S49";
 
   const seasonId =
-    (typeof searchParams?.season === "string"
-      ? searchParams.season
-      : envSeason) || "S49";
+    (typeof searchParams?.season === "string" ? searchParams.season : envSeason) ||
+    "S49";
 
-  const season = await getSeason(seasonId.toUpperCase());
+  const season = await getSeason(String(seasonId).toUpperCase());
   const locked = season ? new Date() >= new Date(season.lockAt) : false;
   const openForEntries = !!season && !locked;
 
@@ -38,7 +35,7 @@ export default async function SurvivorLanding({ searchParams }: Search) {
       <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
         <div className="relative w-full aspect-[3/2] sm:aspect-[16/9]">
           <Image
-            src="/survivor/s49-cast.webp"
+            src="/survivor/s49-cast.webp" // place in /public/survivor/
             alt="Survivor 49 cast on the beach"
             fill
             sizes="(max-width: 768px) 100vw, 768px"
@@ -55,13 +52,12 @@ export default async function SurvivorLanding({ searchParams }: Search) {
         <SurvivorOptIn />
       </section>
 
-      {/* Lock status + actions (only if a season exists) */}
+      {/* Lock status + actions */}
       {season ? (
         <>
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
             <div className="text-sm text-white/80">
-              Season: <span className="font-semibold">{season.id}</span>{" "}
-              • Lock:{" "}
+              Season: <span className="font-semibold">{season.id}</span> • Lock:{" "}
               <span className="font-semibold">
                 {new Date(season.lockAt).toLocaleString()}
               </span>
@@ -102,18 +98,18 @@ export default async function SurvivorLanding({ searchParams }: Search) {
         </div>
       )}
 
-      {/* Rules & How it works — always visible */}
+      {/* How it works */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">How it works</h2>
         <ol className="list-decimal pl-5 space-y-2 text-white/80 text-sm">
-          <li>You have 4 weeks go get to know the players before the bracket locks 10/24.</li>
-          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>Drag contestants into your predicted boot order from first out to last out.</li>
           <li>Pick your Final 3 (and their exact order: Winner → Second → Third).</li>
+          <li>Submit before the lock time. After lock, entries are read-only.</li>
           <li>We score your bracket after each episode and update the leaderboard.</li>
         </ol>
       </section>
 
+      {/* Scoring */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">Scoring</h2>
         <ul className="list-disc pl-5 space-y-2 text-white/80 text-sm">
@@ -122,7 +118,6 @@ export default async function SurvivorLanding({ searchParams }: Search) {
           <li><span className="font-semibold">Tiebreaker (optional):</span> predict the winner’s jury vote count.</li>
         </ul>
 
-        {/* Compact at-a-glance */}
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-center">
             <div className="text-2xl font-semibold">+5</div>
@@ -147,6 +142,7 @@ export default async function SurvivorLanding({ searchParams }: Search) {
         </div>
       </section>
 
+      {/* FAQ */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">FAQ</h2>
         <div className="space-y-2 text-sm text-white/80">
