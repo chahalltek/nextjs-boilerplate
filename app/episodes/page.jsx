@@ -1,3 +1,4 @@
+// app/episodes/page.jsx
 import Link from "next/link";
 import { getAllEpisodes } from "@/lib/episodes";
 import SubscribeCta from "@/components/SubscribeCta";
@@ -16,13 +17,15 @@ export default async function EpisodesPage() {
       <header className="mb-8">
         <h1 className="text-4xl font-bold">Episodes</h1>
         <p className="mt-2 text-white/70">
-          Mic check, 1…2…Skol. 🎙️ We’re setting up gear and warming up takes. Episode 1 is coming soon—
-          please be kind; this is our first pod and the dog refuses to sign a non-bark agreement.
+          Mic check, 1…2…Skol. 🎙️ We’re setting up gear and warming up takes.
+          Episode 1 is coming soon—please be kind; this is our first pod and the
+          dog refuses to sign a non-bark agreement.
         </p>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <section className="card p-6 md:col-span-2">
+      {/* make equal-height cards */}
+      <div className="grid gap-6 md:grid-cols-3 auto-rows-fr">
+        <section className="card p-6 md:col-span-2 flex flex-col">
           <h2 className="text-xl font-semibold mb-3">What you’ll hear</h2>
           <ul className="list-disc pl-5 space-y-2 text-white/80">
             <li>Game breakdowns spiked with just the right amount of chaos.</li>
@@ -30,18 +33,18 @@ export default async function EpisodesPage() {
             <li>Listener questions, bold predictions, and occasional victory confetti.</li>
           </ul>
 
-          {/* Two-up CTA row */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 items-stretch">
-            {/* Compact subscribe card; clipped so artwork never bleeds into the next column */}
-            <div className="h-full overflow-hidden">
-              <SubscribeCta variant="starter-pack" />
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {/* Keep heights consistent by wrapping in a full-height div */}
+            <div className="h-full">
+              <SubscribeCta />
             </div>
 
-            {/* Match height with h-full and make content fill nicely */}
+            {/* Suggest a topic card */}
             <Link href="/contact" className="cta-card h-full">
               <span className="cta-title">Suggest a topic</span>
-              </ br>
-              <span className="cta-sub">Hot takes, cold takes, lukewarm takes—send ’em.</span>
+              <span className="cta-sub">
+                Hot takes, cold takes, lukewarm takes—send ’em.
+              </span>
             </Link>
           </div>
         </section>
@@ -60,35 +63,35 @@ export default async function EpisodesPage() {
         </aside>
       </div>
 
-      //<section className="mt-12">
-       // <div className="card p-6">
-          //<h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
-
-          //{episodes.length === 0 && (
-           // <>
-           //   <p className="text-white/70">
-           //     No episodes yet—this is where the player and show notes will live.
-           //   </p>
-           //  <div className="mt-4 aspect-video bg-white/5 border border-white/10 rounded-xl grid place-items-center text-white/40">
-           //    <span>Podcast Player Placeholder</span>
-           //  </div>
-           // </>
-         // )}
-
-          //{episodes.length > 0 && (
-           // <ul className="space-y-4">
-             // {episodes.map((ep) => (
-             //   <li key={ep.id}>
-               //   <Link href={`/episodes/${ep.slug}`} className="text-lg text-white hover:underline">
-               //    {ep.title}
-               //   </Link>
-               //   <p className="text-white/70">{ep.teaser}</p>
-               // </li>
-              //))}
-           // </ul>
-         // )}
+      <section className="mt-12">
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
+          {episodes.length === 0 ? (
+            <>
+              <p className="text-white/70">
+                No episodes yet—this is where the player and show notes will live.
+              </p>
+              <div className="mt-4 aspect-video bg-white/5 border border-white/10 rounded-xl grid place-items-center text-white/40">
+                <span>Podcast Player Placeholder</span>
+              </div>
+            </>
+          ) : (
+            <ul className="space-y-4">
+              {episodes.map((ep) => (
+                <li key={ep.id}>
+                  <Link
+                    href={`/episodes/${ep.slug}`}
+                    className="text-lg text-white hover:underline"
+                  >
+                    {ep.title}
+                  </Link>
+                  <p className="text-white/70">{ep.teaser}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      //</section>
+      </section>
     </div>
   );
 }

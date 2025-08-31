@@ -1,11 +1,9 @@
+// app/stats/page.tsx (or wherever your StatsPage lives)
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 
-/* ---------------- types ---------------- */
 type SeasonType = "pre" | "regular";
-type Role = "ALL" | "OFF" | "DEF";
-type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF" | "OTHER" | "ALL";
 
 interface PlayerInfo {
   player_id: string;
@@ -18,341 +16,261 @@ interface PlayerInfo {
 interface StatEntry {
   player_id: string;
   stats?: Record<string, number>;
-  pts_ppr?: number; // sometimes top-level
 }
 
 interface CombinedRow {
   id: string;
   name: string;
   team?: string;
-  position: Position;
+  position?: string;
   injury?: string;
   proj: number;
   actual: number;
-  role: "OFF" | "DEF";
 }
 
-/* ---------------- consts ---------------- */
 const CURRENT_YEAR = new Date().getFullYear();
-const MAX_WEEKS: Record<SeasonType, number> = { pre: 4, regular: 18 };
-const weeksFor = (t: SeasonType) =>
-  Array.from({ length: MAX_WEEKS[t] }, (_, i) => i + 1);
+const WEEK_OPTIONS: Record<SeasonType, number[]> = {
+  pre: Array.from({ length: 4 }, (_, i) => i + 1),
+  regular: Array.from({ length: 18 }, (_, i) => i + 1),
+};
 
-/* ---------------- page ---------------- */
 export default function StatsPage() {
-  // NEW: season type switch (default to preseason)
-  const [seasonType, setSeasonType] = useState<SeasonType>("pre");
+  const [seasonType, setSeasonType] = useState<SeasonType>("pre"); // default to pre
   const [week, setWeek] = useState(1);
-
-  // data
   const [players, setPlayers] = useState<Record<string, PlayerInfo>>({});
   const [projections, setProjections] = useState<StatEntry[]>([]);
   const [actual, setActual] = useState<StatEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState<"ALL" | "QB" | "RB" | "WR" | "TE" | "DST" | "K">("ALL");
 
-  // filters
-  const [role, setRole] = useState<Role>("ALL");
-  const [pos, setPos] = useState<Position | "ALL">("ALL");
-  const [q, setQ] = useState("");
-  const [sortBy, setSortBy] = useState<"proj" | "actual" | "delta">("proj");
-  const [limit, setLimit] = useState(50);
-
-  // Clamp week if seasonType changes
+  // Optional: auto-detect current season type & week from Sleeper state
   useEffect(() => {
-    if (week > MAX_WEEKS[seasonType]) setWeek(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonType]);
-
-  /* ----- players meta once ----- */
-  useEffect(() => {
-    async function loadPlayers() {
+    (async () => {
       try {
-        const res = await fetch("https://api.sleeper.app/v1/players/nfl", {
-          cache: "no-store",
-        });
-        const data = (await res.json()) as Record<string, PlayerInfo>;
-        setPlayers(data || {});
-      } catch (err) {
-        console.error("players load err", err);
+        const res = await fetch("https://api.sleeper.app/state/nfl", { cache: "no-store" });
+        const j = await res.json();
+        if (j?.season_type === "pre" || j?.season_type === "regular") {
+          setSeasonType(j.season_type);
+        }
+        if (Number.isFinite(j?.week)) {
+          setWeek(Number(j.week));
+        }
+      } catch {
+        /* ignore – fall back to defaults */
       }
-    }
-    loadPlayers();
+    })();
   }, []);
 
-  async function fetchWeek() {
-    setLoading(true);
-    try {
-      const projUrl = `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=${seasonType}`;
-      const actUrl = `https://api.sleeper.app/stats/nfl/${seasonType}/${CURRENT_YEAR}/${week}`;
-
-      const [projRes, actRes] = await Promise.all([
-        fetch(projUrl, { cache: "no-store" }),
-        fetch(actUrl, { cache: "no-store" }),
-      ]);
-
-      const projJson = await projRes.json();
-      const actJson = await actRes.json();
-
-      setProjections(Array.isArray(projJson) ? projJson : []);
-
-      // Actuals may be a map keyed by player_id → normalize
-      const actArr: StatEntry[] = Array.isArray(actJson)
-        ? actJson
-        : Object.entries<Record<string, number>>(actJson || {}).map(
-            ([player_id, stats]) => ({ player_id, stats })
-          );
-
-      setActual(actArr);
-    } catch (err) {
-      console.error("weekly load err", err);
-      setProjections([]);
-      setActual([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /* ----- load whenever week or seasonType changes ----- */
+  // Load player metadata once
   useEffect(() => {
-    fetchWeek();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week, seasonType]);
+    (async () => {
+      try {
+        const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "no-store" });
+        const data = await res.json();
+        setPlayers(data || {});
+      } catch (err) {
+        console.error("players load failed", err);
+      }
+    })();
+  }, []);
 
-  /* ----- combine proj + actual into one list ----- */
+  // Load projections + actuals whenever toggles change
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [projRes, actRes] = await Promise.all([
+          fetch(
+            `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=${seasonType}`,
+            { cache: "no-store" }
+          ),
+          fetch(
+            `https://api.sleeper.app/stats/nfl/${seasonType}/${CURRENT_YEAR}/${week}`,
+            { cache: "no-store" }
+          ),
+        ]);
+
+        const projBody = await projRes.json().catch(() => []);
+        const actBody = await actRes.json().catch(() => ({}));
+
+        setProjections(toArray(projBody)); // already an array, but normalize anyway
+        setActual(toArrayFromStats(actBody)); // map -> array
+      } catch (err) {
+        console.error("weekly load failed", err);
+        setProjections([]);
+        setActual([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [seasonType, week]);
+
+  // Build a combined table keyed by player
   const rows: CombinedRow[] = useMemo(() => {
-    const actualById = new Map(actual.map((r) => [r.player_id, r]));
-    const ids = new Set<string>([
-      ...projections.map((r) => r.player_id),
-      ...actual.map((r) => r.player_id),
-    ]);
+    const projMap = new Map<string, number>();
+    for (const r of projections) {
+      projMap.set(r.player_id, num(r.stats?.pts_ppr));
+    }
+    const actMap = new Map<string, number>();
+    for (const r of actual) {
+      actMap.set(r.player_id, num(r.stats?.pts_ppr));
+    }
 
+    // union of ids with at least one nonzero value
+    const ids = new Set([...projMap.keys(), ...actMap.keys()]);
     const out: CombinedRow[] = [];
     for (const id of ids) {
-      const proj = projections.find((r) => r.player_id === id);
-      const act = actualById.get(id);
-      const meta = players[id] || ({} as PlayerInfo);
+      const info = players[id] || {};
+      const position = normalizePos(info.position);
+      const proj = projMap.get(id) ?? 0;
+      const act = actMap.get(id) ?? 0;
 
-      const rawPos = (meta.position || "").toUpperCase();
-      const position: Position =
-        rawPos === "QB" ||
-        rawPos === "RB" ||
-        rawPos === "WR" ||
-        rawPos === "TE" ||
-        rawPos === "K"
-          ? (rawPos as Position)
-          : rawPos === "DEF" || rawPos === "DST"
-          ? "DEF"
-          : "OTHER";
-
-      const role: "OFF" | "DEF" = position === "DEF" ? "DEF" : "OFF";
-
+      // filter by role
+      if (role !== "ALL" && position !== role) continue;
+      // default to WR if undefined so table is consistent
       out.push({
         id,
-        name: meta.full_name || id,
-        team: meta.team,
-        position,
-        injury: meta.injury_status,
-        proj: num(proj?.stats?.pts_ppr ?? proj?.pts_ppr),
-        actual: num(act?.stats?.pts_ppr ?? act?.pts_ppr),
-        role,
+        name: info.full_name || id,
+        team: info.team,
+        position: position || "WR",
+        injury: info.injury_status,
+        proj,
+        actual: act,
       });
     }
-    return out;
-  }, [projections, actual, players]);
+    // sort by (actual first, then projected)
+    out.sort((a, b) => (b.actual || 0) - (a.actual || 0) || (b.proj || 0) - (a.proj || 0));
+    return out.slice(0, 50);
+  }, [projections, actual, players, role]);
 
-  /* ----- filtered + sorted view ----- */
-  const view = useMemo(() => {
-    const qlc = q.trim().toLowerCase();
-    const filtered = rows.filter((r) => {
-      if (role !== "ALL" && r.role !== role) return false;
-      if (pos !== "ALL") {
-        if (pos === "DEF") {
-          if (r.position !== "DEF") return false;
-        } else if (pos !== r.position) {
-          return false;
-        }
-      }
-      if (qlc) {
-        const hay = `${r.name} ${r.team || ""} ${r.position}`.toLowerCase();
-        if (!hay.includes(qlc)) return false;
-      }
-      return true;
-    });
-
-    const sorted = [...filtered].sort((a, b) => {
-      if (sortBy === "proj") return b.proj - a.proj;
-      if (sortBy === "actual") return b.actual - a.actual;
-      const da = a.proj - a.actual;
-      const db = b.proj - b.actual;
-      return Math.abs(db) - Math.abs(da);
-    });
-
-    return sorted.slice(0, limit);
-  }, [rows, role, pos, q, sortBy, limit]);
-
-  const weekOptions = weeksFor(seasonType);
+  const weeks = WEEK_OPTIONS[seasonType];
 
   return (
-    <main className="container mx-auto max-w-7xl px-4 py-8 space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold">
-          Weekly Stats ({seasonType === "pre" ? "Preseason" : "Regular"} • Actual + Projected)
-        </h1>
-        <p className="text-xs text-white/70">
-          Sleeper data. If games haven’t been played yet, “Actual” will be 0.
+    <main className="container mx-auto max-w-6xl px-4 py-8 space-y-6">
+      <header>
+        <h1 className="text-3xl font-bold">Weekly Stats</h1>
+        <p className="text-xs text-white/60 mt-2">
+          Data from Sleeper • Season {CURRENT_YEAR} • {seasonType === "pre" ? "Preseason" : "Regular Season"}
         </p>
       </header>
 
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-sm text-white/70">Season:</label>
-        <select
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={seasonType}
-          onChange={(e) => setSeasonType(e.target.value as SeasonType)}
-        >
-          <option value="pre">Pre Season</option>
-          <option value="regular">Regular Season</option>
-        </select>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border border-white/10 overflow-hidden">
+          <button
+            className={`px-3 py-1.5 text-sm ${seasonType === "pre" ? "bg-white/10" : ""}`}
+            onClick={() => setSeasonType("pre")}
+          >
+            Pre
+          </button>
+          <button
+            className={`px-3 py-1.5 text-sm ${seasonType === "regular" ? "bg-white/10" : ""}`}
+            onClick={() => setSeasonType("regular")}
+          >
+            Regular
+          </button>
+        </div>
 
-        <label className="ml-2 text-sm text-white/70">Week:</label>
-        <select
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={week}
-          onChange={(e) => setWeek(Number(e.target.value))}
-        >
-          {weekOptions.map((w) => (
-            <option key={w} value={w}>
-              {w}
-            </option>
-          ))}
-        </select>
+        <label className="text-sm text-white/70">
+          Week{" "}
+          <select
+            className="ml-1 bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
+            value={week}
+            onChange={(e) => setWeek(Number(e.target.value))}
+          >
+            {weeks.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm text-white/70">
+          Role{" "}
+          <select
+            className="ml-1 bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
+            value={role}
+            onChange={(e) => setRole(e.target.value as any)}
+          >
+            <option>ALL</option>
+            <option>QB</option>
+            <option>RB</option>
+            <option>WR</option>
+            <option>TE</option>
+            <option>DST</option>
+            <option>K</option>
+          </select>
+        </label>
+
         {loading && <span className="text-xs text-white/60">Loading…</span>}
-
-        <span className="mx-2 h-6 w-px bg-white/10" />
-
-        <label className="text-sm text-white/70">Role:</label>
-        <select
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-        >
-          <option value="ALL">All</option>
-          <option value="OFF">Offense</option>
-          <option value="DEF">Defense</option>
-        </select>
-
-        <label className="ml-2 text-sm text-white/70">Pos:</label>
-        <select
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={pos}
-          onChange={(e) => setPos(e.target.value as Position | "ALL")}
-        >
-          {["ALL", "QB", "RB", "WR", "TE", "K", "DEF"].map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-
-        <label className="ml-2 text-sm text-white/70">Sort:</label>
-        <select
-          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as "proj" | "actual" | "delta")}
-        >
-          <option value="proj">Projection</option>
-          <option value="actual">Actual</option>
-          <option value="delta">Δ |Proj-Actual|</option>
-        </select>
-
-        <label className="ml-2 text-sm text-white/70">Top:</label>
-        <input
-          type="number"
-          min={10}
-          max={200}
-          className="w-20 bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          value={limit}
-          onChange={(e) => setLimit(Number(e.target.value))}
-        />
-
-        <input
-          className="ml-auto w-52 bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
-          placeholder="Search name/team…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-
-        <button
-          type="button"
-          onClick={fetchWeek}
-          className="rounded border border-white/20 px-2 py-1 text-sm hover:bg-white/10"
-          disabled={loading}
-        >
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
       </div>
 
-      <StatTable data={view} />
+      {/* Combined table */}
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="min-w-full text-sm text-left">
+          <thead>
+            <tr className="border-b border-white/10 text-white/70">
+              <th className="py-2 px-3">Player</th>
+              <th className="py-2 px-3">Team</th>
+              <th className="py-2 px-3">Pos</th>
+              <th className="py-2 px-3">Projected</th>
+              <th className="py-2 px-3">Actual</th>
+              <th className="py-2 px-3">Injury</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td className="py-4 px-3 text-white/60" colSpan={6}>
+                  No data yet for week {week} ({seasonType}). Try a different week/type.
+                </td>
+              </tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.id} className="border-b border-white/5">
+                  <td className="py-2 px-3 whitespace-nowrap">{r.name}</td>
+                  <td className="py-2 px-3">{r.team || "-"}</td>
+                  <td className="py-2 px-3">{r.position || "-"}</td>
+                  <td className="py-2 px-3">{r.proj.toFixed(1)}</td>
+                  <td className="py-2 px-3">{r.actual.toFixed(1)}</td>
+                  <td className="py-2 px-3">{r.injury || "-"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }
 
-/* ---------------- table ---------------- */
-function StatTable({ data }: { data: CombinedRow[] }) {
-  return (
-    <div className="overflow-x-auto rounded-xl border border-white/10">
-      <table className="min-w-full text-sm text-left">
-        <thead>
-          <tr className="border-b border-white/10 text-white/70">
-            <th className="py-2 px-3">Player</th>
-            <th className="py-2 px-3">Team</th>
-            <th className="py-2 px-3">Pos</th>
-            <th className="py-2 px-3">Proj</th>
-            <th className="py-2 px-3">Actual</th>
-            <th className="py-2 px-3">Δ</th>
-            <th className="py-2 px-3">Injury</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.length === 0 ? (
-            <tr>
-              <td className="py-4 px-3 text-white/60" colSpan={7}>
-                No data yet for the selected filters.
-              </td>
-            </tr>
-          ) : (
-            data.map((r) => {
-              const delta = r.proj - r.actual;
-              return (
-                <tr key={r.id} className="border-b border-white/5">
-                  <td className="py-2 px-3 whitespace-nowrap">{r.name}</td>
-                  <td className="py-2 px-3">{r.team || "-"}</td>
-                  <td className="py-2 px-3">{r.position}</td>
-                  <td className="py-2 px-3">{r.proj.toFixed(1)}</td>
-                  <td className="py-2 px-3">{r.actual.toFixed(1)}</td>
-                  <td className={`py-2 px-3 ${deltaClass(delta)}`}>
-                    {delta >= 0 ? "+" : ""}
-                    {delta.toFixed(1)}
-                  </td>
-                  <td className="py-2 px-3">{r.injury || "-"}</td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
+/* ---------- helpers ---------- */
+
+function toArray(x: any): StatEntry[] {
+  return Array.isArray(x) ? (x as StatEntry[]) : [];
 }
 
-/* ---------------- utils ---------------- */
+function toArrayFromStats(x: any): StatEntry[] {
+  if (Array.isArray(x)) return x as StatEntry[];
+  if (x && typeof x === "object") {
+    return Object.entries(x).map(([player_id, v]: [string, any]) => ({
+      player_id,
+      stats: v?.stats ?? v,
+    }));
+  }
+  return [];
+}
+
 function num(v: any): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-function deltaClass(d: number) {
-  if (Math.abs(d) < 0.2) return "text-white/60";
-  return d > 0 ? "text-emerald-400" : "text-rose-400";
+function normalizePos(raw?: string) {
+  if (!raw) return undefined;
+  const s = raw.toUpperCase().replace(/\s+/g, "");
+  if (["QB", "RB", "WR", "TE", "K"].includes(s)) return s as any;
+  if (["DST", "DEF", "D/ST", "DEFENSE"].includes(s)) return "DST" as any;
+  return undefined;
 }
