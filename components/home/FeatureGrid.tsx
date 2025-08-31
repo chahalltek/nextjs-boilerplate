@@ -30,7 +30,7 @@ export default function FeatureGrid() {
         <CardShell>
           <div className="relative h-40 md:h-44">
             <Image
-              src="/images/unsplash/fans-bar.jpg"
+              src="/images/home/fans-bar.jpg"
               alt="Friends cheering a football play at a bar."
               fill
               className="object-cover"
@@ -56,7 +56,7 @@ export default function FeatureGrid() {
         <CardShell>
           <div className="relative h-40 md:h-44">
             <Image
-              src="/images/unsplash/dark-dashboard.jpg"
+              src="/images/home/dark-dashboard.jpg"
               alt="Laptop showing analytics dashboard in dark mode."
               fill
               className="object-cover"
@@ -81,7 +81,7 @@ export default function FeatureGrid() {
         <CardShell>
           <div className="relative h-40 md:h-44">
             <Image
-              src="/images/unsplash/whiteboard.jpg"
+              src="/images/home/whiteboard.jpg"
               alt="Hand drawing lines and notes on a whiteboard."
               fill
               className="object-cover"
@@ -108,7 +108,7 @@ export default function FeatureGrid() {
         <CardShell>
           <div className="relative h-52 md:h-56">
             <Image
-              src="/images/unsplash/podcast-mic.jpg"
+              src="/images/home/podcast-mic.jpg"
               alt="Podcast microphone with soft studio lights."
               fill
               className="object-cover"
