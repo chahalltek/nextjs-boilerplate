@@ -45,7 +45,7 @@ export default async function HomePage() {
           <h1 className="mt-4 text-4xl md:text-6xl font-extrabold tracking-tight">Hey Skol Sister</h1>
 
           <p className="mt-4 text-white/80 max-w-2xl mx-auto text-lg">
-            Nobody cares about your fantasy team — Except Us!!
+            The only friend you have who actually likes to talk about YOUR fantasy team!!
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3">

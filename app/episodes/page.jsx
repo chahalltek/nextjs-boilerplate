@@ -3,6 +3,9 @@ import Link from "next/link";
 import { getAllEpisodes } from "@/lib/episodes";
 import SubscribeCta from "@/components/SubscribeCta";
 
+export const dynamic = "force-dynamic";  // ensure no stale static page
+export const revalidate = 0;
+
 export const metadata = {
   title: "Episodes — Skol Sisters Podcast",
   description:
@@ -10,7 +13,8 @@ export const metadata = {
 };
 
 export default async function EpisodesPage() {
-  const episodes = await getAllEpisodes();
+  // still reading in case you flip this on later
+  await getAllEpisodes();
 
   return (
     <div className="container py-12">
@@ -34,12 +38,11 @@ export default async function EpisodesPage() {
           </ul>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {/* keep height consistent */}
             <div className="h-full">
               <SubscribeCta />
             </div>
 
-            {/* FIX: stack title + subtext vertically */}
+            {/* Suggest a topic card — fixed text flow */}
             <Link
               href="/contact"
               className="cta-card h-full flex flex-col items-start justify-center gap-0.5"
@@ -66,27 +69,7 @@ export default async function EpisodesPage() {
         </aside>
       </div>
 
-      {/* HIDE teaser feed until there are episodes */}
-      {episodes.length > 0 && (
-        <section className="mt-12">
-          <div className="card p-6">
-            <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
-            <ul className="space-y-4">
-              {episodes.map((ep) => (
-                <li key={ep.id}>
-                  <Link
-                    href={`/episodes/${ep.slug}`}
-                    className="text-lg text-white hover:underline"
-                  >
-                    {ep.title}
-                  </Link>
-                  <p className="text-white/70">{ep.teaser}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      )}
+      {/* Teaser feed intentionally removed until episodes are live */}
     </div>
   );
 }
