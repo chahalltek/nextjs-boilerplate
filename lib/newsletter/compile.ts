@@ -1,80 +1,107 @@
-import type { NewsletterSourceKey, SourcePick } from "./store";
-import {
-  collectBlog,
-  collectWeeklyRecap,
-  collectHoldem,
-  collectSitStart,
-  collectSurvivorPolls,
-  collectSurvivorLeaderboard,
-} from "./collectors";
+// lib/newsletter/compile.ts
+import type { SourcePick } from "./store";
+import { collectBlog, collectRecaps, collectSurvivorPolls } from "./collectors";
 
-const COLLECTORS: Record<NewsletterSourceKey, () => Promise<string>> = {
-  blog: collectBlog,
-  weeklyRecap: collectWeeklyRecap,
-  holdem: collectHoldem,
-  sitStart: collectSitStart,
-  survivorPolls: collectSurvivorPolls,
-  survivorLeaderboard: collectSurvivorLeaderboard,
-};
-
-async function aiRewrite(input: string, intent: "summarize" | "polish"): Promise<string> {
-  if (!process.env.OPENAI_API_KEY) return input;
+// If OPENAI_API_KEY is present, we can try light summarization; otherwise fallback to simple bullets.
+async function summarizeIfPossible(prompt: string, fallback: string) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return fallback;
   try {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    const body = {
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "Summarize briefly in 2–4 punchy bullets. Keep markdown short." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.5,
+    };
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: "You are a concise, punchy sports newsletter writer. Return Markdown." },
-          { role: "user", content: `${intent === "summarize" ? "Summarize" : "Polish"} this for a weekly email:\n\n${input}` },
-        ],
-      }),
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
-    const json = await resp.json();
-    return json?.choices?.[0]?.message?.content?.trim() || input;
+    const json = await res.json().catch(() => ({} as any));
+    const text = json?.choices?.[0]?.message?.content?.trim();
+    return text || fallback;
   } catch {
-    return input;
+    return fallback;
   }
 }
 
 export async function compileNewsletter(picks: SourcePick[]) {
-  const pieces: { title: string; body: string }[] = [];
+  // Subject seed
+  let subject = "Your weekly Skol Sisters rundown";
+  const sections: string[] = [];
 
-  for (const p of picks) {
-    const raw = await (COLLECTORS[p.key]?.() ?? Promise.resolve(""));
-    const body = p.verbatim ? raw : await aiRewrite(raw, "summarize");
-    const title = ({
-      blog: "From the Blog",
-      weeklyRecap: "Weekly Recap",
-      holdem: "Hold’em / Fold’em",
-      sitStart: "Start / Sit",
-      survivorPolls: "Survivor Polls",
-      survivorLeaderboard: "Survivor Leaderboard",
-    } as Record<NewsletterSourceKey, string>)[p.key];
-
-    pieces.push({ title, body });
+  // BLOG --------------------------------------------------------------------
+  const wantBlog = picks.find((p) => p.key === "blog");
+  if (wantBlog) {
+    const posts = await collectBlog(3);
+    if (wantBlog.verbatim) {
+      // Use the latest post full body
+      const p = posts[0];
+      if (p) {
+        subject = p.title;
+        sections.push(`# ${p.title}`, p.excerpt ? `${p.excerpt}\n` : "", `[Read more →](${p.href})`);
+        if (p.body) sections.push("\n---\n", p.body);
+      }
+    } else {
+      const bullets = posts
+        .map((p) => `- **${p.title}** — ${p.excerpt || ""} [Read](${p.href})`)
+        .join("\n");
+      const summary = await summarizeIfPossible(
+        `Summarize these posts:\n${posts.map((p) => `Title: ${p.title}\nExcerpt: ${p.excerpt}`).join("\n\n")}`,
+        bullets
+      );
+      sections.push(`## On the blog`, summary);
+    }
   }
 
-  // Subject line (AI if available)
-  const subject =
-    (await aiRewrite(
-      pieces.map((p) => `- ${p.title}`).join("\n"),
-      "polish"
-    ).catch(() => "")) || "Your weekly Skol Sisters rundown";
+  // RECAPS ------------------------------------------------------------------
+  const wantRecap = picks.find((p) => p.key === "weeklyRecap");
+  if (wantRecap) {
+    const recaps = await collectRecaps(1);
+    const r = recaps[0];
+    if (r) {
+      if (wantRecap.verbatim && r.body) {
+        sections.push(`\n## Weekly Recap — ${r.title}`, r.body);
+      } else {
+        const blurb = r.excerpt || "This week’s highlights, storylines, and who trended up/down.";
+        sections.push(`\n## Weekly Recap`, `- **${r.title}** — ${blurb} [Read](${r.href})`);
+      }
+    }
+  }
 
-  const markdown = [
-    `# Skol Sisters Weekly`,
-    `> Fresh tools, lineup notes, and Survivor chatter.`,
-    ``,
-    ...pieces.map((p) => `## ${p.title}\n\n${p.body}`),
-    ``,
-    `— The Skol Sisters 💜`,
-  ].join("\n\n");
+  // SURVIVOR POLLS ----------------------------------------------------------
+  const wantPolls = picks.find((p) => p.key === "survivorPolls");
+  if (wantPolls) {
+    const polls = await collectSurvivorPolls(3);
+    if (wantPolls.verbatim) {
+      sections.push(
+        `\n## Survivor Polls`,
+        ...polls.map((p) => `- **${p.question}**${(p.options ?? []).length ? `  \n  ${p.options!.map(o => `• ${o.text}${o.votes ? ` (${o.votes})` : ""}`).join("\n  ")}` : ""}`)
+      );
+    } else {
+      const bullets = polls.map((p) => `- **${p.question}**`).join("\n");
+      const summary = await summarizeIfPossible(
+        `Summarize these audience poll questions (make it fun):\n${polls.map((p) => `Q: ${p.question}`).join("\n")}`,
+        bullets
+      );
+      sections.push(`\n## Survivor — Community Pulse`, summary, `[Vote now →](/survivor)`);
+    }
+  }
 
+  // (Optional) Hold’em / Start-Sit / Leaderboard stubs for later wiring
+  if (picks.some((p) => p.key === "holdem")) {
+    sections.push(`\n## Hold’em or Fold’em`, `- This section will summarize your hold’em/fold’em picks. (Coming soon.)`);
+  }
+  if (picks.some((p) => p.key === "sitStart")) {
+    sections.push(`\n## Start / Sit`, `- This section will summarize this week’s start/sit calls. (Coming soon.)`);
+  }
+  if (picks.some((p) => p.key === "survivorLeaderboard")) {
+    sections.push(`\n## Survivor Leaderboard`, `- Who’s climbing? Check the latest standings. [See leaderboard →](/survivor/leaderboard)`);
+  }
+
+  const markdown = sections.filter(Boolean).join("\n\n").trim();
   return { subject, markdown };
 }
