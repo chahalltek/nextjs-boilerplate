@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Countdown from "@/components/Countdown";
 import { getSeason } from "@/lib/survivor/store";
+import SurvivorReminder from "@/components/SurvivorReminder"; // client component
 
 export const dynamic = "force-dynamic";
 
@@ -12,27 +13,6 @@ export default async function SurvivorLanding({ searchParams }) {
     process.env.NEXT_PUBLIC_SURVIVOR_SEASON_ID ||
     process.env.SURVIVOR_SEASON_ID ||
     "S49";
-
-// Small inline CTA component
-function SurvivorReminder() {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-      <div>
-        <div className="font-semibold">Survivor weekly recap</div>
-        <p className="text-sm text-white/70">
-          Get an email after every episode with <span className="font-medium">your score</span> for the week
-          and a direct link to the <span className="font-medium">leaderboard</span>.
-        </p>
-      </div>
-      <Link
-        href="/subscribe?topic=survivor-weekly&src=survivor-landing"
-        className="btn-gold whitespace-nowrap"
-      >
-        Get the recap
-      </Link>
-    </div>
-  );
-}
 
   const seasonId =
     (typeof searchParams?.season === "string" ? searchParams.season : envSeason) ||
@@ -51,29 +31,29 @@ function SurvivorReminder() {
         </p>
       </header>
 
-     {/* S49 cast hero */}
-<figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
-  {/* Taller aspect on small → gradually flattens on wide screens */}
-  <div className="relative w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[16/9]">
-    <Image
-      src="/survivor/s49-cast.webp"
-      alt="Survivor 49 cast on the beach"
-      fill
-      sizes="(max-width: 1024px) 100vw, 768px"
-      className="object-cover"
-      // bias the crop upward so the back row isn't cut off
-      style={{ objectPosition: "50% 18%" }} 
-      priority
-    />
-  </div>
-  <figcaption className="p-2 text-[11px] text-white/60 text-right">
-    Survivor 49 cast • Photo: CBS
-  </figcaption>
-</figure>
+      {/* S49 cast hero */}
+      <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
+        {/* Taller aspect on small → flattens on wide screens */}
+        <div className="relative w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[16/9]">
+          <Image
+            src="/survivor/s49-cast.webp"
+            alt="Survivor 49 cast on the beach"
+            fill
+            sizes="(max-width: 1024px) 100vw, 768px"
+            className="object-cover"
+            style={{ objectPosition: "50% 18%" }} // keep back row in frame
+            priority
+          />
+        </div>
+        <figcaption className="p-2 text-[11px] text-white/60 text-right">
+          Survivor 49 cast • Photo: CBS
+        </figcaption>
+      </figure>
 
+      {/* Inline signup for weekly recap */}
       <section className="container my-8">
-  <SurvivorReminder />
-</section>
+        <SurvivorReminder />
+      </section>
 
       {/* Lock status + actions */}
       {season ? (
