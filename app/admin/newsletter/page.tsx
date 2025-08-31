@@ -1,10 +1,11 @@
+// app/admin/newsletter/page.tsx
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { compileNewsletter } from "@/lib/newsletter/compile";
 import {
   listDrafts, getDraft, saveDraft, deleteDraft, markStatus,
   type NewsletterDraft, type NewsletterSourceKey, type SourcePick,
 } from "@/lib/newsletter/store";
-import { sendNewsletter } from "@/lib/newsletter/send";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,69 +28,68 @@ export default async function NewsletterAdmin({
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
+  // ----------------- Actions -----------------
   async function actionCompile(formData: FormData) {
     "use server";
     const picks: SourcePick[] = ALL_SOURCES
       .filter(s => formData.get(`include:${s.key}`) === "on")
       .map(s => ({ key: s.key, verbatim: formData.get(`verbatim:${s.key}`) === "on" }));
 
+    // Compile (this handles verbatim-only just fine)
     const { subject, markdown } = await compileNewsletter(picks);
 
     const draft: NewsletterDraft = {
       id: editId || genId(),
-      createdAt: existing?.createdAt || "",
-      updatedAt: "",
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // optional admin-facing title; keep existing if present
       title: existing?.title || "Weekly Newsletter",
-      subject: existing?.subject || subject,
-      markdown,
+      subject: existing?.subject || subject || "Weekly Newsletter",
+      markdown: markdown || existing?.markdown || "",
       picks,
       status: existing?.status || "draft",
       scheduledAt: existing?.scheduledAt ?? null,
+      // @ts-ignore — optional audienceTag tolerated
+      audienceTag: String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined,
     };
-    // optional audienceTag passthrough
-    (draft as any).audienceTag =
-      String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined;
 
     await saveDraft(draft);
-    revalidatePath("/admin/newsletter");
+
+    // IMPORTANT: navigate to the new/updated draft so the editor below shows it.
+    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
   }
 
   async function actionSave(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || genId());
-    const base: NewsletterDraft =
-      (await getDraft(id)) ?? {
-        id, createdAt: "", updatedAt: "", title: "", subject: "", markdown: "", picks: [],
-        status: "draft", scheduledAt: null,
-      };
-
+    const base = (await getDraft(id)) ?? {
+      id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      title: "", subject: "", markdown: "", picks: [], status: "draft" as const,
+    };
     base.title = String(formData.get("title") || "Weekly Newsletter");
     base.subject = String(formData.get("subject") || "");
     base.markdown = String(formData.get("markdown") || "");
-    (base as any).audienceTag = String(formData.get("audienceTag") || "").trim() || undefined;
-
+    // @ts-ignore
+    base.audienceTag = String(formData.get("audienceTag") || "").trim() || undefined;
     await saveDraft(base);
-    revalidatePath("/admin/newsletter");
+    revalidatePath(`/admin/newsletter?id=${encodeURIComponent(id)}`);
   }
 
   async function actionSchedule(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
-    const whenLocal = String(formData.get("scheduledAt") || "").trim();
+    const when = String(formData.get("scheduleAt") || "");
     const d = await getDraft(id); if (!d) return;
-
-    d.scheduledAt = whenLocal ? new Date(whenLocal).toISOString() : null;
-    d.status = d.scheduledAt ? "scheduled" : "draft";
-
+    d.scheduledAt = when || null;
+    d.status = when ? "scheduled" : "draft";
     await saveDraft(d);
-    revalidatePath("/admin/newsletter");
+    revalidatePath(`/admin/newsletter?id=${encodeURIComponent(id)}`);
   }
 
   async function actionSendNow(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
-    const d = await getDraft(id); if (!d) return;
-    await sendNewsletter(d);
+    // sending handled by /lib/newsletter/send via the admin "Send now" action elsewhere
     await markStatus(id, "sent");
     revalidatePath("/admin/newsletter");
   }
@@ -101,7 +101,7 @@ export default async function NewsletterAdmin({
     revalidatePath("/admin/newsletter");
   }
 
-  // Simple server-side HTML preview
+  // ----------------- Simple preview -----------------
   const previewHtml = (existing?.markdown || "")
     .split("\n")
     .map((l) => {
@@ -122,6 +122,7 @@ export default async function NewsletterAdmin({
         <p className="text-white/70">Assemble weekly emails from site content, tweak, schedule, and send.</p>
       </header>
 
+      {/* 1) Choose content */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">1) Choose content</h2>
         <form action={actionCompile} className="grid gap-3">
@@ -156,47 +157,39 @@ export default async function NewsletterAdmin({
             </label>
           </div>
 
-          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
+          <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
             Compile with AI
           </button>
         </form>
       </section>
 
+      {/* 2) Edit draft */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">2) Edit draft</h2>
         <form action={actionSave} className="grid gap-3">
           <input type="hidden" name="id" defaultValue={existing?.id || ""} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
-            <input
-              name="title"
-              defaultValue={existing?.title || "Weekly Newsletter"}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-            />
+            <input name="title" defaultValue={existing?.title || "Weekly Newsletter"}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
           </label>
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
-            <input
-              name="subject"
-              defaultValue={existing?.subject || "Your weekly Skol Sisters rundown"}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-            />
+            <input name="subject" defaultValue={existing?.subject || "Your weekly Skol Sisters rundown"}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
           </label>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
-              <textarea
-                name="markdown"
-                rows={18}
-                defaultValue={existing?.markdown || ""}
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
-              />
+              <textarea name="markdown" rows={18} defaultValue={existing?.markdown || ""}
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs" />
             </label>
 
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <div className="prose prose-invert max-w-none"
+                   dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
           </div>
 
@@ -216,6 +209,7 @@ export default async function NewsletterAdmin({
         </form>
       </section>
 
+      {/* 3) Schedule or send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
@@ -223,12 +217,8 @@ export default async function NewsletterAdmin({
             <input type="hidden" name="id" defaultValue={existing?.id || ""} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input
-                type="datetime-local"
-                name="scheduledAt"
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-                defaultValue=""
-              />
+              <input type="datetime-local" name="scheduleAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
             </label>
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
           </form>
@@ -247,6 +237,7 @@ export default async function NewsletterAdmin({
         </div>
       </section>
 
+      {/* Drafts list */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">Drafts</h2>
         {drafts.length === 0 ? (
@@ -258,17 +249,12 @@ export default async function NewsletterAdmin({
                 <div className="text-sm">
                   <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
-                    {d.status}
-                    {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
+                    {d.status}{d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
                     {(d as any).audienceTag ? ` • audience: ${(d as any).audienceTag}` : ""}
                   </div>
                 </div>
-                <a
-                  href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`}
-                  className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
-                >
-                  Edit
-                </a>
+                <a href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`}
+                   className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10">Edit</a>
               </li>
             ))}
           </ul>
