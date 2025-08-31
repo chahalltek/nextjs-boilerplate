@@ -40,6 +40,7 @@ export default async function EpisodesPage() {
             {/* Match height with h-full and make content fill nicely */}
             <Link href="/contact" className="cta-card h-full">
               <span className="cta-title">Suggest a topic</span>
+              </ br>
               <span className="cta-sub">Hot takes, cold takes, lukewarm takes—send ’em.</span>
             </Link>
           </div>
