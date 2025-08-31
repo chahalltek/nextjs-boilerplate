@@ -5,6 +5,8 @@ import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
 import nextDynamic from "next/dynamic"; // <-- alias to avoid clashing with export const dynamic
+import FeatureGrid from "@/components/home/FeatureGrid";
+import NewsletterCta from "@/components/home/NewsletterCta";
 
 // Load client-only to avoid build-time network/handlers
 const TrendingTicker = nextDynamic(() => import("@/components/TrendingTicker"), { ssr: false });
@@ -68,6 +70,10 @@ export default function HomePage() {
           </p>
         </div>
       </section>
+
+      {/* Feature grid & CTA */}
+        <FeatureGrid />
+        <NewsletterCta />
 
       {/* VALUE PROPS */}
       <section className="container grid md:grid-cols-3 gap-4">
