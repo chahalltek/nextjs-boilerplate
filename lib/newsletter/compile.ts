@@ -2,7 +2,6 @@
 import fs from "fs/promises";
 import path from "path";
 import matter from "gray-matter";
-import OpenAI from "openai";
 import type { SourcePick, NewsletterSourceKey } from "@/lib/newsletter/store";
 
 type PerSourceOpts = Partial<Record<NewsletterSourceKey, {
@@ -71,7 +70,6 @@ export async function compileNewsletter(
   }
 
   async function readPolls(): Promise<any[]> {
-    // read every JSON file under data/polls
     const dir = path.join(process.cwd(), "data/polls");
     let files: string[] = [];
     try { files = await fs.readdir(dir); } catch { return []; }
@@ -91,7 +89,7 @@ export async function compileNewsletter(
   const sections: { title: string; markdown: string; verbatim: boolean }[] = [];
   const toSummarize: { source: NewsletterSourceKey; title: string; text: string }[] = [];
 
-  // Blog (from posts)
+  // Blog
   if (wanted.has("blog")) {
     const pick = byKey("blog")!;
     let posts = (await readMarkdownDir("app/content/posts")).filter(p => within(p.date, "blog"));
@@ -113,7 +111,7 @@ export async function compileNewsletter(
     }
   }
 
-  // Weekly Recap (from app/content/recaps)  ← fixed path
+  // Weekly Recap (fixed path: app/content/recaps)
   if (wanted.has("weeklyRecap")) {
     const pick = byKey("weeklyRecap")!;
     let recaps = (await readMarkdownDir("app/content/recaps")).filter(r => within(r.date, "weeklyRecap"));
@@ -135,7 +133,7 @@ export async function compileNewsletter(
     }
   }
 
-  // Hold’em / Fold’em (heuristic: posts that look like it)
+  // Hold’em / Fold’em
   if (wanted.has("holdem")) {
     const pick = byKey("holdem")!;
     let posts = (await readMarkdownDir("app/content/posts"))
@@ -159,7 +157,7 @@ export async function compileNewsletter(
     }
   }
 
-  // Start / Sit (heuristic)
+  // Start / Sit
   if (wanted.has("sitStart")) {
     const pick = byKey("sitStart")!;
     let posts = (await readMarkdownDir("app/content/posts"))
@@ -205,9 +203,9 @@ export async function compileNewsletter(
     toSummarize.push({ source: "survivorLeaderboard", title: "Survivor Leaderboard", text });
   }
 
-  // ---------- Build ----------
   const defaultSubject = `Skol Sisters Weekly Rundown — ${rangeLabel()}`;
 
+  // No AI needed if everything is verbatim
   if (!toSummarize.length) {
     const markdown = `# ${defaultSubject}\n\n` +
       sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n");
@@ -215,8 +213,9 @@ export async function compileNewsletter(
   }
 
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER;
+
+  // Fallback if no key
   if (!apiKey) {
-    // Fallback assembler
     const bullets = toSummarize
       .map(m => `### ${m.title}\n\n${m.text.split("\n").slice(0, 12).join("\n")}`)
       .join("\n\n");
@@ -226,7 +225,7 @@ export async function compileNewsletter(
     return { subject: defaultSubject, markdown: markdown.trim() };
   }
 
-  const openai = new OpenAI({ apiKey });
+  // ---------- OpenAI via fetch (no SDK) ----------
   const system =
     "You are the Skol Sisters newsletter writer. Tone: witty, playful, NFL-savvy. " +
     "Produce a single newsletter-length Markdown email (≈600–900 words). " +
@@ -243,24 +242,51 @@ export async function compileNewsletter(
     footer: "_You’re getting this because you subscribed on heyskolssister.com_",
   };
 
-  const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_NEWSLETTER_MODEL || "gpt-4o-mini",
-    temperature: 0.7,
-    messages: [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content:
-          "Assemble ONE Markdown newsletter. Start with an H1 title, then sections. " +
-          "Respect VERBATIM exactly; add connective tissue and polish for summarized parts. " +
-          "Finish with a brief sign-off.\n\n" +
-          "INPUT JSON:\n```json\n" + JSON.stringify(payload, null, 2) + "\n```",
-      },
-    ],
-  });
+  const model = process.env.OPENAI_NEWSLETTER_MODEL || "gpt-4o-mini";
 
-  const md = completion.choices[0]?.message?.content?.trim() || "";
+  let md = "";
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content:
+              "Assemble ONE Markdown newsletter. Start with an H1 title, then sections. " +
+              "Respect VERBATIM exactly; add connective tissue and polish for summarized parts. " +
+              "Finish with a brief sign-off.\n\n" +
+              "INPUT JSON:\n```json\n" + JSON.stringify(payload, null, 2) + "\n```",
+          },
+        ],
+      }),
+    });
+    const json: any = await resp.json().catch(() => ({}));
+    md = json?.choices?.[0]?.message?.content?.trim() || "";
+  } catch {
+    // fall through to minimal assembler below
+  }
+
   const subject = /#\s+(.+)/.exec(md)?.[1]?.trim() || defaultSubject;
 
-  return { subject, markdown: md || `# ${defaultSubject}\n\n(Empty body)` };
+  if (md) {
+    return { subject, markdown: md };
+  }
+
+  // Minimal fallback if API fails
+  const bullets = toSummarize
+    .map(m => `### ${m.title}\n\n${m.text.split("\n").slice(0, 12).join("\n")}`)
+    .join("\n\n");
+  const markdown = `# ${defaultSubject}\n\n` +
+    (sections.length ? sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n") + "\n\n" : "") +
+    `## Highlights\n\n${bullets}\n\n—\n_You’re getting this because you subscribed on heyskolssister.com_`;
+
+  return { subject: defaultSubject, markdown: markdown.trim() };
 }
