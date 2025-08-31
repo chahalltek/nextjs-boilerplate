@@ -1,76 +1,127 @@
-"use client";
-
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
+
+function CardShell({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={
+        "rounded-2xl border border-white/10 bg-white/[0.04] overflow-hidden " +
+        className
+      }
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function FeatureGrid() {
   return (
-    <section className="container my-10 space-y-6">
-      <h2 className="text-xl font-semibold">What we’re building</h2>
+    <section className="container space-y-3">
+      <h2 className="text-lg font-semibold">What we’re building</h2>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Fans / Community */}
-        <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
-          <div className="relative w-full aspect-[4/3]">
+      <div className="grid gap-4 md:grid-cols-3">
+        {/* Fans / Community — now includes copy + CTA */}
+        <CardShell>
+          <div className="relative h-40 md:h-44">
             <Image
-              src="/images/home/fans-bar.jpg"
+              src="/images/unsplash/fans-bar.jpg"
               alt="Friends cheering a football play at a bar."
               fill
-              sizes="(max-width: 1024px) 50vw, 33vw"
               className="object-cover"
-              priority
+              sizes="(max-width: 768px) 100vw, 33vw"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
           </div>
-          <figcaption className="p-2 text-[11px] text-white/50">Photo via Unsplash</figcaption>
-        </figure>
+          <div className="p-3">
+            <div className="font-semibold">Fans &amp; Community</div>
+            <p className="text-sm text-white/70">
+              Watch-party vibes, weekly takes, and behind-the-scenes notes.
+            </p>
+            <Link
+              href="/blog"
+              className="mt-2 inline-block text-sm rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+            >
+              Read the blog →
+            </Link>
+          </div>
+        </CardShell>
 
         {/* Lineup Lab */}
-        <Link href="/roster" className="group rounded-xl overflow-hidden border border-white/10 bg-white/5">
-          <div className="relative w-full aspect-[3/2] sm:aspect-[4/3]">
+        <CardShell>
+          <div className="relative h-40 md:h-44">
             <Image
-              src="/images/home/laptop-dashboard.jpg"
+              src="/images/unsplash/dark-dashboard.jpg"
               alt="Laptop showing analytics dashboard in dark mode."
               fill
-              sizes="(max-width: 1024px) 50vw, 33vw"
-              className="object-cover transition-transform group-hover:scale-[1.02]"
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 33vw"
             />
           </div>
           <div className="p-3">
-            <div className="font-medium">Lineup Lab</div>
-            <p className="text-sm text-white/70">Projections, injuries & matchup context—get your weekly start/sit.</p>
+            <div className="font-semibold">Lineup Lab</div>
+            <p className="text-sm text-white/70">
+              Projections, injuries &amp; matchup context—get weekly start/sit.
+            </p>
+            <Link
+              href="/roster"
+              className="mt-2 inline-block text-sm rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+            >
+              Try it →
+            </Link>
           </div>
-        </Link>
+        </CardShell>
 
-        {/* Bracket / Strategy */}
-        <Link href="/survivor" className="group rounded-xl overflow-hidden border border-white/10 bg-white/5">
-          <div className="relative w-full aspect-[3/2]">
+        {/* Survivor Bracket */}
+        <CardShell>
+          <div className="relative h-40 md:h-44">
             <Image
-              src="/images/home/whiteboard-plan.jpg"
+              src="/images/unsplash/whiteboard.jpg"
               alt="Hand drawing lines and notes on a whiteboard."
               fill
-              sizes="(max-width: 1024px) 50vw, 33vw"
-              className="object-cover object-[center_40%] transition-transform group-hover:scale-[1.02]"
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 33vw"
             />
           </div>
           <div className="p-3">
-            <div className="font-medium">Survivor Bracket</div>
-            <p className="text-sm text-white/70">Predict the full boot order and the Final 3—score updates weekly.</p>
+            <div className="font-semibold">Survivor Bracket</div>
+            <p className="text-sm text-white/70">
+              Predict the full boot order and the Final 3—scores update weekly.
+            </p>
+            <Link
+              href="/survivor"
+              className="mt-2 inline-block text-sm rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+            >
+              Play now →
+            </Link>
           </div>
-        </Link>
+        </CardShell>
+      </div>
 
-        {/* Podcast / Audio */}
-        <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5 lg:col-span-2">
-          <div className="relative w-full aspect-[16/9]">
+      {/* Podcast row — smaller */}
+      <div className="grid">
+        <CardShell>
+          <div className="relative h-52 md:h-56">
             <Image
-              src="/images/home/podcast-mic.jpg"
+              src="/images/unsplash/podcast-mic.jpg"
               alt="Podcast microphone with soft studio lights."
               fill
-              sizes="(max-width: 1024px) 100vw, 66vw"
               className="object-cover"
+              sizes="100vw"
             />
           </div>
-          <figcaption className="p-2 text-[11px] text-white/50">Photo via Unsplash</figcaption>
-        </figure>
+          <div className="p-3 md:p-4">
+            <div className="font-semibold">Podcast (coming soon)</div>
+            <p className="text-sm text-white/70">
+              Quick hits, matchup talk, and Survivor chatter—bite-size and weekly.
+            </p>
+          </div>
+        </CardShell>
       </div>
     </section>
   );
