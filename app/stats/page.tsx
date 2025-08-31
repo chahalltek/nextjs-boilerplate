@@ -1,23 +1,24 @@
-// app/stats/page.tsx (or wherever this lives)
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 
 /* ---------------- types ---------------- */
 type Role = "ALL" | "OFF" | "DEF";
-type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF" | "DST" | "OTHER" | "ALL";
+type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF" | "OTHER" | "ALL";
 
 interface PlayerInfo {
   player_id: string;
   full_name?: string;
   team?: string;
-  position?: string;        // Sleeper uses "DEF" for team defense
+  position?: string;
   injury_status?: string;
 }
 
 interface StatEntry {
   player_id: string;
   stats?: Record<string, number>;
+  // some Sleeper responses put pts_* at top-level
+  pts_ppr?: number;
 }
 
 interface CombinedRow {
@@ -26,8 +27,8 @@ interface CombinedRow {
   team?: string;
   position: Position;
   injury?: string;
-  proj: number;    // projection for selected week
-  actual: number;  // actual for selected week
+  proj: number;
+  actual: number;
   role: "OFF" | "DEF";
 }
 
@@ -56,7 +57,7 @@ export default function StatsPage() {
   useEffect(() => {
     async function loadPlayers() {
       try {
-        const res = await fetch("https://api.sleeper.app/v1/players/nfl");
+        const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "no-store" });
         const data = (await res.json()) as Record<string, PlayerInfo>;
         setPlayers(data || {});
       } catch (err) {
@@ -66,50 +67,52 @@ export default function StatsPage() {
     loadPlayers();
   }, []);
 
-  /* ----- weekly stats ----- */
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const [projRes, actRes] = await Promise.all([
-          fetch(
-            `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`,
-            { cache: "no-store" }
-          ),
-          fetch(
-            `https://api.sleeper.app/stats/nfl/regular/${CURRENT_YEAR}/${week}`,
-            { cache: "no-store" }
-          ),
-        ]);
+  async function fetchWeek() {
+    setLoading(true);
+    try {
+      const [projRes, actRes] = await Promise.all([
+        fetch(
+          `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`,
+          { cache: "no-store" }
+        ),
+        fetch(
+          `https://api.sleeper.app/stats/nfl/regular/${CURRENT_YEAR}/${week}`,
+          { cache: "no-store" }
+        ),
+      ]);
 
-        const projJson = await projRes.json();
-        const actJson = await actRes.json();
+      const projJson = await projRes.json();
+      const actJson = await actRes.json();
 
-        // projections come as array already
-        const projArr: StatEntry[] = Array.isArray(projJson) ? projJson : [];
-        setProjections(projArr);
+      // Projections: array
+      setProjections(Array.isArray(projJson) ? projJson : []);
 
-        // actuals often come as an object map keyed by player_id
-        const actArr: StatEntry[] = Array.isArray(actJson)
-          ? actJson
-          : Object.entries<Record<string, number>>(actJson || {}).map(
-              ([player_id, stats]) => ({ player_id, stats })
-            );
-        setActual(actArr);
-      } catch (err) {
-        console.error("weekly load err", err);
-      } finally {
-        setLoading(false);
-      }
+      // Actuals: often a map keyed by player_id. Normalize to array.
+      const actArr: StatEntry[] = Array.isArray(actJson)
+        ? actJson
+        : Object.entries<Record<string, number>>(actJson || {}).map(
+            ([player_id, stats]) => ({ player_id, stats })
+          );
+
+      setActual(actArr);
+    } catch (err) {
+      console.error("weekly load err", err);
+      setProjections([]);
+      setActual([]);
+    } finally {
+      setLoading(false);
     }
-    load();
+  }
+
+  /* ----- load on week change ----- */
+  useEffect(() => {
+    fetchWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week]);
 
   /* ----- combine proj + actual into one list ----- */
   const rows: CombinedRow[] = useMemo(() => {
-    // index actuals for fast join
     const actualById = new Map(actual.map((r) => [r.player_id, r]));
-    // take union of ids from projections and actuals
     const ids = new Set<string>([
       ...projections.map((r) => r.player_id),
       ...actual.map((r) => r.player_id),
@@ -141,8 +144,9 @@ export default function StatsPage() {
         team: meta.team,
         position,
         injury: meta.injury_status,
-        proj: num(proj?.stats?.pts_ppr),
-        actual: num(act?.stats?.pts_ppr),
+        // KEY FIX: read pts_ppr from nested stats OR top-level
+        proj: num(proj?.stats?.pts_ppr ?? proj?.pts_ppr),
+        actual: num(act?.stats?.pts_ppr ?? act?.pts_ppr),
         role,
       });
     }
@@ -181,11 +185,10 @@ export default function StatsPage() {
 
   return (
     <main className="container mx-auto max-w-7xl px-4 py-8 space-y-6">
-      {/* Header */}
       <header className="space-y-2">
         <h1 className="text-3xl font-bold">Weekly Stats (Actual + Projected)</h1>
         <p className="text-xs text-white/70">
-          Showing actual results and next-game projections side by side. Data from Sleeper.
+          Side-by-side numbers from Sleeper. If games haven’t been played yet, Actuals will be 0.
         </p>
       </header>
 
@@ -258,10 +261,16 @@ export default function StatsPage() {
           onChange={(e) => setQ(e.target.value)}
         />
 
-        {loading && <span className="text-xs text-white/60">Loading…</span>}
+        <button
+          type="button"
+          onClick={fetchWeek}
+          className="rounded border border-white/20 px-2 py-1 text-sm hover:bg-white/10"
+          disabled={loading}
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
-      {/* Table */}
       <StatTable data={view} />
     </main>
   );
@@ -277,8 +286,8 @@ function StatTable({ data }: { data: CombinedRow[] }) {
             <th className="py-2 px-3">Player</th>
             <th className="py-2 px-3">Team</th>
             <th className="py-2 px-3">Pos</th>
-            <th className="py-2 px-3">Proj (PPR)</th>
-            <th className="py-2 px-3">Actual (PPR)</th>
+            <th className="py-2 px-3">Proj</th>
+            <th className="py-2 px-3">Actual</th>
             <th className="py-2 px-3">Δ</th>
             <th className="py-2 px-3">Injury</th>
           </tr>
