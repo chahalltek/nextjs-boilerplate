@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 /* ---------------- types ---------------- */
+type SeasonType = "pre" | "regular";
 type Role = "ALL" | "OFF" | "DEF";
 type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF" | "OTHER" | "ALL";
 
@@ -17,8 +18,7 @@ interface PlayerInfo {
 interface StatEntry {
   player_id: string;
   stats?: Record<string, number>;
-  // some Sleeper responses put pts_* at top-level
-  pts_ppr?: number;
+  pts_ppr?: number; // sometimes top-level
 }
 
 interface CombinedRow {
@@ -34,10 +34,14 @@ interface CombinedRow {
 
 /* ---------------- consts ---------------- */
 const CURRENT_YEAR = new Date().getFullYear();
-const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1);
+const MAX_WEEKS: Record<SeasonType, number> = { pre: 4, regular: 18 };
+const weeksFor = (t: SeasonType) =>
+  Array.from({ length: MAX_WEEKS[t] }, (_, i) => i + 1);
 
 /* ---------------- page ---------------- */
 export default function StatsPage() {
+  // NEW: season type switch (default to preseason)
+  const [seasonType, setSeasonType] = useState<SeasonType>("pre");
   const [week, setWeek] = useState(1);
 
   // data
@@ -53,11 +57,19 @@ export default function StatsPage() {
   const [sortBy, setSortBy] = useState<"proj" | "actual" | "delta">("proj");
   const [limit, setLimit] = useState(50);
 
+  // Clamp week if seasonType changes
+  useEffect(() => {
+    if (week > MAX_WEEKS[seasonType]) setWeek(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonType]);
+
   /* ----- players meta once ----- */
   useEffect(() => {
     async function loadPlayers() {
       try {
-        const res = await fetch("https://api.sleeper.app/v1/players/nfl", { cache: "no-store" });
+        const res = await fetch("https://api.sleeper.app/v1/players/nfl", {
+          cache: "no-store",
+        });
         const data = (await res.json()) as Record<string, PlayerInfo>;
         setPlayers(data || {});
       } catch (err) {
@@ -70,24 +82,20 @@ export default function StatsPage() {
   async function fetchWeek() {
     setLoading(true);
     try {
+      const projUrl = `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=${seasonType}`;
+      const actUrl = `https://api.sleeper.app/stats/nfl/${seasonType}/${CURRENT_YEAR}/${week}`;
+
       const [projRes, actRes] = await Promise.all([
-        fetch(
-          `https://api.sleeper.app/projections/nfl/${CURRENT_YEAR}/${week}?season_type=regular`,
-          { cache: "no-store" }
-        ),
-        fetch(
-          `https://api.sleeper.app/stats/nfl/regular/${CURRENT_YEAR}/${week}`,
-          { cache: "no-store" }
-        ),
+        fetch(projUrl, { cache: "no-store" }),
+        fetch(actUrl, { cache: "no-store" }),
       ]);
 
       const projJson = await projRes.json();
       const actJson = await actRes.json();
 
-      // Projections: array
       setProjections(Array.isArray(projJson) ? projJson : []);
 
-      // Actuals: often a map keyed by player_id. Normalize to array.
+      // Actuals may be a map keyed by player_id → normalize
       const actArr: StatEntry[] = Array.isArray(actJson)
         ? actJson
         : Object.entries<Record<string, number>>(actJson || {}).map(
@@ -104,11 +112,11 @@ export default function StatsPage() {
     }
   }
 
-  /* ----- load on week change ----- */
+  /* ----- load whenever week or seasonType changes ----- */
   useEffect(() => {
     fetchWeek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week]);
+  }, [week, seasonType]);
 
   /* ----- combine proj + actual into one list ----- */
   const rows: CombinedRow[] = useMemo(() => {
@@ -144,7 +152,6 @@ export default function StatsPage() {
         team: meta.team,
         position,
         injury: meta.injury_status,
-        // KEY FIX: read pts_ppr from nested stats OR top-level
         proj: num(proj?.stats?.pts_ppr ?? proj?.pts_ppr),
         actual: num(act?.stats?.pts_ppr ?? act?.pts_ppr),
         role,
@@ -183,29 +190,44 @@ export default function StatsPage() {
     return sorted.slice(0, limit);
   }, [rows, role, pos, q, sortBy, limit]);
 
+  const weekOptions = weeksFor(seasonType);
+
   return (
     <main className="container mx-auto max-w-7xl px-4 py-8 space-y-6">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold">Weekly Stats (Actual + Projected)</h1>
+        <h1 className="text-3xl font-bold">
+          Weekly Stats ({seasonType === "pre" ? "Preseason" : "Regular"} • Actual + Projected)
+        </h1>
         <p className="text-xs text-white/70">
-          Side-by-side numbers from Sleeper. If games haven’t been played yet, Actuals will be 0.
+          Sleeper data. If games haven’t been played yet, “Actual” will be 0.
         </p>
       </header>
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-sm text-white/70">Week:</label>
+        <label className="text-sm text-white/70">Season:</label>
+        <select
+          className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
+          value={seasonType}
+          onChange={(e) => setSeasonType(e.target.value as SeasonType)}
+        >
+          <option value="pre">Pre Season</option>
+          <option value="regular">Regular Season</option>
+        </select>
+
+        <label className="ml-2 text-sm text-white/70">Week:</label>
         <select
           className="bg-[#120F1E] border border-white/10 rounded px-2 py-1 text-sm"
           value={week}
           onChange={(e) => setWeek(Number(e.target.value))}
         >
-          {WEEKS.map((w) => (
+          {weekOptions.map((w) => (
             <option key={w} value={w}>
               {w}
             </option>
           ))}
         </select>
+        {loading && <span className="text-xs text-white/60">Loading…</span>}
 
         <span className="mx-2 h-6 w-px bg-white/10" />
 
