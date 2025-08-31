@@ -23,7 +23,7 @@ export default async function EpisodesPage() {
         </p>
       </header>
 
-      {/* make equal-height cards */}
+      {/* equal-height cards */}
       <div className="grid gap-6 md:grid-cols-3 auto-rows-fr">
         <section className="card p-6 md:col-span-2 flex flex-col">
           <h2 className="text-xl font-semibold mb-3">What you’ll hear</h2>
@@ -34,13 +34,16 @@ export default async function EpisodesPage() {
           </ul>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {/* Keep heights consistent by wrapping in a full-height div */}
+            {/* keep height consistent */}
             <div className="h-full">
               <SubscribeCta />
             </div>
 
-            {/* Suggest a topic card */}
-            <Link href="/contact" className="cta-card h-full">
+            {/* FIX: stack title + subtext vertically */}
+            <Link
+              href="/contact"
+              className="cta-card h-full flex flex-col items-start justify-center gap-0.5"
+            >
               <span className="cta-title">Suggest a topic</span>
               <span className="cta-sub">
                 Hot takes, cold takes, lukewarm takes—send ’em.
@@ -63,19 +66,11 @@ export default async function EpisodesPage() {
         </aside>
       </div>
 
-      <section className="mt-12">
-        <div className="card p-6">
-          <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
-          {episodes.length === 0 ? (
-            <>
-              <p className="text-white/70">
-                No episodes yet—this is where the player and show notes will live.
-              </p>
-              <div className="mt-4 aspect-video bg-white/5 border border-white/10 rounded-xl grid place-items-center text-white/40">
-                <span>Podcast Player Placeholder</span>
-              </div>
-            </>
-          ) : (
+      {/* HIDE teaser feed until there are episodes */}
+      {episodes.length > 0 && (
+        <section className="mt-12">
+          <div className="card p-6">
+            <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
             <ul className="space-y-4">
               {episodes.map((ep) => (
                 <li key={ep.id}>
@@ -89,9 +84,9 @@ export default async function EpisodesPage() {
                 </li>
               ))}
             </ul>
-          )}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
