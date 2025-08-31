@@ -23,7 +23,7 @@ export default function NewsletterCta() {
           {/* Image (smaller / capped) */}
           <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/30 h-44 sm:h-52 md:h-56">
             <Image
-              src="/images/unsplash/envelope.jpg"
+              src="/images/home/envelope-flatlay.jpg"
               alt="Minimal paper envelope on neutral background."
               fill
               className="object-cover"
