@@ -108,7 +108,7 @@ export default function FeatureGrid() {
         <CardShell>
           <div className="relative h-52 md:h-56">
            <Image
-  src="/images/podcast-mic.jpg"
+  src="/images/home/podcast-mic.jpg"
   alt="Podcast microphone with soft studio lights"
   fill
   sizes="(max-width: 768px) 100vw, 33vw"
