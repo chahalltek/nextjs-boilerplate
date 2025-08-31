@@ -52,13 +52,14 @@ type KVLike = {
 async function getKV(): Promise<KVLike | null> {
   try {
     const mod = await import("@vercel/kv");
+    // Vercel KV exports `kv`
     return (mod as any).kv as KVLike;
   } catch {
     return null;
   }
 }
 
-// memory fallback (non-persistent)
+// memory fallback (non-persistent; dev only)
 const memDrafts = new Map<string, NewsletterDraft>();
 let memIndex = new Set<string>();
 let memSubs = new Set<string>();
@@ -99,7 +100,11 @@ export async function listDrafts(): Promise<NewsletterDraft[]> {
     const d = await loadDraft(kv, id);
     if (d) out.push(d);
   }
-  out.sort((a, b) => new Date(b.updatedAt).valueOf() - new Date(a.updatedAt).valueOf());
+  out.sort((a, b) => {
+    const au = new Date(a.updatedAt || a.createdAt).valueOf();
+    const bu = new Date(b.updatedAt || b.createdAt).valueOf();
+    return bu - au;
+  });
   return out;
 }
 
@@ -113,6 +118,10 @@ type SaveInput = Partial<NewsletterDraft> & {
   subject?: string;
   markdown?: string;
   picks?: SourcePick[];
+  scheduledAt?: string | null;
+  audienceTag?: string | null;
+  from?: string | null;
+  title?: string;
 };
 
 export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
@@ -134,7 +143,7 @@ export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
       scheduledAt: input.scheduledAt ?? null,
       audienceTag: input.audienceTag ?? null,
       from: input.from ?? null,
-      title: input.title || undefined,
+      title: input.title || "Weekly Newsletter",
     };
     await saveDraftKV(kv, draft);
     const ids = await idxGet(kv);
@@ -197,8 +206,9 @@ export async function markStatus(
  *
  * Required env for Mailchimp:
  * - MAILCHIMP_API_KEY (e.g. "abcd-us21")
- * - MAILCHIMP_DC      (e.g. "us21")
  * - MAILCHIMP_LIST_ID
+ * Optional:
+ * - MAILCHIMP_DC (overrides DC parsed from API key suffix)
  */
 export async function subscribeEmail(
   email: string,
@@ -208,21 +218,23 @@ export async function subscribeEmail(
   if (!clean || !clean.includes("@")) return { ok: false, error: "invalid-email" };
 
   const MC_KEY = process.env.MAILCHIMP_API_KEY || "";
-  const MC_DC = process.env.MAILCHIMP_DC || "";
   const MC_LIST = process.env.MAILCHIMP_LIST_ID || "";
+  const parsedDc = MC_KEY.includes("-") ? MC_KEY.split("-").at(-1) : "";
+  const MC_DC = process.env.MAILCHIMP_DC || parsedDc || "";
 
   // 1) Mailchimp upsert
-  if (MC_KEY && MC_DC && MC_LIST) {
+  if (MC_KEY && MC_LIST && MC_DC) {
     try {
       const hash = createHash("md5").update(clean).digest("hex");
       const url = `https://${MC_DC}.api.mailchimp.com/3.0/lists/${MC_LIST}/members/${hash}`;
-      const body = {
+      const body: any = {
         email_address: clean,
         status_if_new: "subscribed",
         status: "subscribed",
-        tags: opts?.tags && opts.tags.length ? opts.tags : undefined,
-        merge_fields: opts?.source ? { SOURCE: opts.source } : undefined,
       };
+      if (opts?.tags && opts.tags.length) body.tags = opts.tags;
+      if (opts?.source) body.merge_fields = { SOURCE: opts.source };
+
       const res = await fetch(url, {
         method: "PUT",
         headers: {
@@ -232,6 +244,7 @@ export async function subscribeEmail(
         },
         body: JSON.stringify(body),
       });
+
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         // Don’t hard-fail—fall back to KV
@@ -260,7 +273,7 @@ export async function subscribeEmail(
       memSubs.add(clean);
       return { ok: true, via: "kv" };
     }
-  } catch (err) {
+  } catch {
     return { ok: false, error: "subscribe-failed" };
   }
 }
