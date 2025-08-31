@@ -1,5 +1,5 @@
 // lib/newsletter/store.ts
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 /* =========================
    Types
@@ -28,17 +28,20 @@ export interface NewsletterDraft {
   markdown: string;    // compiled/editable content
   picks: SourcePick[]; // which sources were selected
   status: NewsletterStatus;
-  scheduledAt?: string | null; // ISO for later sending
-  audienceTag?: string | null; // Mailchimp tag filter, optional
-  from?: string | null;        // override from address, optional
+  scheduledAt?: string | null;
+  audienceTag?: string | null;
+  from?: string | null;
+  /** Optional display title used by admin UI */
+  title?: string;
 }
 
 /* =========================
    Storage (KV first, memory fallback)
    ========================= */
 
-const IDX_KEY = "newsletter:drafts:index"; // stores string[] of ids
+const IDX_KEY = "newsletter:drafts:index"; // string[] of ids
 const KEY = (id: string) => `newsletter:draft:${id}`;
+const SUBS_KEY = "newsletter:subs";        // string[] of emails (fallback storage)
 
 type KVLike = {
   get<T = unknown>(key: string): Promise<T | null>;
@@ -48,17 +51,17 @@ type KVLike = {
 
 async function getKV(): Promise<KVLike | null> {
   try {
-    // Lazy import so build doesn't fail if @vercel/kv isn't installed locally
     const mod = await import("@vercel/kv");
-    return mod.kv as KVLike;
+    return (mod as any).kv as KVLike;
   } catch {
     return null;
   }
 }
 
 // memory fallback (non-persistent)
-const mem = new Map<string, NewsletterDraft>();
+const memDrafts = new Map<string, NewsletterDraft>();
 let memIndex = new Set<string>();
+let memSubs = new Set<string>();
 
 async function idxGet(kv: KVLike | null): Promise<string[]> {
   if (kv) {
@@ -67,41 +70,25 @@ async function idxGet(kv: KVLike | null): Promise<string[]> {
   }
   return Array.from(memIndex);
 }
-
 async function idxSet(kv: KVLike | null, ids: string[]) {
-  if (kv) {
-    await kv.set(IDX_KEY, ids);
-  } else {
-    memIndex = new Set(ids);
-  }
+  if (kv) await kv.set(IDX_KEY, ids);
+  else memIndex = new Set(ids);
 }
-
 async function loadDraft(kv: KVLike | null, id: string): Promise<NewsletterDraft | null> {
-  if (kv) {
-    const doc = await kv.get<NewsletterDraft>(KEY(id));
-    return doc ?? null;
-  }
-  return mem.get(id) ?? null;
+  if (kv) return (await kv.get<NewsletterDraft>(KEY(id))) ?? null;
+  return memDrafts.get(id) ?? null;
 }
-
 async function saveDraftKV(kv: KVLike | null, d: NewsletterDraft) {
-  if (kv) {
-    await kv.set(KEY(d.id), d);
-  } else {
-    mem.set(d.id, d);
-  }
+  if (kv) await kv.set(KEY(d.id), d);
+  else memDrafts.set(d.id, d);
 }
-
 async function deleteDraftKV(kv: KVLike | null, id: string) {
-  if (kv) {
-    await kv.del(KEY(id));
-  } else {
-    mem.delete(id);
-  }
+  if (kv) await kv.del(KEY(id));
+  else memDrafts.delete(id);
 }
 
 /* =========================
-   Public API
+   Drafts API
    ========================= */
 
 export async function listDrafts(): Promise<NewsletterDraft[]> {
@@ -112,7 +99,6 @@ export async function listDrafts(): Promise<NewsletterDraft[]> {
     const d = await loadDraft(kv, id);
     if (d) out.push(d);
   }
-  // newest updated first
   out.sort((a, b) => new Date(b.updatedAt).valueOf() - new Date(a.updatedAt).valueOf());
   return out;
 }
@@ -131,16 +117,11 @@ type SaveInput = Partial<NewsletterDraft> & {
 
 export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
   const kv = await getKV();
-
-  let draft: NewsletterDraft | null = null;
   const now = new Date().toISOString();
 
-  if (input.id) {
-    draft = await loadDraft(kv, input.id);
-  }
+  let draft = input.id ? await loadDraft(kv, input.id) : null;
 
   if (!draft) {
-    // create new
     const id = input.id || randomUUID();
     draft = {
       id,
@@ -153,6 +134,7 @@ export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
       scheduledAt: input.scheduledAt ?? null,
       audienceTag: input.audienceTag ?? null,
       from: input.from ?? null,
+      title: input.title || undefined,
     };
     await saveDraftKV(kv, draft);
     const ids = await idxGet(kv);
@@ -163,7 +145,6 @@ export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
     return draft;
   }
 
-  // update existing
   const next: NewsletterDraft = {
     ...draft,
     subject: input.subject ?? draft.subject,
@@ -172,6 +153,7 @@ export async function saveDraft(input: SaveInput): Promise<NewsletterDraft> {
     scheduledAt: input.scheduledAt ?? draft.scheduledAt ?? null,
     audienceTag: input.audienceTag ?? draft.audienceTag ?? null,
     from: input.from ?? draft.from ?? null,
+    title: input.title ?? draft.title,
     updatedAt: now,
   };
   await saveDraftKV(kv, next);
@@ -203,4 +185,82 @@ export async function markStatus(
   };
   await saveDraftKV(kv, next);
   return next;
+}
+
+/* =========================
+   Subscribers API
+   ========================= */
+
+/**
+ * Upsert a subscriber.
+ * Tries Mailchimp (if configured), then falls back to KV (or in-memory).
+ *
+ * Required env for Mailchimp:
+ * - MAILCHIMP_API_KEY (e.g. "abcd-us21")
+ * - MAILCHIMP_DC      (e.g. "us21")
+ * - MAILCHIMP_LIST_ID
+ */
+export async function subscribeEmail(
+  email: string,
+  opts?: { tags?: string[]; source?: string }
+): Promise<{ ok: true; via: "mailchimp" | "kv" } | { ok: false; error: string }> {
+  const clean = String(email || "").trim().toLowerCase();
+  if (!clean || !clean.includes("@")) return { ok: false, error: "invalid-email" };
+
+  const MC_KEY = process.env.MAILCHIMP_API_KEY || "";
+  const MC_DC = process.env.MAILCHIMP_DC || "";
+  const MC_LIST = process.env.MAILCHIMP_LIST_ID || "";
+
+  // 1) Mailchimp upsert
+  if (MC_KEY && MC_DC && MC_LIST) {
+    try {
+      const hash = createHash("md5").update(clean).digest("hex");
+      const url = `https://${MC_DC}.api.mailchimp.com/3.0/lists/${MC_LIST}/members/${hash}`;
+      const body = {
+        email_address: clean,
+        status_if_new: "subscribed",
+        status: "subscribed",
+        tags: opts?.tags && opts.tags.length ? opts.tags : undefined,
+        merge_fields: opts?.source ? { SOURCE: opts.source } : undefined,
+      };
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          // Basic auth user can be any string, password is API key
+          Authorization: `Basic ${Buffer.from(`anystring:${MC_KEY}`).toString("base64")}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        // Don’t hard-fail—fall back to KV
+        console.warn("Mailchimp subscribe failed:", res.status, text);
+      } else {
+        return { ok: true, via: "mailchimp" };
+      }
+    } catch (err) {
+      console.warn("Mailchimp subscribe error:", err);
+      // fall through to KV
+    }
+  }
+
+  // 2) KV fallback
+  try {
+    const kv = await getKV();
+    if (kv) {
+      const list = (await kv.get<string[]>(SUBS_KEY)) || [];
+      if (!list.includes(clean)) {
+        list.push(clean);
+        await kv.set(SUBS_KEY, list);
+      }
+      return { ok: true, via: "kv" };
+    } else {
+      // in-memory (dev only)
+      memSubs.add(clean);
+      return { ok: true, via: "kv" };
+    }
+  } catch (err) {
+    return { ok: false, error: "subscribe-failed" };
+  }
 }
