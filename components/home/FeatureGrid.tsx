@@ -107,13 +107,13 @@ export default function FeatureGrid() {
       <div className="grid">
         <CardShell>
           <div className="relative h-52 md:h-56">
-            <Image
-              src="/images/home/podcast-mic.jpg"
-              alt="Podcast microphone with soft studio lights."
-              fill
-              className="object-cover"
-              sizes="100vw"
-            />
+           <Image
+  src="/images/podcast-mic.jpg"
+  alt="Podcast microphone with soft studio lights"
+  fill
+  sizes="(max-width: 768px) 100vw, 33vw"
+  className="object-cover object-left-top md:[object-position:20%_30%]"
+/>
           </div>
           <div className="p-3 md:p-4">
             <div className="font-semibold">Podcast (coming soon)</div>
