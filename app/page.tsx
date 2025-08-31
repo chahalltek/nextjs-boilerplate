@@ -1,25 +1,27 @@
 // app/page.tsx
-export const dynamic = "error"; // build-time render only
+export const dynamic = "force-static"; // render at build
+export const revalidate = 3600;        // (optional) revalidate home once per hour
 
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getAllPosts } from "@/lib/posts";
-import nextDynamic from "next/dynamic"; // <-- alias to avoid clashing with export const dynamic
+import nextDynamic from "next/dynamic"; // avoid clashing with 'dynamic' export
 import FeatureGrid from "@/components/home/FeatureGrid";
 import NewsletterCta from "@/components/home/NewsletterCta";
 
-// Load client-only to avoid build-time network/handlers
+// Client-only ticker (no SSR to keep the page fully static)
 const TrendingTicker = nextDynamic(() => import("@/components/TrendingTicker"), { ssr: false });
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Works whether getAllPosts is sync or async
   const posts =
-    (() => {
+    (await (async () => {
       try {
-        return getAllPosts().slice(0, 3);
+        return await getAllPosts();
       } catch {
         return [];
       }
-    })() || [];
+    })())?.slice(0, 3) ?? [];
 
   return (
     <div className="space-y-16">
@@ -72,8 +74,10 @@ export default function HomePage() {
       </section>
 
       {/* Feature grid & CTA */}
+      <section className="container space-y-8">
         <FeatureGrid />
         <NewsletterCta />
+      </section>
 
       {/* VALUE PROPS */}
       <section className="container grid md:grid-cols-3 gap-4">
