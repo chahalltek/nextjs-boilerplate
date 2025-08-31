@@ -4,7 +4,8 @@ import SubscribeCta from "@/components/SubscribeCta";
 
 export const metadata = {
   title: "Episodes — Skol Sisters Podcast",
-  description: "Our podcast is almost here. Be gentle—first-time podcasters, lifelong superfans.",
+  description:
+    "Our podcast is almost here. Be gentle—first-time podcasters, lifelong superfans.",
 };
 
 export default async function EpisodesPage() {
@@ -29,9 +30,15 @@ export default async function EpisodesPage() {
             <li>Listener questions, bold predictions, and occasional victory confetti.</li>
           </ul>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-             <SubscribeCta />
-            <Link href="/contact" className="cta-card">
+          {/* Two-up CTA row */}
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 items-stretch">
+            {/* Compact subscribe card; clipped so artwork never bleeds into the next column */}
+            <div className="h-full overflow-hidden">
+              <SubscribeCta variant="starter-pack" />
+            </div>
+
+            {/* Match height with h-full and make content fill nicely */}
+            <Link href="/contact" className="cta-card h-full">
               <span className="cta-title">Suggest a topic</span>
               <span className="cta-sub">Hot takes, cold takes, lukewarm takes—send ’em.</span>
             </Link>
@@ -55,7 +62,8 @@ export default async function EpisodesPage() {
       <section className="mt-12">
         <div className="card p-6">
           <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
-           {episodes.length === 0 && (
+
+          {episodes.length === 0 && (
             <>
               <p className="text-white/70">
                 No episodes yet—this is where the player and show notes will live.
@@ -65,6 +73,7 @@ export default async function EpisodesPage() {
               </div>
             </>
           )}
+
           {episodes.length > 0 && (
             <ul className="space-y-4">
               {episodes.map((ep) => (
