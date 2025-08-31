@@ -39,16 +39,17 @@ export default async function NewsletterAdmin({
       id: editId || genId(),
       createdAt: existing?.createdAt || "",
       updatedAt: "",
-      // @ts-expect-error: title exists in our struct; ensure store type includes it
-      title: (existing as any)?.title || "Weekly Newsletter",
+      title: existing?.title || "Weekly Newsletter",
       subject: existing?.subject || subject,
       markdown,
       picks,
       status: existing?.status || "draft",
       scheduledAt: existing?.scheduledAt ?? null,
-      // @ts-ignore - optional audienceTag (not typed on the struct; harmless)
-      audienceTag: String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined,
     };
+    // optional audienceTag passthrough
+    (draft as any).audienceTag =
+      String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined;
+
     await saveDraft(draft);
     revalidatePath("/admin/newsletter");
   }
@@ -56,15 +57,17 @@ export default async function NewsletterAdmin({
   async function actionSave(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || genId());
-    const base = (await getDraft(id)) ?? {
-      id, createdAt: "", updatedAt: "", subject: "", markdown: "", picks: [], status: "draft" as const, scheduledAt: null,
-    };
-    // @ts-expect-error: title exists in our struct; ensure store type includes it
+    const base: NewsletterDraft =
+      (await getDraft(id)) ?? {
+        id, createdAt: "", updatedAt: "", title: "", subject: "", markdown: "", picks: [],
+        status: "draft", scheduledAt: null,
+      };
+
     base.title = String(formData.get("title") || "Weekly Newsletter");
     base.subject = String(formData.get("subject") || "");
     base.markdown = String(formData.get("markdown") || "");
-    // @ts-ignore
-    base.audienceTag = String(formData.get("audienceTag") || "").trim() || undefined;
+    (base as any).audienceTag = String(formData.get("audienceTag") || "").trim() || undefined;
+
     await saveDraft(base);
     revalidatePath("/admin/newsletter");
   }
@@ -167,8 +170,7 @@ export default async function NewsletterAdmin({
             <span className="text-white/80">Internal title</span>
             <input
               name="title"
-              // @ts-expect-error: title exists in our struct; ensure store type includes it
-              defaultValue={(existing as any)?.title || "Weekly Newsletter"}
+              defaultValue={existing?.title || "Weekly Newsletter"}
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
@@ -254,8 +256,7 @@ export default async function NewsletterAdmin({
             {drafts.map((d) => (
               <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
                 <div className="text-sm">
-                  {/* @ts-expect-error: title exists in our struct */}
-                  <div className="font-medium">{(d as any).title || "Untitled"}</div>
+                  <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
                     {d.status}
                     {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
