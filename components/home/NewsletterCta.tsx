@@ -14,7 +14,7 @@ export default function NewsletterCta() {
             </p>
             <Link
               href="/subscribe"
-              className="inline-flex items-center rounded-lg bg-[color:var(--skol-gold)] px-3 py-1.5 font-semibold text-black hover:opacity-90"
+              className="inline-flex items-center rounded-lg bg-[color:var(--skol-gold)] px-3 py-1.5 font-semibold text-white hover:opacity-90"
             >
               Subscribe
             </Link>
