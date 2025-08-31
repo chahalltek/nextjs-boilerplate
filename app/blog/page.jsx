@@ -82,22 +82,19 @@ export default async function BlogIndexPage() {
         </Link>
       </div>
 
-      {/* Fans / Community hero */}
-      <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
-        <div className="relative w-full aspect-[16/9]">
-          <Image
-            src="/images/home/fans-bar.jpg"               // place in /public/images/home/
-            alt="Friends cheering a football play at a bar."
-            fill
-            sizes="(max-width: 1024px) 100vw, 1024px"
-            className="object-cover"
-            priority={false}
-          />
-        </div>
-        <figcaption className="p-2 text-[11px] text-white/50">
-          Photo via Unsplash
-        </figcaption>
-      </figure>
+     {/* Fans / Community image — smaller footprint */}
+<div className="relative w-full rounded-xl overflow-hidden
+                aspect-[4/3] md:aspect-[3/2] max-h-[220px] md:max-h-[200px]">
+  <Image
+    src="/images/home/fans-bar.jpg"
+    alt="Friends cheering a football play at a bar."
+    fill
+    /* smaller rasters on wider screens */
+    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 33vw"
+    className="object-cover object-center"
+    priority={false}
+  />
+</div>
 
       <SubscribeCta variant="starter-pack" />
 
