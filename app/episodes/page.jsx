@@ -60,35 +60,35 @@ export default async function EpisodesPage() {
         </aside>
       </div>
 
-      <section className="mt-12">
-        <div className="card p-6">
-          <h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
+      //<section className="mt-12">
+       // <div className="card p-6">
+          //<h3 className="text-xl font-semibold mb-3">Teaser Feed</h3>
 
-          {episodes.length === 0 && (
-            <>
-              <p className="text-white/70">
-                No episodes yet—this is where the player and show notes will live.
-              </p>
-              <div className="mt-4 aspect-video bg-white/5 border border-white/10 rounded-xl grid place-items-center text-white/40">
-                <span>Podcast Player Placeholder</span>
-              </div>
-            </>
-          )}
+          //{episodes.length === 0 && (
+           // <>
+           //   <p className="text-white/70">
+           //     No episodes yet—this is where the player and show notes will live.
+           //   </p>
+           //  <div className="mt-4 aspect-video bg-white/5 border border-white/10 rounded-xl grid place-items-center text-white/40">
+           //    <span>Podcast Player Placeholder</span>
+           //  </div>
+           // </>
+         // )}
 
-          {episodes.length > 0 && (
-            <ul className="space-y-4">
-              {episodes.map((ep) => (
-                <li key={ep.id}>
-                  <Link href={`/episodes/${ep.slug}`} className="text-lg text-white hover:underline">
-                    {ep.title}
-                  </Link>
-                  <p className="text-white/70">{ep.teaser}</p>
-                </li>
-              ))}
-            </ul>
-          )}
+          //{episodes.length > 0 && (
+           // <ul className="space-y-4">
+             // {episodes.map((ep) => (
+             //   <li key={ep.id}>
+               //   <Link href={`/episodes/${ep.slug}`} className="text-lg text-white hover:underline">
+               //    {ep.title}
+               //   </Link>
+               //   <p className="text-white/70">{ep.teaser}</p>
+               // </li>
+              //))}
+           // </ul>
+         // )}
         </div>
-      </section>
+      //</section>
     </div>
   );
 }
