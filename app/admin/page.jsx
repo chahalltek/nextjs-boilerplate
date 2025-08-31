@@ -61,10 +61,12 @@ const cards = [
   { href: "/admin/holdem-foldem", title: "Hold ’em / Fold ’em", desc: "Stash-or-trash: injuries, usage, matchups.", emoji: "🃏" },
   // Start/Sit admin
   { href: "/admin/start-sit", title: "Start / Sit", desc: "Post this week’s Start/Sit thread and notes.", emoji: "✅" },
+  // ✅ Newsletter admin (new)
+  { href: "/admin/newsletter", title: "Newsletter", desc: "Assemble, edit, schedule & send weekly emails.", emoji: "📧" },
   { href: "/admin/polls", title: "Survivor (Polls)", desc: "Create/manage polls shown on the Survivor page.", emoji: "📊" },
   // Bracket admin
   { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
-  // ✅ New: Lineup Lab admin hub
+  // ✅ Lineup Lab admin hub
   { href: "/admin/lineup-lab", title: "Lineup Lab", desc: "Rosters, overrides, and recompute controls.", emoji: "🧪" },
 ];
 
