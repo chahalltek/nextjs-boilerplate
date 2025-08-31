@@ -8,7 +8,7 @@ export default function SiteFooter() {
   // Condensed footer nav (not a copy of the header mega-nav)
   const primaryLinks = [
     { href: "/start-sit", label: "Start/Sit" },
-    { href: "/survivor", label: "Survivor" },
+    { href: "/stats", label: "Player Projections" },
     { href: "/blog", label: "Blog" },
     { href: "/about", label: "About" },
   ];

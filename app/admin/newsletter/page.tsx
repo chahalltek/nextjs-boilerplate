@@ -39,43 +39,47 @@ export default async function NewsletterAdmin({
       id: editId || genId(),
       createdAt: existing?.createdAt || "",
       updatedAt: "",
-      title: existing?.title || "Weekly Newsletter",
+      // @ts-expect-error: title exists in our struct; ensure store type includes it
+      title: (existing as any)?.title || "Weekly Newsletter",
       subject: existing?.subject || subject,
       markdown,
       picks,
       status: existing?.status || "draft",
-      scheduleAt: existing?.scheduleAt || null,
+      scheduledAt: existing?.scheduledAt ?? null,
       // @ts-ignore - optional audienceTag (not typed on the struct; harmless)
-      audienceTag: String(formData.get("audienceTag") || existing?.["audienceTag"] || "").trim() || undefined,
+      audienceTag: String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined,
     };
     await saveDraft(draft);
-    revalidatePath("/admin/newsletter?id=" + draft.id);
+    revalidatePath("/admin/newsletter");
   }
 
   async function actionSave(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || genId());
     const base = (await getDraft(id)) ?? {
-      id, createdAt: "", updatedAt: "", title: "", subject: "", markdown: "", picks: [], status: "draft" as const,
+      id, createdAt: "", updatedAt: "", subject: "", markdown: "", picks: [], status: "draft" as const, scheduledAt: null,
     };
+    // @ts-expect-error: title exists in our struct; ensure store type includes it
     base.title = String(formData.get("title") || "Weekly Newsletter");
     base.subject = String(formData.get("subject") || "");
     base.markdown = String(formData.get("markdown") || "");
     // @ts-ignore
     base.audienceTag = String(formData.get("audienceTag") || "").trim() || undefined;
     await saveDraft(base);
-    revalidatePath("/admin/newsletter?id=" + id);
+    revalidatePath("/admin/newsletter");
   }
 
   async function actionSchedule(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
-    const when = String(formData.get("scheduleAt") || "");
+    const whenLocal = String(formData.get("scheduledAt") || "").trim();
     const d = await getDraft(id); if (!d) return;
-    d.scheduleAt = when || null;
-    d.status = when ? "scheduled" : "draft";
+
+    d.scheduledAt = whenLocal ? new Date(whenLocal).toISOString() : null;
+    d.status = d.scheduledAt ? "scheduled" : "draft";
+
     await saveDraft(d);
-    revalidatePath("/admin/newsletter?id=" + id);
+    revalidatePath("/admin/newsletter");
   }
 
   async function actionSendNow(formData: FormData) {
@@ -161,26 +165,36 @@ export default async function NewsletterAdmin({
           <input type="hidden" name="id" defaultValue={existing?.id || ""} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
-            <input name="title" defaultValue={existing?.title || "Weekly Newsletter"}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="title"
+              // @ts-expect-error: title exists in our struct; ensure store type includes it
+              defaultValue={(existing as any)?.title || "Weekly Newsletter"}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
-            <input name="subject" defaultValue={existing?.subject || "Your weekly Skol Sisters rundown"}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="subject"
+              defaultValue={existing?.subject || "Your weekly Skol Sisters rundown"}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
-              <textarea name="markdown" rows={18} defaultValue={existing?.markdown || ""}
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs" />
+              <textarea
+                name="markdown"
+                rows={18}
+                defaultValue={existing?.markdown || ""}
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
+              />
             </label>
 
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none"
-                   dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
           </div>
 
@@ -207,8 +221,12 @@ export default async function NewsletterAdmin({
             <input type="hidden" name="id" defaultValue={existing?.id || ""} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input type="datetime-local" name="scheduleAt"
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                type="datetime-local"
+                name="scheduledAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+                defaultValue=""
+              />
             </label>
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
           </form>
@@ -236,14 +254,20 @@ export default async function NewsletterAdmin({
             {drafts.map((d) => (
               <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
                 <div className="text-sm">
-                  <div className="font-medium">{d.title}</div>
+                  {/* @ts-expect-error: title exists in our struct */}
+                  <div className="font-medium">{(d as any).title || "Untitled"}</div>
                   <div className="text-white/50">
-                    {d.status}{d.scheduleAt ? ` • scheduled ${new Date(d.scheduleAt).toLocaleString()}` : ""}
+                    {d.status}
+                    {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
                     {(d as any).audienceTag ? ` • audience: ${(d as any).audienceTag}` : ""}
                   </div>
                 </div>
-                <a href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`}
-                   className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10">Edit</a>
+                <a
+                  href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`}
+                  className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+                >
+                  Edit
+                </a>
               </li>
             ))}
           </ul>
