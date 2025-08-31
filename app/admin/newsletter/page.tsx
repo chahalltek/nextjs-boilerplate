@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
 
+const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderboard"];
+
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
@@ -29,35 +31,38 @@ export default async function NewsletterAdmin({
   const drafts = await listDrafts();
 
   // ----------------- Actions -----------------
-  async function actionCompile(formData: FormData) {
-    "use server";
-    const picks: SourcePick[] = ALL_SOURCES
-      .filter(s => formData.get(`include:${s.key}`) === "on")
-      .map(s => ({ key: s.key, verbatim: formData.get(`verbatim:${s.key}`) === "on" }));
+ async function actionCompile(formData: FormData) {
+  "use server";
+  const picks: SourcePick[] = ALL_SOURCES
+    .filter(s => formData.get(`include:${s.key}`) === "on")
+    .map(s => ({ key: s.key, verbatim: formData.get(`verbatim:${s.key}`) === "on" }));
 
-    // Compile (this handles verbatim-only just fine)
-    const { subject, markdown } = await compileNewsletter(picks);
+  const opts = {
+    dateFrom: String(formData.get("dateFrom") || "") || undefined,
+    dateTo:   String(formData.get("dateTo")   || "") || undefined,
+    stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
+  };
 
-    const draft: NewsletterDraft = {
-      id: editId || genId(),
-      createdAt: existing?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      // optional admin-facing title; keep existing if present
-      title: existing?.title || "Weekly Newsletter",
-      subject: existing?.subject || subject || "Weekly Newsletter",
-      markdown: markdown || existing?.markdown || "",
-      picks,
-      status: existing?.status || "draft",
-      scheduledAt: existing?.scheduledAt ?? null,
-      // @ts-ignore — optional audienceTag tolerated
-      audienceTag: String(formData.get("audienceTag") || (existing as any)?.audienceTag || "").trim() || undefined,
-    };
+  const { subject, markdown } = await compileNewsletter(picks, opts);
 
-    await saveDraft(draft);
+  const draft = {
+    id: genId(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    title: "Weekly Newsletter",
+    subject: subject || "Weekly Newsletter",
+    markdown,
+    picks,
+    status: "draft" as const,
+    scheduledAt: null,
+    // @ts-ignore
+    audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
+  };
 
-    // IMPORTANT: navigate to the new/updated draft so the editor below shows it.
-    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
-  }
+  await saveDraft(draft);
+  // Redirect so the editor shows the generated content
+  return redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
+}
 
   async function actionSave(formData: FormData) {
     "use server";
@@ -123,45 +128,77 @@ export default async function NewsletterAdmin({
       </header>
 
       {/* 1) Choose content */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
-        <h2 className="text-lg font-semibold">1) Choose content</h2>
-        <form action={actionCompile} className="grid gap-3">
-          <div className="grid sm:grid-cols-2 gap-3">
-            {ALL_SOURCES.map((s) => (
-              <label key={s.key} className="flex items-center gap-3 rounded-lg border border-white/10 p-3">
-                <input name={`include:${s.key}`} type="checkbox" className="scale-110" />
-                <div className="flex-1">
-                  <div className="font-medium">{s.label}</div>
-                  <div className="text-xs text-white/60">Include this section</div>
-                </div>
-                <label className="flex items-center gap-2 text-xs">
-                  <input name={`verbatim:${s.key}`} type="checkbox" />
-                  verbatim
-                </label>
+    <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
+  <h2 className="text-lg font-semibold">1) Choose content</h2>
+  <form action={actionCompile} className="grid gap-3">
+    <div className="grid sm:grid-cols-2 gap-3">
+      {ALL_SOURCES.map((s) => {
+        const showVerbatim = !NEVER_VERBATIM.includes(s.key);
+        return (
+          <label key={s.key} className="flex items-center gap-3 rounded-lg border border-white/10 p-3">
+            <input name={`include:${s.key}`} type="checkbox" className="scale-110" />
+            <div className="flex-1">
+              <div className="font-medium">{s.label}</div>
+              <div className="text-xs text-white/60">Include this section</div>
+            </div>
+            {showVerbatim && (
+              <label className="flex items-center gap-2 text-xs">
+                <input name={`verbatim:${s.key}`} type="checkbox" />
+                verbatim
               </label>
-            ))}
-          </div>
+            )}
+          </label>
+        );
+      })}
+    </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
-            <label className="grid gap-1 text-sm">
-              <span className="text-white/80">Audience tag (optional)</span>
-              <input
-                name="audienceTag"
-                placeholder="e.g. survivor-weekly"
-                defaultValue={String((existing as any)?.audienceTag || "")}
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-              />
-              <span className="text-xs text-white/50">
-                If set, only subscribers tagged with this will receive the email.
-              </span>
-            </label>
-          </div>
+    {/* Date range */}
+    <div className="grid sm:grid-cols-2 gap-3">
+      <label className="grid gap-1 text-sm">
+        <span className="text-white/80">From (optional)</span>
+        <input type="date" name="dateFrom"
+               className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+      </label>
+      <label className="grid gap-1 text-sm">
+        <span className="text-white/80">To (optional)</span>
+        <input type="date" name="dateTo"
+               className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+      </label>
+    </div>
 
-          <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
-            Compile with AI
-          </button>
-        </form>
-      </section>
+    {/* Style prompt */}
+    <label className="grid gap-1 text-sm">
+      <span className="text-white/80">Style / prompt for AI</span>
+      <textarea
+        name="stylePrompt"
+        rows={3}
+        placeholder="Funny, witty, newsletter-length (~600–900 words). Keep VERBATIM sections untouched."
+        className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+        defaultValue="Make it funny and witty without being mean, keep it newsletter-length (~600–900 words). Use clear section headings. Never alter VERBATIM sections."
+      />
+    </label>
+
+    {/* Audience tag unchanged */}
+    <div className="grid sm:grid-cols-2 gap-3">
+      <label className="grid gap-1 text-sm">
+        <span className="text-white/80">Audience tag (optional)</span>
+        <input
+          name="audienceTag"
+          placeholder="e.g. survivor-weekly"
+          defaultValue={String((existing as any)?.audienceTag || "")}
+          className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+        />
+        <span className="text-xs text-white/50">
+          If set, only subscribers tagged with this will receive the email.
+        </span>
+      </label>
+    </div>
+
+    <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
+      Compile with AI
+    </button>
+  </form>
+</section>
 
       {/* 2) Edit draft */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
