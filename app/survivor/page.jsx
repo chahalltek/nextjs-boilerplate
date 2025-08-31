@@ -3,7 +3,6 @@ import Link from "next/link";
 import Image from "next/image";
 import Countdown from "@/components/Countdown";
 import { getSeason } from "@/lib/survivor/store";
-import SurvivorOptIn from "@/components/SurvivorOptIn";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +12,27 @@ export default async function SurvivorLanding({ searchParams }) {
     process.env.NEXT_PUBLIC_SURVIVOR_SEASON_ID ||
     process.env.SURVIVOR_SEASON_ID ||
     "S49";
+
+// Small inline CTA component
+function SurvivorReminder() {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div>
+        <div className="font-semibold">Survivor weekly recap</div>
+        <p className="text-sm text-white/70">
+          Get an email after every episode with <span className="font-medium">your score</span> for the week
+          and a direct link to the <span className="font-medium">leaderboard</span>.
+        </p>
+      </div>
+      <Link
+        href="/subscribe?topic=survivor-weekly&src=survivor-landing"
+        className="btn-gold whitespace-nowrap"
+      >
+        Get the recap
+      </Link>
+    </div>
+  );
+}
 
   const seasonId =
     (typeof searchParams?.season === "string" ? searchParams.season : envSeason) ||
@@ -52,8 +72,8 @@ export default async function SurvivorLanding({ searchParams }) {
 </figure>
 
       <section className="container my-8">
-        <SurvivorOptIn />
-      </section>
+  <SurvivorReminder />
+</section>
 
       {/* Lock status + actions */}
       {season ? (
