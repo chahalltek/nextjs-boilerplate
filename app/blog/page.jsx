@@ -5,6 +5,7 @@ export const revalidate = 0;                // never ISR this page
 export const fetchCache = "force-no-store"; // default all fetches to no-store
 
 import Link from "next/link";
+import Image from "next/image"; // ← added
 import matter from "gray-matter";
 import { listDir, getFile } from "@/lib/github";
 import SubscribeCta from "@/components/SubscribeCta";
@@ -23,7 +24,6 @@ function toTime(dateStr) {
 
 async function fetchPosts() {
   const items = await listDir(DIR).catch(() => []);
-  // accept .md or .mdx, any case
   const files = items.filter((it) => it.type === "file" && /\.mdx?$/i.test(it.name));
 
   const posts = [];
@@ -35,7 +35,6 @@ async function fetchPosts() {
     const parsed = matter(raw);
     const fm = parsed.data || {};
 
-    // Normalize booleans possibly saved as strings
     const draftStr = String(fm.draft ?? "").toLowerCase().trim();
     const activeStr = String(fm.active ?? "true").toLowerCase().trim();
 
@@ -47,10 +46,8 @@ async function fetchPosts() {
       fm.active === true ||
       (activeStr !== "false" && activeStr !== "0" && activeStr !== "no");
 
-    // Hide drafts or explicitly inactive posts
     if (draft || !active) continue;
 
-    // Hide future-scheduled posts if publishAt is in the future
     const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
     if (publishAt && Date.now() < publishAt.getTime()) continue;
 
@@ -62,7 +59,6 @@ async function fetchPosts() {
     });
   }
 
-  // newest first
   posts.sort((a, b) => toTime(b.date) - toTime(a.date));
   return posts;
 }
@@ -85,6 +81,23 @@ export default async function BlogIndexPage() {
           RSS
         </Link>
       </div>
+
+      {/* Fans / Community hero */}
+      <figure className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
+        <div className="relative w-full aspect-[16/9]">
+          <Image
+            src="/images/home/fans-bar.jpg"               // place in /public/images/home/
+            alt="Friends cheering a football play at a bar."
+            fill
+            sizes="(max-width: 1024px) 100vw, 1024px"
+            className="object-cover"
+            priority={false}
+          />
+        </div>
+        <figcaption className="p-2 text-[11px] text-white/50">
+          Photo via Unsplash
+        </figcaption>
+      </figure>
 
       <SubscribeCta variant="starter-pack" />
 
