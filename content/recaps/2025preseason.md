@@ -25,7 +25,6 @@ s are how Waiver Order: This is the crucial part. When multiple teams claim the 
   a.  Reverse Standings (Resets Weekly): This is the most common for beginners. At the start of each week (e.g., Tuesday night or Wednesday morning), the team with the worst record gets the first priority for any claimed players. The team with the second-worst record gets second priority, and so on. Once a team successfully claims a player, they move to the back of the waiver order. The order then resets to reverse standings for the next week. This system is designed to help struggling teams improve.  This is not my preferred option.  
 -
 
-
   b.  Rolling Waiver (Never Resets): In this system, the waiver order is set at the beginning of the season (often reverse draft order). When a team successfully claims a player, they move to the very end of the waiver order, and everyone else moves up one spot. This order doesn't reset weekly, so if you're at the back, you stay at the back until you successfully claim a player.  
 -
  
