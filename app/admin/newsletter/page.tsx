@@ -1,6 +1,5 @@
 // app/admin/newsletter/page.tsx
 import { redirect } from "next/navigation";
-import { compileNewsletter } from "@/lib/newsletter/compile";
 import {
   listDrafts,
   getDraft,
@@ -11,7 +10,7 @@ import {
   type NewsletterSourceKey,
   type SourcePick,
 } from "@/lib/newsletter/store";
-import { sendNewsletter } from "@/lib/newsletter/send";
+
 import ClientUI from "./ClientUI";
 
 export const runtime = "nodejs";
@@ -60,6 +59,7 @@ export default async function NewsletterAdmin({
   // ---------- Server actions ----------
   async function actionCompile(formData: FormData) {
     "use server";
+    const { compileNewsletter } = await import("@/lib/newsletter/compile");
     const picks: SourcePick[] = ALL_SOURCES
       .filter((s) => formData.get(`include:${s.key}`) === "on")
       .map((s) => ({
@@ -142,6 +142,7 @@ export default async function NewsletterAdmin({
 
   async function actionSendNow(formData: FormData) {
     "use server";
+    const { sendNewsletter } = await import("@/lib/newsletter/send");
     const id = String(formData.get("id") || "");
     const d = await getDraft(id);
     if (!d) return;
@@ -153,6 +154,7 @@ export default async function NewsletterAdmin({
   async function actionSendTest(formData: FormData) {
     "use server";
     try {
+      const { sendNewsletter } = await import("@/lib/newsletter/send");
       const id = String(formData.get("id") || "");
       const subject = String(formData.get("subject") || "");
       const markdown = String(formData.get("markdown") || "");
