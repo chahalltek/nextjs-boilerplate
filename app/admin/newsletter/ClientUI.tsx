@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
 /* ---------- types ---------- */
@@ -33,12 +34,10 @@ export default function ClientUI(props: {
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
-  /** ⬇️ accept the server action that returns void */
+  /** Server action (returns void) used by client handler below */
   actionSendTest: (fd: FormData) => Promise<void>;
   actionDelete: (fd: FormData) => Promise<void>;
-})
-
- {
+}) {
   const {
     existing,
     drafts,
@@ -52,14 +51,16 @@ export default function ClientUI(props: {
     actionSendTest,
   } = props;
 
-  /* editor state */
+  /* ---------- editor state ---------- */
   const [title, setTitle] = useState(existing.title);
   const [subject, setSubject] = useState(existing.subject);
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
+
+  /* test email state */
   const [testTo, setTestTo] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<SendTestResult | null>(null);
 
   /* sync when a different draft loads */
   useEffect(() => {
@@ -69,7 +70,7 @@ export default function ClientUI(props: {
     setAudienceTag(existing.audienceTag || "");
   }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
 
-  /* live preview */
+  /* ---------- preview (very basic markdown-ish rendering) ---------- */
   const previewHtml = (markdown || "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -84,7 +85,7 @@ export default function ClientUI(props: {
     .join("\n")
     .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
 
-  /* markdown toolbar */
+  /* ---------- markdown toolbar ---------- */
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   function insert(before: string, after = "", placeholder = "") {
     const ta = textareaRef.current;
@@ -102,32 +103,29 @@ export default function ClientUI(props: {
   const toolbarBtn =
     "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
 
-  /* send test (client -> server action) */
-  const [testTo, setTestTo] = useState("");
-  const [sendingTest, setSendingTest] = useState(false);
-  const [testResult, setTestResult] = useState<SendTestResult | null>(null);
+  /* ---------- send test (client handler -> server action) ---------- */
+  async function onSendTest(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const fd = new FormData();
+      // use current editor values so the test matches what you see
+      fd.set("id", existing.id);
+      fd.set("subject", subject);
+      fd.set("markdown", markdown);
+      fd.set("to", testTo);
 
- async function onSendTest(e: React.FormEvent<HTMLFormElement>) {
-  e.preventDefault();
-  setSendingTest(true);
-  setTestResult(null);
-  try {
-    const fd = new FormData();
-    // use current editor values so the test matches what you see
-    fd.set("id", existing.id);
-    fd.set("subject", subject);
-    fd.set("markdown", markdown);
-    fd.set("to", testTo);
-
-    await props.actionSendTest(fd); // server action returns void
-    setTestResult({ ok: true, message: "✅ Test email sent." });
-  } catch (err: any) {
-    setTestResult({ ok: false, message: `❌ Send failed: ${err?.message || "Unknown error"}` });
-  } finally {
-    setSendingTest(false);
+      await actionSendTest(fd); // server action returns void
+      setTestResult({ ok: true, message: "✅ Test email sent." });
+    } catch (err: any) {
+      setTestResult({ ok: false, message: `❌ Send failed: ${err?.message || "Unknown error"}` });
+    } finally {
+      setSendingTest(false);
+    }
   }
-}
 
+  /* ---------- UI ---------- */
   return (
     <main className="container max-w-6xl py-10 space-y-8">
       <header>
@@ -157,8 +155,16 @@ export default function ClientUI(props: {
               ))}
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
-              <input type="date" name="dateFrom" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
-              <input type="date" name="dateTo" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                type="date"
+                name="dateFrom"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
+              <input
+                type="date"
+                name="dateTo"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
             </div>
           </fieldset>
 
@@ -181,9 +187,24 @@ export default function ClientUI(props: {
                     )}
                   </label>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <input name={`from:${s.key}`} type="date" className="rounded border border-white/15 bg-transparent px-2 py-1" />
-                    <input name={`to:${s.key}`} type="date" className="rounded border border-white/15 bg-transparent px-2 py-1" />
-                    <input name={`limit:${s.key}`} type="number" min={1} max={20} placeholder="Top N" className="rounded border border-white/15 bg-transparent px-2 py-1" />
+                    <input
+                      name={`from:${s.key}`}
+                      type="date"
+                      className="rounded border border-white/15 bg-transparent px-2 py-1"
+                    />
+                    <input
+                      name={`to:${s.key}`}
+                      type="date"
+                      className="rounded border border-white/15 bg-transparent px-2 py-1"
+                    />
+                    <input
+                      name={`limit:${s.key}`}
+                      type="number"
+                      min={1}
+                      max={20}
+                      placeholder="Top N"
+                      className="rounded border border-white/15 bg-transparent px-2 py-1"
+                    />
                   </div>
                 </div>
               );
@@ -212,7 +233,10 @@ export default function ClientUI(props: {
             />
           </label>
 
-          <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
+          <button
+            type="submit"
+            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit"
+          >
             Compile with AI
           </button>
         </form>
@@ -226,24 +250,62 @@ export default function ClientUI(props: {
 
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
-            <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
 
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
-            <input name="subject" value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
 
           {/* sticky toolbar */}
           <div className="sticky top-16 z-10 bg-[#0f0d18]/80 backdrop-blur rounded-lg p-2 flex flex-wrap gap-2 text-xs border border-white/10">
-            <button type="button" className={toolbarBtn} onClick={() => insert("**", "**", "bold")}>Bold</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("_", "_", "italics")}>Italics</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("<u>", "</u>", "underline")}>Underline</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("## ", "")}>H2</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("- ", "", "item")}>List</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("[", "](https://)", "link")}>Link</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>¶ Break</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n---\n\n", "")}>HR</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("**", "**", "bold")}>
+              Bold
+            </button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("_", "_", "italics")}>
+              Italics
+            </button>
+            <button
+              type="button"
+              className={toolbarBtn}
+              onClick={() => insert("<u>", "</u>", "underline")}
+            >
+              Underline
+            </button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("## ", "")}>
+              H2
+            </button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("- ", "", "item")}>
+              List
+            </button>
+            <button
+              type="button"
+              className={toolbarBtn}
+              onClick={() => insert("[", "](https://)", "link")}
+            >
+              Link
+            </button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>
+              ¶ Break
+            </button>
+            <button
+              type="button"
+              className={toolbarBtn}
+              onClick={() => insert("\n\n---\n\n", "")}
+            >
+              HR
+            </button>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -260,7 +322,10 @@ export default function ClientUI(props: {
             </label>
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <div
+                className="prose prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
             </div>
           </div>
 
@@ -282,32 +347,32 @@ export default function ClientUI(props: {
       </section>
 
       {/* 2.5) Send a test */}
-<section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-  <h2 className="text-lg font-semibold">Send a test</h2>
-  <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
-    <label className="grid gap-1 text-sm min-w-[260px] flex-1">
-      <span className="text-white/80">Recipient(s)</span>
-      <input
-        name="to"
-        placeholder="you@example.com, other@site.com"
-        value={testTo}
-        onChange={(e) => setTestTo(e.target.value)}
-        className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-      />
-    </label>
-    <button
-      disabled={sendingTest}
-      className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
-    >
-      {sendingTest ? "Sending…" : "Send test"}
-    </button>
-  </form>
-  {testResult && (
-    <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
-      {testResult.message}
-    </p>
-  )}
-</section>
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Send a test</h2>
+        <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-sm min-w-[260px] flex-1">
+            <span className="text-white/80">Recipient(s)</span>
+            <input
+              name="to"
+              placeholder="you@example.com, other@site.com"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
+          </label>
+          <button
+            disabled={sendingTest}
+            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
+          >
+            {sendingTest ? "Sending…" : "Send test"}
+          </button>
+        </form>
+        {testResult && (
+          <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+            {testResult.message}
+          </p>
+        )}
+      </section>
 
       {/* 3) Schedule / Send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
@@ -317,14 +382,22 @@ export default function ClientUI(props: {
             <input type="hidden" name="id" value={existing.id} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input type="datetime-local" name="scheduleAt" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                type="datetime-local"
+                name="scheduleAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
             </label>
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Schedule
+            </button>
           </form>
 
           <form action={actionSendNow}>
             <input type="hidden" name="id" value={existing.id} />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Send now
+            </button>
           </form>
         </div>
       </section>
@@ -337,12 +410,17 @@ export default function ClientUI(props: {
         ) : (
           <ul className="space-y-2">
             {drafts.map((d) => (
-              <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
+              <li
+                key={d.id}
+                className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
+              >
                 <div className="text-sm">
                   <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
                     {d.status}
-                    {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
+                    {d.scheduledAt
+                      ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}`
+                      : ""}
                     {d.updatedAt ? ` • updated ${new Date(d.updatedAt).toLocaleString()}` : ""}
                     {d.audienceTag ? ` • audience: ${d.audienceTag}` : ""}
                   </div>
