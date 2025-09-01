@@ -10,11 +10,7 @@ After your draft, the player pool isn't static. Players get injured, new players
 
 How Do Waivers Work?
 
-
-
 1.  The Waiver Period: Most leagues have a "waiver period" after games begin usually at kickoff on Sunday.   During this time, players who were dropped by other teams, or players who were on NFL rosters but not drafted in your league, become "locked" on waivers. You can't just pick them up immediately.
-
-
 
 2.  Submitting a Waiver Claim:  If you want one of these locked players, you submit a "waiver claim." This is essentially putting in a request for that player. You'll also need to select a player from your current roster to drop if you successfully get the waiver player.
 s are how Waiver Order: This is the crucial part. When multiple teams claim the same player, the waiver order determines who gets them. There are two main types of waiver orders:
