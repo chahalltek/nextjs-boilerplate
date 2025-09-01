@@ -4,6 +4,8 @@ import matter from "gray-matter";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";      // preserve single newlines as <br>
+import rehypeRaw from "rehype-raw";            // allow simple inline HTML (trusted content)
 import NflScheduleTicker from "@/components/NflScheduleTicker";
 
 export const runtime = "nodejs";
@@ -47,11 +49,9 @@ async function fetchPublishedRecaps() {
       fm.draft === true ||
       String(fm.draft ?? "").trim().toLowerCase() === "true";
 
-    // Accept either `published` or `active` flags (treat both the same)
     const publishedStr = String(fm.published ?? fm.active ?? "true").toLowerCase();
     const visible = !["false", "0", "no"].includes(publishedStr);
 
-    // Scheduled publish time support
     const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
     const scheduledInFuture = publishAt && Date.now() < publishAt.getTime();
 
@@ -62,12 +62,35 @@ async function fetchPublishedRecaps() {
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      content: parsed.content || "",
+      content: normalizeMarkdown(parsed.content || ""),
     });
   }
 
   recaps.sort((a, b) => toTime(b.date) - toTime(a.date));
   return recaps;
+}
+
+/**
+ * Normalize author text so Markdown renders like the admin preview:
+ * - convert NBSP to space
+ * - ensure a blank line before list items ("- ", "* ", "+ ", "1. ")
+ * - keep "a." / "b." blocks readable; you can also switch them to <ol type="a"> ... </ol>
+ */
+function normalizeMarkdown(md) {
+  const lines = md.replace(/\r/g, "").replace(/\u00A0/g, " ").split("\n");
+  const out = [];
+  let prevBlank = true;
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const isListItem =
+      /^(\s*)([-*+]\s+)/.test(l) || /^(\s*)(\d+)\.\s+/.test(l);
+    // If a list item starts immediately after text, insert a blank line (Markdown requirement)
+    if (isListItem && !prevBlank) out.push("");
+    out.push(l);
+    prevBlank = l.trim() === "";
+  }
+  return out.join("\n");
 }
 
 function RssBadge() {
@@ -128,7 +151,6 @@ export default async function CwsIndexPage() {
         <NflScheduleTicker />
       </div>
 
-      {/* 👇 this is the line that was previously broken mid-attribute */}
       <div className="max-w-5xl mx-auto py-10 space-y-10">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">Weekly Recap</h1>
@@ -147,7 +169,11 @@ export default async function CwsIndexPage() {
               <h2 className="text-xl font-semibold">{latest.title}</h2>
               {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
               <div className="prose prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  // handle GFM + single line breaks; allow inline HTML for special cases
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  rehypePlugins={[rehypeRaw]}
+                >
                   {latest.content}
                 </ReactMarkdown>
               </div>
