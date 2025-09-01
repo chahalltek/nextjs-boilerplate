@@ -28,95 +28,37 @@ interface CombinedRow {
   actual: number;
 }
 
-/* ---------- schedule ticker ---------- */
-type ScheduleGame = { away: string; home: string; start?: number };
-
-function formatKickoff(ts?: number) {
-  if (!ts || !Number.isFinite(ts)) return "";
-  // Sleeper sometimes returns seconds; normalize to ms
-  const d = new Date(ts < 2_000_000_000 ? ts * 1000 : ts);
-  const dow = d.toLocaleDateString(undefined, { weekday: "short" });
-  const t = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${dow} ${t}`;
-}
-
-function compactTeam(s: any) {
-  if (!s) return "?";
-  const x = String(s).toUpperCase().trim();
-  // Normalize some common oddities
-  if (x === "JAX") return "JAX";
-  if (x === "WSH") return "WSH";
-  return x.length <= 4 ? x : x.slice(0, 4);
-}
-
-async function fetchSleeperSchedule(year: number, week: number, seasonType: SeasonType): Promise<ScheduleGame[]> {
-  const tries = [
-    // Most common modern form
-    `https://api.sleeper.app/schedule/nfl/${year}/${week}?season_type=${seasonType}`,
-    // Older v1 variant
-    `https://api.sleeper.app/v1/schedule/nfl/${year}?season_type=${seasonType}&week=${week}`,
-  ];
-
-  for (const url of tries) {
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) continue;
-      const body = await res.json();
-
-      const arr: any[] = Array.isArray(body)
-        ? body
-        : Array.isArray((body as any)?.games)
-        ? (body as any).games
-        : [];
-
-      if (!arr.length) continue;
-
-      const games: ScheduleGame[] = arr
-        .map((g: any) => {
-          const away =
-            g.away ?? g.away_team ?? g.team_away ?? g.t0 ?? g.a ?? g.away_id ?? g.awayAbbr ?? g.awayTeam;
-          const home =
-            g.home ?? g.home_team ?? g.team_home ?? g.t1 ?? g.h ?? g.home_id ?? g.homeAbbr ?? g.homeTeam;
-          const start = g.start_time ?? g.start ?? g.kickoff ?? g.start_time_epoch ?? g.timestamp ?? g.time;
-          if (!away || !home) return null;
-          return { away: compactTeam(away), home: compactTeam(home), start: Number(start) || undefined };
-        })
-        .filter(Boolean) as ScheduleGame[];
-
-      if (games.length) return games;
-    } catch {
-      // Try next shape; if all fail, fall through
-    }
-  }
-  return [];
-}
-
-function ScheduleTicker({ seasonType, week }: { seasonType: SeasonType; week: number }) {
-  const [items, setItems] = useState<string[]>([]);
-
-  useEffect(() => {
-    const year = new Date().getFullYear();
-    (async () => {
-      const games = await fetchSleeperSchedule(year, week, seasonType);
-      const line = games.map((g) => `${formatKickoff(g.start)} — ${g.away} @ ${g.home}`).filter(Boolean);
-      setItems(line);
-    })();
-  }, [seasonType, week]);
-
-  if (!items.length) return null;
-
+/* ---------- simple CSS ticker ---------- */
+function Ticker({ items, duration = 35 }: { items: string[]; duration?: number }) {
+  if (!items?.length) return null;
+  const text = items.join("  •  ");
   return (
     <div className="w-full overflow-hidden border-y border-white/10 bg-white/5">
-      {/* Simple marquee for a lightweight ticker */}
-      <marquee behavior="scroll" direction="left" scrollAmount={6}>
-        <div className="py-2 text-sm whitespace-nowrap">
-          {items.join("  •  ")}
+      <div className="relative">
+        <div className="ticker-track py-2 text-sm whitespace-nowrap" style={{ animationDuration: `${duration}s` }}>
+          <span className="pr-12">{text}</span>
+          {/* duplicate for seamless loop */}
+          <span className="pr-12" aria-hidden="true">{text}</span>
         </div>
-      </marquee>
+      </div>
+
+      <style jsx>{`
+        @keyframes ticker-scroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .ticker-track {
+          display: inline-flex;
+          will-change: transform;
+          animation-name: ticker-scroll;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+      `}</style>
     </div>
   );
 }
-/* ---------- schedule ticker (end) ---------- */
+/* ---------- ticker (end) ---------- */
 
 const CURRENT_YEAR = new Date().getFullYear();
 const WEEK_OPTIONS: Record<SeasonType, number[]> = {
@@ -125,7 +67,7 @@ const WEEK_OPTIONS: Record<SeasonType, number[]> = {
 };
 
 export default function StatsPage() {
-  const [seasonType, setSeasonType] = useState<SeasonType>("pre"); // default to pre
+  const [seasonType, setSeasonType] = useState<SeasonType>("pre");
   const [week, setWeek] = useState(1);
   const [players, setPlayers] = useState<Record<string, PlayerInfo>>({});
   const [projections, setProjections] = useState<StatEntry[]>([]);
@@ -183,8 +125,8 @@ export default function StatsPage() {
         const projBody = await projRes.json().catch(() => []);
         const actBody = await actRes.json().catch(() => ({}));
 
-        setProjections(toArray(projBody)); // already an array, but normalize anyway
-        setActual(toArrayFromStats(actBody)); // map -> array
+        setProjections(toArray(projBody));     // normalize
+        setActual(toArrayFromStats(actBody));  // map->array
       } catch (err) {
         console.error("weekly load failed", err);
         setProjections([]);
@@ -198,13 +140,10 @@ export default function StatsPage() {
   // Build a combined table keyed by player
   const rows: CombinedRow[] = useMemo(() => {
     const projMap = new Map<string, number>();
-    for (const r of projections) {
-      projMap.set(r.player_id, num(r.stats?.pts_ppr));
-    }
+    for (const r of projections) projMap.set(r.player_id, num(r.stats?.pts_ppr));
+
     const actMap = new Map<string, number>();
-    for (const r of actual) {
-      actMap.set(r.player_id, num(r.stats?.pts_ppr));
-    }
+    for (const r of actual) actMap.set(r.player_id, num(r.stats?.pts_ppr));
 
     const ids = new Set([...projMap.keys(), ...actMap.keys()]);
     const out: CombinedRow[] = [];
@@ -229,6 +168,24 @@ export default function StatsPage() {
     return out.slice(0, 50);
   }, [projections, actual, players, role]);
 
+  // Build ticker items: top PPR scorers (ALL positions)
+  const tickerItems = useMemo(() => {
+    const entries = actual
+      .map((e) => ({ id: e.player_id, pts: num(e.stats?.pts_ppr) }))
+      .filter((e) => e.pts > 0);
+
+    entries.sort((a, b) => b.pts - a.pts);
+    const top = entries.slice(0, 30);
+
+    return top.map(({ id, pts }) => {
+      const info = players[id] || {};
+      const pos = normalizePos(info.position) || "?";
+      const team = info.team || "?";
+      const name = info.full_name || id;
+      return `${name} (${team}, ${pos}) — ${pts.toFixed(1)}`;
+    });
+  }, [actual, players]);
+
   const weeks = WEEK_OPTIONS[seasonType];
 
   return (
@@ -240,8 +197,8 @@ export default function StatsPage() {
         </p>
       </header>
 
-      {/* --- NFL schedule ticker (same placement vibe as Sit/Start) --- */}
-      <ScheduleTicker seasonType={seasonType} week={week} />
+      {/* --- Top Fantasy Points ticker (replaces schedule ticker) --- */}
+      <Ticker items={tickerItems} duration={40} />
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
