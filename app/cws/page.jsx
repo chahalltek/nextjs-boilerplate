@@ -4,8 +4,8 @@ import matter from "gray-matter";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";      // preserve single newlines as <br>
-import rehypeRaw from "rehype-raw";            // allow simple inline HTML (trusted content)
+import remarkBreaks from "remark-breaks";
+import rehypeRaw from "rehype-raw";
 import NflScheduleTicker from "@/components/NflScheduleTicker";
 
 export const runtime = "nodejs";
@@ -62,7 +62,7 @@ async function fetchPublishedRecaps() {
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      content: normalizeMarkdown(parsed.content || ""),
+      content: normalizeMarkdown(parsed.content || ""), // << use normalized content
     });
   }
 
@@ -71,25 +71,45 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Normalize author text so Markdown renders like the admin preview:
- * - convert NBSP to space
- * - ensure a blank line before list items ("- ", "* ", "+ ", "1. ")
- * - keep "a." / "b." blocks readable; you can also switch them to <ol type="a"> ... </ol>
+ * Make the Markdown behave like the admin preview:
+ * - Insert a blank line before list items so Markdown recognizes lists
+ * - Convert contiguous `a.`, `b.`, … lines into an HTML <ol type="a"> with <li> items
+ * - Normalize NBSP and CRLF
  */
 function normalizeMarkdown(md) {
   const lines = md.replace(/\r/g, "").replace(/\u00A0/g, " ").split("\n");
   const out = [];
+  let i = 0;
   let prevBlank = true;
 
-  for (let i = 0; i < lines.length; i++) {
+  while (i < lines.length) {
     const l = lines[i];
-    const isListItem =
-      /^(\s*)([-*+]\s+)/.test(l) || /^(\s*)(\d+)\.\s+/.test(l);
-    // If a list item starts immediately after text, insert a blank line (Markdown requirement)
-    if (isListItem && !prevBlank) out.push("");
+
+    // Handle contiguous lettered items: a. / b. / c.
+    if (/^[a-z]\.\s+/.test(l)) {
+      // ensure separation from previous paragraph
+      if (!prevBlank) out.push("");
+      out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
+      while (i < lines.length && /^[a-z]\.\s+/.test(lines[i])) {
+        out.push(`<li>${lines[i].replace(/^[a-z]\.\s+/, "")}</li>`);
+        i++;
+      }
+      out.push("</ol>");
+      out.push(""); // trailing blank line after list block
+      prevBlank = true;
+      continue;
+    }
+
+    // Ensure a blank line before numeric/bullet list items so Markdown parses them
+    if ((/^\d+\.\s+/.test(l) || /^[-*+]\s+/.test(l)) && !prevBlank) {
+      out.push("");
+    }
+
     out.push(l);
     prevBlank = l.trim() === "";
+    i++;
   }
+
   return out.join("\n");
 }
 
@@ -170,9 +190,8 @@ export default async function CwsIndexPage() {
               {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
-                  // handle GFM + single line breaks; allow inline HTML for special cases
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]}
+                  rehypePlugins={[rehypeRaw]} // to render the <ol type="a"> we inject
                 >
                   {latest.content}
                 </ReactMarkdown>
