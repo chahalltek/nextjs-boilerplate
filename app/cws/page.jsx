@@ -62,7 +62,7 @@ async function fetchPublishedRecaps() {
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      content: normalizeMarkdown(parsed.content || ""), // << use normalized content
+      content: normalizeMarkdown(parsed.content || ""),
     });
   }
 
@@ -71,42 +71,46 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Make the Markdown behave like the admin preview:
+ * Make Markdown behave like the admin preview:
  * - Insert a blank line before list items so Markdown recognizes lists
- * - Convert contiguous `a.`, `b.`, … lines into an HTML <ol type="a"> with <li> items
+ * - Convert contiguous `a.`, `b.`, … (with optional indentation) to <ol type="a">…</ol>
  * - Normalize NBSP and CRLF
  */
 function normalizeMarkdown(md) {
-  const lines = md.replace(/\r/g, "").replace(/\u00A0/g, " ").split("\n");
+  const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
+  const lines = src.split("\n");
   const out = [];
   let i = 0;
   let prevBlank = true;
 
   while (i < lines.length) {
-    const l = lines[i];
+    const line = lines[i];
 
-    // Handle contiguous lettered items: a. / b. / c.
-    if (/^[a-z]\.\s+/.test(l)) {
-      // ensure separation from previous paragraph
+    // Lettered list block with optional indentation: "  a. Item"
+    const letterMatch = line.match(/^\s*([a-z])\.\s+(.*)$/i);
+    if (letterMatch) {
       if (!prevBlank) out.push("");
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
-      while (i < lines.length && /^[a-z]\.\s+/.test(lines[i])) {
-        out.push(`<li>${lines[i].replace(/^[a-z]\.\s+/, "")}</li>`);
+
+      // collect contiguous a./b./c. lines
+      while (i < lines.length) {
+        const m = lines[i].match(/^\s*([a-z])\.\s+(.*)$/i);
+        if (!m) break;
+        out.push(`<li>${m[2]}</li>`);
         i++;
       }
-      out.push("</ol>");
-      out.push(""); // trailing blank line after list block
+
+      out.push("</ol>", "");
       prevBlank = true;
-      continue;
+      continue; // skip the normal increment; we've already advanced i
     }
 
-    // Ensure a blank line before numeric/bullet list items so Markdown parses them
-    if ((/^\d+\.\s+/.test(l) || /^[-*+]\s+/.test(l)) && !prevBlank) {
-      out.push("");
-    }
+    // Ensure a blank line before numeric or bullet list items
+    const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
+    if (isStdItem && !prevBlank) out.push("");
 
-    out.push(l);
-    prevBlank = l.trim() === "";
+    out.push(line);
+    prevBlank = line.trim() === "";
     i++;
   }
 
@@ -191,7 +195,7 @@ export default async function CwsIndexPage() {
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]} // to render the <ol type="a"> we inject
+                  rehypePlugins={[rehypeRaw]} // to render injected <ol type="a">
                 >
                   {latest.content}
                 </ReactMarkdown>
