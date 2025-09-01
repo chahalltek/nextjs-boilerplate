@@ -1,8 +1,7 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { useFormState } from "react-dom";
+import { useState } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
 type DraftListItem = {
@@ -13,10 +12,6 @@ type DraftListItem = {
   scheduledAt: string | null;
   audienceTag?: string;
 };
-
-type CompileResult =
-  | { ok: true; subject: string; markdown: string }
-  | { ok: false; error: string };
 
 export default function ClientUI(props: {
   existing: {
@@ -30,7 +25,7 @@ export default function ClientUI(props: {
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
   neverVerbatim: NewsletterSourceKey[];
-  actionCompile: (fd: FormData) => Promise<CompileResult>;
+  actionCompile: (fd: FormData) => Promise<void>;
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
@@ -48,28 +43,11 @@ export default function ClientUI(props: {
     actionDelete,
   } = props;
 
-  // Editor state (only saved when "Save Draft" is submitted)
-  const [title, setTitle] = useState(existing.title || "Weekly Newsletter");
-  const [subject, setSubject] = useState(existing.subject || "");
-  const [markdown, setMarkdown] = useState(existing.markdown || "");
+  const [title, setTitle] = useState(existing.title);
+  const [subject, setSubject] = useState(existing.subject);
+  const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
 
-  // Compile form state/result
-  const [compileState, compileAction] = useFormState<CompileResult, FormData>(
-    async (_prev, fd) => actionCompile(fd),
-    { ok: true, subject, markdown }
-  );
-
-  useEffect(() => {
-    if (compileState?.ok) {
-      // Replace editor contents with compiled output (no save)
-      if (compileState.subject) setSubject(compileState.subject);
-      if (compileState.markdown) setMarkdown(compileState.markdown);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compileState]);
-
-  // Live preview in client (keeps server fallback if no JS)
   const previewHtml = (markdown || "")
     .split("\n")
     .map((l) => {
@@ -90,11 +68,11 @@ export default function ClientUI(props: {
         <p className="text-white/70">Pick sources, compile with AI, edit, schedule, send.</p>
       </header>
 
-      {/* 1) Choose content / Compile (does NOT save) */}
+      {/* 1) Choose content — compiling now SAVES as “compiled” */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
-        <form action={compileAction} className="grid gap-3">
+        <form action={actionCompile} className="grid gap-3">
           {/* Quick ranges */}
           <fieldset className="grid gap-2">
             <span className="text-sm text-white/80">Quick range</span>
@@ -118,7 +96,7 @@ export default function ClientUI(props: {
             </div>
           </fieldset>
 
-          {/* Sources with per-source ranges/limits */}
+          {/* Sources */}
           <div className="grid sm:grid-cols-2 gap-3">
             {allSources.map((s) => {
               const showVerbatim = !neverVerbatim.includes(s.key);
@@ -146,7 +124,7 @@ export default function ClientUI(props: {
             })}
           </div>
 
-          {/* Style + audience (audience used when you SAVE/SEND later) */}
+          {/* Style + audience */}
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Style / AI prompt</span>
             <textarea
@@ -162,7 +140,7 @@ export default function ClientUI(props: {
             <input
               name="audienceTag"
               placeholder="e.g. survivor-weekly"
-              defaultValue={existing.audienceTag || ""}
+              defaultValue={audienceTag}
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
               onChange={(e) => setAudienceTag(e.target.value)}
             />
@@ -171,19 +149,14 @@ export default function ClientUI(props: {
           <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
             Compile with AI
           </button>
-
-          {!compileState.ok && (
-            <p className="text-sm text-red-300">{compileState.error || "Compile failed."}</p>
-          )}
         </form>
       </section>
 
-      {/* 2) Edit draft (saved only when you click Save) */}
+      {/* 2) Edit draft */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">2) Edit draft</h2>
-
-        <form action={actionSave} className="grid gap-3">
-          <input type="hidden" name="id" defaultValue={existing.id || ""} />
+        <form action={props.actionSave} className="grid gap-3">
+          <input type="hidden" name="id" defaultValue={existing.id} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
             <input
@@ -193,7 +166,6 @@ export default function ClientUI(props: {
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
-
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
             <input
@@ -215,7 +187,6 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
             </label>
-
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
               <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
@@ -243,38 +214,31 @@ export default function ClientUI(props: {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
-          <form action={actionSchedule} className="flex items-end gap-2">
-            <input type="hidden" name="id" defaultValue={existing.id || ""} />
+          <form action={props.actionSchedule} className="flex items-end gap-2">
+            <input type="hidden" name="id" defaultValue={existing.id} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input
-                type="datetime-local"
-                name="scheduleAt"
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-              />
+              <input type="datetime-local" name="scheduleAt" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
             </label>
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
           </form>
 
-          <form action={actionSendNow}>
-            <input type="hidden" name="id" defaultValue={existing.id || ""} />
+          <form action={props.actionSendNow}>
+            <input type="hidden" name="id" defaultValue={existing.id} />
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
           </form>
         </div>
       </section>
 
-      {/* Drafts list with dates + delete */}
+      {/* Newsletters list */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Drafts</h2>
+        <h2 className="text-lg font-semibold">Newsletters</h2>
         {drafts.length === 0 ? (
-          <p className="text-sm text-white/60">No drafts yet. Use “Compile with AI”, then “Save Draft”.</p>
+          <p className="text-sm text-white/60">No newsletters yet. Use “Compile with AI”.</p>
         ) : (
           <ul className="space-y-2">
             {drafts.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
-              >
+              <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
                 <div className="text-sm">
                   <div className="font-medium">{d.title}</div>
                   <div className="text-white/50">
@@ -291,7 +255,7 @@ export default function ClientUI(props: {
                   >
                     Edit
                   </a>
-                  <form action={actionDelete}>
+                  <form action={props.actionDelete}>
                     <input type="hidden" name="id" value={d.id} />
                     <button className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10">
                       Delete

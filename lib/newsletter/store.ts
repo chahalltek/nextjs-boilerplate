@@ -13,7 +13,15 @@ export type NewsletterSourceKey =
   | "sitStart"
   | "survivorLeaderboard";
 
-export type NewsletterStatus = "draft" | "scheduled" | "sent" | "archived" | "failed";
+// add two statuses, keep “draft” for backward compatibility
+export type NewsletterStatus =
+  | "draft"
+  | "compiled"
+  | "edited"
+  | "scheduled"
+  | "sent"
+  | "archived"
+  | "failed";
 
 export type SourcePick = {
   key: NewsletterSourceKey;
