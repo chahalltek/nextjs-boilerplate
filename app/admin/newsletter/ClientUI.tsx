@@ -1,79 +1,87 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useFormState } from "react-dom";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
 type DraftListItem = {
   id: string;
   title: string;
   status: string;
-  createdAt: string;
   updatedAt: string;
   scheduledAt: string | null;
   audienceTag?: string;
 };
 
-type CompileResult = { subject: string; markdown: string };
+type CompileResult =
+  | { ok: true; subject: string; markdown: string }
+  | { ok: false; error: string };
 
 export default function ClientUI(props: {
-  ALL_SOURCES: { key: NewsletterSourceKey; label: string }[];
-  NEVER_VERBATIM: NewsletterSourceKey[];
-  existing: { id: string; title: string; subject: string; markdown: string; audienceTag?: string };
-  drafts: DraftListItem[];
-  actions: {
-    compile: (formData: FormData) => Promise<CompileResult>;
-    save: (formData: FormData) => Promise<void>;
-    schedule: (formData: FormData) => Promise<void>;
-    sendNow: (formData: FormData) => Promise<void>;
-    remove: (formData: FormData) => Promise<void>;
+  existing: {
+    id: string;
+    title: string;
+    subject: string;
+    markdown: string;
+    audienceTag?: string;
+    previewHtml: string;
   };
+  drafts: DraftListItem[];
+  allSources: { key: NewsletterSourceKey; label: string }[];
+  neverVerbatim: NewsletterSourceKey[];
+  actionCompile: (fd: FormData) => Promise<CompileResult>;
+  actionSave: (fd: FormData) => Promise<void>;
+  actionSchedule: (fd: FormData) => Promise<void>;
+  actionSendNow: (fd: FormData) => Promise<void>;
+  actionDelete: (fd: FormData) => Promise<void>;
 }) {
-  const { ALL_SOURCES, NEVER_VERBATIM, existing, drafts, actions } = props;
+  const {
+    existing,
+    drafts,
+    allSources,
+    neverVerbatim,
+    actionCompile,
+    actionSave,
+    actionSchedule,
+    actionSendNow,
+    actionDelete,
+  } = props;
 
-  // --- Editor state (controlled) ---
-  const [title, setTitle] = useState(existing.title);
-  const [subject, setSubject] = useState(existing.subject);
-  const [markdown, setMarkdown] = useState(existing.markdown);
+  // Editor state (only saved when "Save Draft" is submitted)
+  const [title, setTitle] = useState(existing.title || "Weekly Newsletter");
+  const [subject, setSubject] = useState(existing.subject || "");
+  const [markdown, setMarkdown] = useState(existing.markdown || "");
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
-  const [compiling, setCompiling] = useState(false);
-  const [compileError, setCompileError] = useState<string | null>(null);
 
-  // Lightweight preview
-  const previewHtml = useMemo(() => {
-    return (markdown || "")
-      .split("\n")
-      .map((l) => {
-        if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
-        if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
-        if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
-        if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-        if (!l.trim()) return "";
-        return `<p class="opacity-80">${l}</p>`;
-      })
-      .join("\n")
-      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
-  }, [markdown]);
+  // Compile form state/result
+  const [compileState, compileAction] = useFormState<CompileResult, FormData>(
+    async (_prev, fd) => actionCompile(fd),
+    { ok: true, subject, markdown }
+  );
 
-  async function handleCompileSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setCompiling(true);
-    setCompileError(null);
-    try {
-      const fd = new FormData(e.currentTarget);
-      const res = await actions.compile(fd); // calls server action directly
-      if (res?.markdown) {
-        setMarkdown(res.markdown);
-        if (res.subject) setSubject(res.subject);
-      } else {
-        setCompileError("No content was returned.");
-      }
-    } catch (err: any) {
-      setCompileError(err?.message || "Compile failed.");
-    } finally {
-      setCompiling(false);
+  useEffect(() => {
+    if (compileState?.ok) {
+      // Replace editor contents with compiled output (no save)
+      if (compileState.subject) setSubject(compileState.subject);
+      if (compileState.markdown) setMarkdown(compileState.markdown);
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compileState]);
+
+  // Live preview in client (keeps server fallback if no JS)
+  const previewHtml = (markdown || "")
+    .split("\n")
+    .map((l) => {
+      if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
+      if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
+      if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
+      if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
+      if (!l.trim()) return "";
+      return `<p class="opacity-80">${l}</p>`;
+    })
+    .join("\n")
+    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
 
   return (
     <main className="container max-w-6xl py-10 space-y-8">
@@ -82,12 +90,11 @@ export default function ClientUI(props: {
         <p className="text-white/70">Pick sources, compile with AI, edit, schedule, send.</p>
       </header>
 
-      {/* 1) Choose content */}
+      {/* 1) Choose content / Compile (does NOT save) */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
-        {/* Compile form (does not persist) */}
-        <form onSubmit={handleCompileSubmit} className="grid gap-3">
+        <form action={compileAction} className="grid gap-3">
           {/* Quick ranges */}
           <fieldset className="grid gap-2">
             <span className="text-sm text-white/80">Quick range</span>
@@ -111,10 +118,10 @@ export default function ClientUI(props: {
             </div>
           </fieldset>
 
-          {/* Sources */}
+          {/* Sources with per-source ranges/limits */}
           <div className="grid sm:grid-cols-2 gap-3">
-            {ALL_SOURCES.map((s) => {
-              const showVerbatim = !NEVER_VERBATIM.includes(s.key);
+            {allSources.map((s) => {
+              const showVerbatim = !neverVerbatim.includes(s.key);
               return (
                 <div key={s.key} className="rounded-lg border border-white/10 p-3">
                   <label className="flex items-center gap-3">
@@ -139,7 +146,7 @@ export default function ClientUI(props: {
             })}
           </div>
 
-          {/* Style prompt */}
+          {/* Style + audience (audience used when you SAVE/SEND later) */}
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Style / AI prompt</span>
             <textarea
@@ -150,24 +157,33 @@ export default function ClientUI(props: {
             />
           </label>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={compiling}
-              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit disabled:opacity-50"
-            >
-              {compiling ? "Compiling…" : "Compile with AI"}
-            </button>
-            {compileError && <span className="text-red-300 text-sm">{compileError}</span>}
-          </div>
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/80">Audience tag (optional)</span>
+            <input
+              name="audienceTag"
+              placeholder="e.g. survivor-weekly"
+              defaultValue={existing.audienceTag || ""}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              onChange={(e) => setAudienceTag(e.target.value)}
+            />
+          </label>
+
+          <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
+            Compile with AI
+          </button>
+
+          {!compileState.ok && (
+            <p className="text-sm text-red-300">{compileState.error || "Compile failed."}</p>
+          )}
         </form>
       </section>
 
-      {/* 2) Edit draft */}
+      {/* 2) Edit draft (saved only when you click Save) */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">2) Edit draft</h2>
-        <form action={actions.save} className="grid gap-3">
-          <input type="hidden" name="id" value={existing.id} />
+
+        <form action={actionSave} className="grid gap-3">
+          <input type="hidden" name="id" defaultValue={existing.id || ""} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
             <input
@@ -177,6 +193,7 @@ export default function ClientUI(props: {
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
+
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
             <input
@@ -198,6 +215,7 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
             </label>
+
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
               <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
@@ -214,55 +232,55 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
               />
             </label>
-            <button className="self-end rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Save Draft</button>
+            <button className="self-end rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Save Draft
+            </button>
           </div>
         </form>
       </section>
 
-      {/* 3) Schedule / send */}
+      {/* 3) Schedule / Send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
-          <form action={actions.schedule} className="flex items-end gap-2">
-            <input type="hidden" name="id" value={existing.id} />
+          <form action={actionSchedule} className="flex items-end gap-2">
+            <input type="hidden" name="id" defaultValue={existing.id || ""} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input type="datetime-local" name="scheduleAt" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                type="datetime-local"
+                name="scheduleAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
             </label>
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
           </form>
 
-          <form action={actions.sendNow}>
-            <input type="hidden" name="id" value={existing.id} />
+          <form action={actionSendNow}>
+            <input type="hidden" name="id" defaultValue={existing.id || ""} />
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
-          </form>
-
-          {/* Danger: delete current draft */}
-          <form action={actions.remove} className="ml-auto">
-            <input type="hidden" name="id" value={existing.id} />
-            <button className="rounded-lg border border-red-400/30 text-red-200 px-3 py-2 hover:bg-red-400/10">
-              Delete draft
-            </button>
           </form>
         </div>
       </section>
 
-      {/* Drafts */}
+      {/* Drafts list with dates + delete */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">Drafts</h2>
         {drafts.length === 0 ? (
-          <p className="text-sm text-white/60">No drafts yet. Compile above to create one and then save.</p>
+          <p className="text-sm text-white/60">No drafts yet. Use “Compile with AI”, then “Save Draft”.</p>
         ) : (
           <ul className="space-y-2">
             {drafts.map((d) => (
-              <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
+              <li
+                key={d.id}
+                className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
+              >
                 <div className="text-sm">
                   <div className="font-medium">{d.title}</div>
                   <div className="text-white/50">
                     {d.status}
                     {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
-                    {` • updated ${new Date(d.updatedAt).toLocaleString()}`}
-                    {` • created ${new Date(d.createdAt).toLocaleString()}`}
+                    {d.updatedAt ? ` • updated ${new Date(d.updatedAt).toLocaleString()}` : ""}
                     {d.audienceTag ? ` • audience: ${d.audienceTag}` : ""}
                   </div>
                 </div>
@@ -273,7 +291,7 @@ export default function ClientUI(props: {
                   >
                     Edit
                   </a>
-                  <form action={actions.remove}>
+                  <form action={actionDelete}>
                     <input type="hidden" name="id" value={d.id} />
                     <button className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10">
                       Delete
