@@ -183,33 +183,27 @@ export default async function NewsletterAdmin({
   // NEW: send a test email to specific addresses
  async function actionSendTest(formData: FormData) {
   "use server";
-  try {
-    const id = String(formData.get("id") || "");
-    const subject = String(formData.get("subject") || "");
-    const markdown = String(formData.get("markdown") || "");
-    const raw = String(formData.get("to") || "");
-    const to = raw
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => s && /.+@.+\..+/.test(s));
+  const id = String(formData.get("id") || "");
+  const subject = String(formData.get("subject") || "");
+  const markdown = String(formData.get("markdown") || "");
+  const audienceTag = (String(formData.get("audienceTag") || "").trim() || undefined) as string | undefined;
 
-    if (to.length === 0) {
-      return { ok: false, message: "Enter at least one valid email address." };
-    }
+  // comma/space/line separated emails -> array
+  const recipients = String(formData.get("testRecipients") || "")
+    .split(/[,\s]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s && /.+@.+\..+/.test(s));
 
-     // Reuse your sender but force recipients:
-    await sendNewsletter(
-      { id, createdAt: "", updatedAt: "", subject, markdown, picks: [], status: "draft" },
-      { recipients: to }
-    );
+  // use current editor values, not the last saved copy
+  const base = (await getDraft(id)) ?? {
+    id, createdAt: "", updatedAt: "", picks: [], status: "draft", subject, markdown
+  };
 
-    return { ok: true, message: `Test sent to ${to.join(", ")}` };
-  } catch (err: any) {
-    console.error("Send test failed:", err);
-    return { ok: false, message: "Send test failed. See server logs." };
-  }
+  await sendNewsletter(
+    { ...base, subject, markdown, audienceTag },
+    { recipients }
+  );
 }
-
 
     const d = await getDraft(id);
     if (!d) return;
