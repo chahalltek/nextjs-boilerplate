@@ -17,8 +17,6 @@ import ClientUI from "./ClientUI";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const genId = () => Math.random().toString(36).slice(2, 10);
-
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
@@ -27,7 +25,6 @@ const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "survivorPolls", label: "Survivor Polls" },
   { key: "survivorLeaderboard", label: "Survivor Leaderboard" },
 ];
-
 const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderboard"];
 
 function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
@@ -43,83 +40,83 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   if (preset === "last14") return { dateFrom: toISO(daysAgo(14)), dateTo: toISO(now) };
   if (preset === "last30") return { dateFrom: toISO(daysAgo(30)), dateTo: toISO(now) };
   if (preset === "season") {
-    const seasonStart = new Date(now.getFullYear(), 7, 1); // Aug 1
+    const seasonStart = new Date(now.getFullYear(), 7, 1);
     return { dateFrom: toISO(seasonStart), dateTo: toISO(now) };
   }
   return { dateFrom: undefined, dateTo: undefined };
 }
 
-/**
- * SERVER ACTIONS
- * - actionCompile: returns { ok, subject?, markdown?, error? } (does NOT save)
- * - actionSave / actionSchedule / actionSendNow / actionDelete: persist changes
- */
+/** SERVER ACTIONS */
 async function actionCompile(formData: FormData) {
   "use server";
-  try {
-    const picks: SourcePick[] = ALL_SOURCES
-      .filter((s) => formData.get(`include:${s.key}`) === "on")
-      .map((s) => ({
-        key: s.key,
-        verbatim: !NEVER_VERBATIM.includes(s.key) && formData.get(`verbatim:${s.key}`) === "on",
-      }));
+  const picks: SourcePick[] = ALL_SOURCES
+    .filter((s) => formData.get(`include:${s.key}`) === "on")
+    .map((s) => ({
+      key: s.key,
+      verbatim: !NEVER_VERBATIM.includes(s.key) && formData.get(`verbatim:${s.key}`) === "on",
+    }));
 
-    const perSource: Record<NewsletterSourceKey, { dateFrom?: string; dateTo?: string; limit?: number }> = {} as any;
-    for (const s of ALL_SOURCES) {
-      const from = String(formData.get(`from:${s.key}`) || "") || undefined;
-      const to = String(formData.get(`to:${s.key}`) || "") || undefined;
-      const limS = String(formData.get(`limit:${s.key}`) || "");
-      const limit = limS ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0)) : undefined;
-      if (from || to || limit) perSource[s.key] = { dateFrom: from, dateTo: to, limit };
-    }
-
-    const preset = String(formData.get("preset") || "") || undefined;
-    const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
-    const globalDateTo = String(formData.get("dateTo") || "") || undefined;
-    const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
-
-    const { subject, markdown } = await compileNewsletter(picks, {
-      dateFrom,
-      dateTo,
-      stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
-      perSource,
-    });
-
-    return { ok: true as const, subject, markdown };
-  } catch (err: any) {
-    console.error("compile action error:", err);
-    return {
-      ok: false as const,
-      error:
-        "Compile failed. Check your OpenAI env vars and content paths (content/posts, content/recaps, data/polls).",
-    };
+  const perSource: Record<NewsletterSourceKey, { dateFrom?: string; dateTo?: string; limit?: number }> = {} as any;
+  for (const s of ALL_SOURCES) {
+    const from = String(formData.get(`from:${s.key}`) || "") || undefined;
+    const to = String(formData.get(`to:${s.key}`) || "") || undefined;
+    const limS = String(formData.get(`limit:${s.key}`) || "");
+    const limit = limS ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0)) : undefined;
+    if (from || to || limit) perSource[s.key] = { dateFrom: from, dateTo: to, limit };
   }
+
+  const preset = String(formData.get("preset") || "") || undefined;
+  const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
+  const globalDateTo = String(formData.get("dateTo") || "") || undefined;
+  const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
+
+  const { subject, markdown } = await compileNewsletter(picks, {
+    dateFrom,
+    dateTo,
+    stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
+    perSource,
+  });
+
+  const draft = await saveDraft({
+    subject: subject || "Weekly Newsletter",
+    markdown,
+    picks,
+    status: "compiled",
+    scheduledAt: null,
+    audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
+    title: "Weekly Newsletter",
+  });
+  redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
 }
 
 async function actionSave(formData: FormData) {
   "use server";
-  const id = String(formData.get("id") || genId());
-  const base =
-    (await getDraft(id)) ??
-    ({
-      id,
-      createdAt: "",
-      updatedAt: "",
-      subject: "",
-      markdown: "",
-      picks: [],
-      status: "draft",
-    } as NewsletterDraft);
+  const id = String(formData.get("id") || "");
+  const existing = id ? await getDraft(id) : null;
 
-  const next = await saveDraft({
-    ...base,
+  const nextStatus =
+    existing && (existing.status === "scheduled" || existing.status === "sent")
+      ? existing.status
+      : "edited";
+
+  const draft = await saveDraft({
+    ...(existing ||
+      ({
+        id,
+        createdAt: "",
+        updatedAt: "",
+        subject: "",
+        markdown: "",
+        picks: [],
+        status: "edited",
+      } as NewsletterDraft)),
     title: String(formData.get("title") || "Weekly Newsletter"),
     subject: String(formData.get("subject") || ""),
     markdown: String(formData.get("markdown") || ""),
     audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
+    status: nextStatus,
   });
-
-  redirect(`/admin/newsletter?id=${encodeURIComponent(next.id)}`);
+  redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
 }
 
 async function actionSchedule(formData: FormData) {
@@ -128,7 +125,7 @@ async function actionSchedule(formData: FormData) {
   const when = String(formData.get("scheduleAt") || "");
   const d = await getDraft(id);
   if (!d) return;
-  await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
+  await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "edited" });
   redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
 }
 
@@ -149,9 +146,7 @@ async function actionDelete(formData: FormData) {
   redirect(`/admin/newsletter`);
 }
 
-/**
- * PAGE (server)
- */
+/** PAGE */
 export default async function NewsletterAdmin({
   searchParams,
 }: {
@@ -161,7 +156,6 @@ export default async function NewsletterAdmin({
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
-  // Minimal preview HTML (server-rendered)
   const previewHtml = (existing?.markdown || "")
     .split("\n")
     .map((l) => {
