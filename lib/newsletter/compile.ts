@@ -10,6 +10,105 @@ type PerSourceOpts = Partial<Record<
   { dateFrom?: string; dateTo?: string; limit?: number }
 >>;
 
+type Item = {
+  title: string;
+  date?: Date;
+  body: string;
+  slug: string;
+};
+
+function tryParseDate(anyDate: any, fallbackFromName?: string): Date | undefined {
+  const candidates = [
+    anyDate,
+    typeof anyDate === "string" ? anyDate : undefined,
+    // infer “YYYY-MM-DD ...” from filename
+    fallbackFromName && /^(\d{4}-\d{1,2}-\d{1,2})/.exec(fallbackFromName)?.[1],
+  ].filter(Boolean) as string[];
+
+  for (const s of candidates) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return undefined;
+}
+
+async function walkMarkdown(dirAbs: string, relFrom: string): Promise<Item[]> {
+  const entries = await fs.readdir(dirAbs, { withFileTypes: true }).catch(() => []);
+  const out: Item[] = [];
+
+  for (const e of entries) {
+    const abs = path.join(dirAbs, e.name);
+    const rel = path.join(relFrom, e.name);
+
+    if (e.isDirectory()) {
+      // common patterns: <slug>/index.mdx or <slug>/page.mdx
+      const idx = await fs.readFile(path.join(abs, "index.mdx")).catch(() => null);
+      const pg = idx ? null : await fs.readFile(path.join(abs, "page.mdx")).catch(() => null);
+      if (idx || pg) {
+        const raw = (idx || pg)!.toString();
+        const { data, content } = matter(raw);
+        const date =
+          tryParseDate(
+            data?.date || data?.published || data?.publishedAt || data?.lastmod || data?.updated,
+            e.name
+          );
+        out.push({
+          title: String(data?.title || e.name),
+          date,
+          body: content.trim(),
+          slug: rel.replace(/\/(index|page)\.mdx?$/i, "").replace(/\/+/g, "/"),
+        });
+      } else {
+        out.push(...(await walkMarkdown(abs, rel)));
+      }
+      continue;
+    }
+
+    if (!/\.mdx?$/i.test(e.name)) continue;
+
+    const raw = await fs.readFile(abs, "utf8").catch(() => "");
+    const { data, content } = matter(raw);
+    const base = e.name.replace(/\.(md|mdx)$/i, "");
+    const date =
+      tryParseDate(
+        data?.date || data?.published || data?.publishedAt || data?.lastmod || data?.updated,
+        base
+      );
+
+    out.push({
+      title: String(data?.title || base),
+      date,
+      body: content.trim(),
+      slug: rel.replace(/\.(md|mdx)$/i, ""),
+    });
+  }
+
+  // newest first
+  out.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+  return out;
+}
+
+async function readMarkdownDirRecursive(relDir: string): Promise<Item[]> {
+  const abs = path.join(process.cwd(), relDir);
+  return walkMarkdown(abs, relDir);
+}
+
+async function readPolls(): Promise<any[]> {
+  const dir = path.join(process.cwd(), "data/polls");
+  const files = await fs.readdir(dir).catch(() => []);
+  const out: any[] = [];
+  for (const f of files) {
+    if (!/\.json$/i.test(f)) continue;
+    try {
+      const raw = await fs.readFile(path.join(dir, f), "utf8");
+      const json = JSON.parse(raw);
+      if (Array.isArray(json)) out.push(...json);
+      else out.push(json);
+    } catch {}
+  }
+  return out;
+}
+
 export async function compileNewsletter(
   picks: SourcePick[],
   opts?: {
@@ -19,23 +118,24 @@ export async function compileNewsletter(
     perSource?: PerSourceOpts;
   }
 ): Promise<{ subject: string; markdown: string }> {
+  const wanted = new Set<NewsletterSourceKey>(picks.map(p => p.key));
+  const pickOf = (k: NewsletterSourceKey) => picks.find(p => p.key === k);
+  const per = (k: NewsletterSourceKey) => opts?.perSource?.[k];
+
   const globalFrom = opts?.dateFrom ? new Date(opts.dateFrom) : undefined;
   const globalTo   = opts?.dateTo   ? new Date(opts.dateTo)   : undefined;
 
-  const wanted = new Set<NewsletterSourceKey>(picks.map(p => p.key));
-  const byKey  = (k: NewsletterSourceKey) => picks.find(p => p.key === k);
-  const pso    = (k: NewsletterSourceKey) => opts?.perSource?.[k];
-
-  const within = (d?: Date, key?: NewsletterSourceKey) => {
-    if (!d) return true;
-    const from = pso(key!)?.dateFrom ? new Date(pso(key!)!.dateFrom!) : globalFrom;
-    const to   = pso(key!)?.dateTo   ? new Date(pso(key!)!.dateTo!)   : globalTo;
+  const within = (d?: Date, k?: NewsletterSourceKey) => {
+    if (!d) return true; // include undated items
+    const from = per(k!)?.dateFrom ? new Date(per(k!)!.dateFrom!) : globalFrom;
+    const to   = per(k!)?.dateTo   ? new Date(per(k!)!.dateTo!)   : globalTo;
     if (from && d < from) return false;
     if (to && d > to) return false;
     return true;
   };
-  const cap = <T,>(arr: T[], key?: NewsletterSourceKey) => {
-    const n = pso(key!)?.limit;
+
+  const limitN = (arr: any[], k?: NewsletterSourceKey) => {
+    const n = per(k!)?.limit;
     return typeof n === "number" && n > 0 ? arr.slice(0, n) : arr;
   };
 
@@ -48,213 +148,179 @@ export async function compileNewsletter(
     return "This Week";
   };
 
-  // ---------- FS helpers ----------
-  async function dirIfExists(rel: string): Promise<string | null> {
-    const full = path.join(process.cwd(), rel);
-    try { await fs.access(full); return full; } catch { return null; }
-  }
-  async function firstExisting(cands: string[]): Promise<string | null> {
-    for (const rel of cands) {
-      const d = await dirIfExists(rel);
-      if (d) return d;
-    }
-    return null;
-  }
-  function parseDate(data: any): Date | undefined {
-    const raw =
-      data?.date ??
-      data?.published ??
-      data?.publishedAt ??
-      data?.updated ??
-      data?.lastmod;
-    if (!raw) return undefined;
-    const d = new Date(raw);
-    return isNaN(+d) ? undefined : d;
-  }
-
-  async function readMarkdownDir(candidates: string[]) {
-    const dir = await firstExisting(candidates);
-    if (!dir) return [] as any[];
-    let files: string[] = [];
-    try { files = await fs.readdir(dir); } catch { return []; }
-    const out: { title: string; date?: Date; body: string; slug: string }[] = [];
-    for (const f of files) {
-      if (!/\.(md|mdx)$/i.test(f)) continue;
-      const full = path.join(dir, f);
-      const raw = await fs.readFile(full, "utf8");
-      const { data, content } = matter(raw);
-      out.push({
-        title: String(data?.title || f.replace(/\.(md|mdx)$/i, "")),
-        date: parseDate(data),
-        body: content.trim(),
-        slug: String(data?.slug || f.replace(/\.(md|mdx)$/i, "")),
-      });
-    }
-    out.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
-    return out;
-  }
-
-  async function readPolls(): Promise<any[]> {
-    const dir = await firstExisting(["data/polls"]);
-    if (!dir) return [];
-    const files = await fs.readdir(dir).catch(() => [] as string[]);
-    const out: any[] = [];
-    for (const f of files) {
-      if (!/\.json$/i.test(f)) continue;
-      try {
-        const raw = await fs.readFile(path.join(dir, f), "utf8");
-        const json = JSON.parse(raw);
-        if (Array.isArray(json)) out.push(...json);
-        else out.push(json);
-      } catch {}
-    }
-    return out;
-  }
-
-  // ---------- Collect content ----------
   const sections: { title: string; markdown: string; verbatim: boolean }[] = [];
   const toSummarize: { source: NewsletterSourceKey; title: string; text: string }[] = [];
 
-  // Blog
+  // ---------- Blog ----------
   if (wanted.has("blog")) {
-    const pick = byKey("blog")!;
-    let posts = (await readMarkdownDir(["app/content/posts", "content/posts"]))
-      .filter(p => within(p.date, "blog"));
-    posts = cap(posts, "blog");
+    const p = pickOf("blog")!;
+    let posts = (await readMarkdownDirRecursive("app/content/posts")).filter(x => within(x.date, "blog"));
+    if (!posts.length && (globalFrom || globalTo)) {
+      // fallback to latest if range yields none
+      posts = await readMarkdownDirRecursive("app/content/posts");
+    }
+    posts = limitN(posts, "blog");
     if (posts.length) {
-      if (pick.verbatim) {
+      if (p.verbatim) {
         sections.push({
           title: "From the Blog",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
           verbatim: true,
+          markdown: posts.map(x => `### ${x.title}\n\n${x.body}\n`).join("\n"),
         });
       } else {
         toSummarize.push({
           source: "blog",
           title: "From the Blog",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
+          text: posts.map(x => `Title: ${x.title}\nBody:\n${x.body}\n`).join("\n---\n"),
         });
       }
     }
   }
 
-  // Weekly Recap
+  // ---------- Weekly Recap ----------
   if (wanted.has("weeklyRecap")) {
-    const pick = byKey("weeklyRecap")!;
-    let recaps = (await readMarkdownDir(["app/content/recaps", "content/recaps"]))
-      .filter(r => within(r.date, "weeklyRecap"));
-    recaps = cap(recaps, "weeklyRecap");
+    const p = pickOf("weeklyRecap")!;
+    let recaps = (await readMarkdownDirRecursive("app/content/recaps")).filter(x => within(x.date, "weeklyRecap"));
+    if (!recaps.length && (globalFrom || globalTo)) {
+      recaps = await readMarkdownDirRecursive("app/content/recaps");
+    }
+    recaps = limitN(recaps, "weeklyRecap");
     if (recaps.length) {
-      if (pick.verbatim) {
+      if (p.verbatim) {
         sections.push({
           title: "Weekly Recap",
-          markdown: recaps.map(r => `### ${r.title}\n\n${r.body}\n`).join("\n"),
           verbatim: true,
+          markdown: recaps.map(x => `### ${x.title}\n\n${x.body}\n`).join("\n"),
         });
       } else {
         toSummarize.push({
           source: "weeklyRecap",
           title: "Weekly Recap",
-          text: recaps.map(r => `Title: ${r.title}\nBody:\n${r.body}\n`).join("\n---\n"),
+          text: recaps.map(x => `Title: ${x.title}\nBody:\n${x.body}\n`).join("\n---\n"),
         });
       }
     }
   }
 
-  // Hold’em / Fold’em (heuristic)
+  // ---------- Hold’em / Fold’em ----------
   if (wanted.has("holdem")) {
-    const pick = byKey("holdem")!;
-    let posts = (await readMarkdownDir(["app/content/posts", "content/posts"]))
-      .filter(p => within(p.date, "holdem"))
-      .filter(p => /hold[\s’'`-]*em|stash|fold/i.test(p.title));
-    posts = cap(posts, "holdem");
+    const p = pickOf("holdem")!;
+    let posts = (await readMarkdownDirRecursive("app/content/posts"))
+      .filter(x => within(x.date, "holdem"))
+      .filter(x => /hold[\s’'`-]*em|stash|fold/i.test(x.title));
+    if (!posts.length && (globalFrom || globalTo)) {
+      posts = (await readMarkdownDirRecursive("app/content/posts"))
+        .filter(x => /hold[\s’'`-]*em|stash|fold/i.test(x.title));
+    }
+    posts = limitN(posts, "holdem");
     if (posts.length) {
-      if (pick.verbatim) {
+      if (p.verbatim) {
         sections.push({
           title: "Hold’em / Fold’em",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
           verbatim: true,
+          markdown: posts.map(x => `### ${x.title}\n\n${x.body}\n`).join("\n"),
         });
       } else {
         toSummarize.push({
           source: "holdem",
           title: "Hold’em / Fold’em",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
+          text: posts.map(x => `Title: ${x.title}\nBody:\n${x.body}\n`).join("\n---\n"),
         });
       }
     }
   }
 
-  // Start / Sit (heuristic)
+  // ---------- Start / Sit ----------
   if (wanted.has("sitStart")) {
-    const pick = byKey("sitStart")!;
-    let posts = (await readMarkdownDir(["app/content/posts", "content/posts"]))
-      .filter(p => within(p.date, "sitStart"))
-      .filter(p => /start\s*\/?\s*sit|start-sit|start vs sit/i.test(p.title));
-    posts = cap(posts, "sitStart");
+    const p = pickOf("sitStart")!;
+    let posts = (await readMarkdownDirRecursive("app/content/posts"))
+      .filter(x => within(x.date, "sitStart"))
+      .filter(x => /start\s*\/?\s*sit|start-?sit|start vs sit/i.test(x.title));
+    if (!posts.length && (globalFrom || globalTo)) {
+      posts = (await readMarkdownDirRecursive("app/content/posts"))
+        .filter(x => /start\s*\/?\s*sit|start-?sit|start vs sit/i.test(x.title));
+    }
+    posts = limitN(posts, "sitStart");
     if (posts.length) {
-      if (pick.verbatim) {
+      if (p.verbatim) {
         sections.push({
           title: "Start / Sit",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
           verbatim: true,
+          markdown: posts.map(x => `### ${x.title}\n\n${x.body}\n`).join("\n"),
         });
       } else {
         toSummarize.push({
           source: "sitStart",
           title: "Start / Sit",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
+          text: posts.map(x => `Title: ${x.title}\nBody:\n${x.body}\n`).join("\n---\n"),
         });
       }
     }
   }
 
-  // Survivor Polls (summarized)
+  // ---------- Survivor Polls (summarized) ----------
   if (wanted.has("survivorPolls")) {
     const polls = await readPolls();
-    const items = cap(
-      polls.filter((p: any) => within(p?.date ? new Date(p.date) : undefined, "survivorPolls")),
+    const items = limitN(
+      polls.filter((p: any) => {
+        const d = p?.date ? new Date(p.date) : undefined;
+        return within(d, "survivorPolls");
+      }),
       "survivorPolls"
     );
     if (items.length) {
-      const text = items.map((p: any) =>
-        `Question: ${p.question}\n` +
-        (p.options || []).map((o: any) => `- ${o.label}: ${o.votes ?? 0} votes`).join("\n")
-      ).join("\n---\n");
+      const text = items
+        .map((p: any) =>
+          `Question: ${p.question}\n` +
+          (p.options || []).map((o: any) => `- ${o.label}: ${o.votes ?? 0} votes`).join("\n")
+        )
+        .join("\n---\n");
       toSummarize.push({ source: "survivorPolls", title: "Survivor Polls", text });
     }
   }
 
-  // Survivor Leaderboard (summarized)
+  // ---------- Survivor Leaderboard (summarized) ----------
   if (wanted.has("survivorLeaderboard")) {
-    const text = `Summarize the current Survivor Bracket leaderboard for ${rangeLabel()}. Focus on Top 5, biggest risers/fallers, quick highlight, and link to /survivor/leaderboard.`;
+    const text =
+      `Summarize the current Survivor Bracket leaderboard for ${rangeLabel()}.\n` +
+      `Focus on Top 5, biggest risers/fallers, and a quick highlight. Link: /survivor/leaderboard.`;
     toSummarize.push({ source: "survivorLeaderboard", title: "Survivor Leaderboard", text });
   }
 
-  // ---------- Assemble ----------
+  // ---------- Compose ----------
   const defaultSubject = `Skol Sisters Weekly Rundown — ${rangeLabel()}`;
 
-  // No AI path (verbatim-only or no API key)
-  if (!toSummarize.length || !(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER)) {
-    const markdown = `# ${defaultSubject}\n\n` +
-      sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n") +
-      (sections.length ? "\n\n" : "") +
-      "_You’re getting this because you subscribed on heyskolssister.com_";
-    return { subject: defaultSubject, markdown: markdown.trim() };
+  // If there’s nothing to summarize, return verbatim sections only (still useful).
+  if (!toSummarize.length) {
+    const md = `# ${defaultSubject}\n\n` +
+      (sections.length
+        ? sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n")
+        : "_You’re getting this because you subscribed on heyskolssister.com_");
+    return { subject: defaultSubject, markdown: md.trim() };
   }
 
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER,
-  });
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER;
+  if (!apiKey) {
+    // Local/dev fallback
+    const bullets = toSummarize
+      .map(m => `### ${m.title}\n\n${m.text.split("\n").slice(0, 12).join("\n")}`)
+      .join("\n\n");
+    const md = `# ${defaultSubject}\n\n` +
+      (sections.length ? sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n") + "\n\n" : "") +
+      `## Highlights\n\n${bullets}\n\n_You’re getting this because you subscribed on heyskolssister.com_`;
+    return { subject: defaultSubject, markdown: md.trim() };
+  }
+
+  const openai = new OpenAI({ apiKey });
 
   const system =
     "You are the Skol Sisters newsletter writer. Tone: witty, playful, NFL-savvy. " +
-    "Output ONE newsletter-length Markdown email (~600–900 words). " +
-    "Copy VERBATIM sections exactly; summarize and stitch the rest.";
+    "Write ~600–900 words in Markdown. NEVER alter verbatim sections. " +
+    "Summarize and stitch the rest with clean headings and brief transitions.";
 
   const style =
-    opts?.stylePrompt?.trim() ||
-    "Be funny and witty (not mean). Use short paragraphs and clear headings.";
+    (opts?.stylePrompt?.trim() ||
+      "Make it funny and witty (never mean). Short paragraphs, clear headings, newsletter length.")!;
 
   const payload = {
     range: rangeLabel(),
@@ -282,5 +348,6 @@ export async function compileNewsletter(
 
   const md = completion.choices[0]?.message?.content?.trim() || "";
   const subject = /#\s+(.+)/.exec(md)?.[1]?.trim() || defaultSubject;
+
   return { subject, markdown: md || `# ${defaultSubject}\n\n(Empty body)` };
 }

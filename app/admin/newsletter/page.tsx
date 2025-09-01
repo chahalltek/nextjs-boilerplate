@@ -1,9 +1,16 @@
 // app/admin/newsletter/page.tsx
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { compileNewsletter } from "@/lib/newsletter/compile";
 import {
-  listDrafts, getDraft, saveDraft, deleteDraft, markStatus,
-  type NewsletterDraft, type NewsletterSourceKey, type SourcePick,
+  listDrafts,
+  getDraft,
+  saveDraft,
+  deleteDraft,
+  markStatus,
+  type NewsletterDraft,
+  type NewsletterSourceKey,
+  type SourcePick,
 } from "@/lib/newsletter/store";
 import { sendNewsletter } from "@/lib/newsletter/send";
 
@@ -20,14 +27,23 @@ const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "survivorPolls", label: "Survivor Polls" },
   { key: "survivorLeaderboard", label: "Survivor Leaderboard" },
 ];
-const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderboard"];
+
+// never allow verbatim for these
+const NEVER_VERBATIM: NewsletterSourceKey[] = [
+  "survivorPolls",
+  "survivorLeaderboard",
+];
 
 function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   if (dateFrom || dateTo) return { dateFrom, dateTo };
   const now = new Date();
   const toISO = (d: Date) => d.toISOString().slice(0, 10);
-  const daysAgo = (n: number) => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
-  if (preset === "last7")  return { dateFrom: toISO(daysAgo(7)),  dateTo: toISO(now) };
+  const daysAgo = (n: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - n);
+    return d;
+  };
+  if (preset === "last7") return { dateFrom: toISO(daysAgo(7)), dateTo: toISO(now) };
   if (preset === "last14") return { dateFrom: toISO(daysAgo(14)), dateTo: toISO(now) };
   if (preset === "last30") return { dateFrom: toISO(daysAgo(30)), dateTo: toISO(now) };
   if (preset === "season") {
@@ -39,50 +55,77 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
 
 export default async function NewsletterAdmin({
   searchParams,
-}: { searchParams?: Record<string, string | string[] | undefined> }) {
-  const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const editId =
+    typeof searchParams?.id === "string" ? searchParams.id : undefined;
+
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
+  // Read any compiled (but unsaved) content from cookie
+  let compiledBuffer: { subject?: string; markdown?: string } | null = null;
+  try {
+    const c = cookies().get("nl_buffer")?.value;
+    if (c) compiledBuffer = JSON.parse(decodeURIComponent(c));
+  } catch {
+    /* ignore */
+  }
+
+  // ----------------- Actions -----------------
+
+  // Compile only — do NOT save. Stash result in a short-lived cookie, then redirect.
   async function actionCompile(formData: FormData) {
     "use server";
+
     const picks: SourcePick[] = ALL_SOURCES
-      .filter(s => formData.get(`include:${s.key}`) === "on")
-      .map(s => ({
+      .filter((s) => formData.get(`include:${s.key}`) === "on")
+      .map((s) => ({
         key: s.key,
-        verbatim: !NEVER_VERBATIM.includes(s.key) && formData.get(`verbatim:${s.key}`) === "on",
+        verbatim:
+          !NEVER_VERBATIM.includes(s.key) &&
+          formData.get(`verbatim:${s.key}`) === "on",
       }));
 
-    const perSource: Record<NewsletterSourceKey, { dateFrom?: string; dateTo?: string; limit?: number }> = {} as any;
+    const perSource: Record<
+      NewsletterSourceKey,
+      { dateFrom?: string; dateTo?: string; limit?: number }
+    > = {} as any;
+
     for (const s of ALL_SOURCES) {
       const from = String(formData.get(`from:${s.key}`) || "") || undefined;
-      const to   = String(formData.get(`to:${s.key}`)   || "") || undefined;
+      const to = String(formData.get(`to:${s.key}`) || "") || undefined;
       const limS = String(formData.get(`limit:${s.key}`) || "");
-      const limit = limS ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0)) : undefined;
+      const limit = limS
+        ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0))
+        : undefined;
       if (from || to || limit) perSource[s.key] = { dateFrom: from, dateTo: to, limit };
     }
 
     const preset = String(formData.get("preset") || "") || undefined;
     const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
-    const globalDateTo   = String(formData.get("dateTo")   || "") || undefined;
+    const globalDateTo = String(formData.get("dateTo") || "") || undefined;
     const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
     const { subject, markdown } = await compileNewsletter(picks, {
-      dateFrom, dateTo,
-      stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
+      dateFrom,
+      dateTo,
+      stylePrompt:
+        String(formData.get("stylePrompt") || "") || undefined,
       perSource,
     });
 
-    const draft = await saveDraft({
-      subject: subject || "Weekly Newsletter",
-      markdown,
-      picks,
-      status: "draft",
-      scheduledAt: null,
-      audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
-      title: "Weekly Newsletter",
-    });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
+    // write ephemeral buffer cookie (5 min)
+    cookies().set(
+      "nl_buffer",
+      encodeURIComponent(JSON.stringify({ subject, markdown })),
+      { httpOnly: true, path: "/", maxAge: 60 * 5 }
+    );
+
+    // if they were editing a draft, keep that id in the URL; otherwise go to base page
+    const keepId = String(formData.get("currentId") || "");
+    redirect(keepId ? `/admin/newsletter?id=${encodeURIComponent(keepId)}` : `/admin/newsletter`);
   }
 
   async function actionSave(formData: FormData) {
@@ -90,7 +133,15 @@ export default async function NewsletterAdmin({
     const id = String(formData.get("id") || genId());
     const base =
       (await getDraft(id)) ??
-      ({ id, createdAt: "", updatedAt: "", subject: "", markdown: "", picks: [], status: "draft" } as NewsletterDraft);
+      ({
+        id,
+        createdAt: "",
+        updatedAt: "",
+        subject: "",
+        markdown: "",
+        picks: [],
+        status: "draft",
+      } as NewsletterDraft);
 
     await saveDraft({
       ...base,
@@ -99,6 +150,9 @@ export default async function NewsletterAdmin({
       markdown: String(formData.get("markdown") || ""),
       audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
     });
+
+    // clear buffer so the editor shows the saved version on return
+    cookies().set("nl_buffer", "", { path: "/", maxAge: 0 });
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
   }
 
@@ -108,7 +162,11 @@ export default async function NewsletterAdmin({
     const when = String(formData.get("scheduleAt") || "");
     const d = await getDraft(id);
     if (!d) return;
-    await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
+    await saveDraft({
+      ...d,
+      scheduledAt: when || null,
+      status: when ? "scheduled" : "draft",
+    });
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
   }
 
@@ -129,7 +187,18 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter`);
   }
 
-  const previewHtml = (existing?.markdown || "")
+  // ----------------- View state -----------------
+
+  const initialTitle = existing?.title || "Weekly Newsletter";
+  const initialSubject =
+    compiledBuffer?.subject ||
+    existing?.subject ||
+    "Your weekly Skol Sisters rundown";
+  const initialMarkdown =
+    compiledBuffer?.markdown || existing?.markdown || "";
+
+  // simple markdown → HTML preview (server-side)
+  const previewHtml = initialMarkdown
     .split("\n")
     .map((l) => {
       if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
@@ -154,6 +223,8 @@ export default async function NewsletterAdmin({
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
         <form action={actionCompile} className="grid gap-3">
+          <input type="hidden" name="currentId" defaultValue={existing?.id || ""} />
+
           {/* Quick ranges */}
           <fieldset className="grid gap-2">
             <span className="text-sm text-white/80">Quick range</span>
@@ -239,30 +310,55 @@ export default async function NewsletterAdmin({
           <input type="hidden" name="id" defaultValue={existing?.id || ""} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
-            <input name="title" defaultValue={existing?.title || "Weekly Newsletter"} className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="title"
+              defaultValue={initialTitle}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Subject</span>
-            <input name="subject" defaultValue={existing?.subject || "Your weekly Skol Sisters rundown"} className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+            <input
+              name="subject"
+              defaultValue={initialSubject}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
           </label>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
-              <textarea name="markdown" rows={18} defaultValue={existing?.markdown || ""} className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs" />
+              <textarea
+                name="markdown"
+                rows={18}
+                defaultValue={initialMarkdown}
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
+              />
             </label>
+
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
-              <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <div className="text-xs uppercase tracking-wide text-white/60 mb-2">
+                Preview
+              </div>
+              <div
+                className="prose prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
             </div>
           </div>
 
           <div className="flex gap-2">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Audience tag (optional)</span>
-              <input name="audienceTag" defaultValue={String((existing as any)?.audienceTag || "")} className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                name="audienceTag"
+                defaultValue={String((existing as any)?.audienceTag || "")}
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
             </label>
-            <button className="self-end rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Save Draft</button>
+            <button className="self-end rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Save Draft
+            </button>
           </div>
         </form>
       </section>
@@ -275,20 +371,32 @@ export default async function NewsletterAdmin({
             <input type="hidden" name="id" defaultValue={existing?.id || ""} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
-              <input type="datetime-local" name="scheduleAt" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+              <input
+                type="datetime-local"
+                name="scheduleAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
             </label>
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Schedule
+            </button>
           </form>
 
           <form action={actionSendNow}>
             <input type="hidden" name="id" defaultValue={existing?.id || ""} />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Send now
+            </button>
           </form>
 
-          <form action={actionDelete} className="ml-auto">
-            <input type="hidden" name="id" defaultValue={existing?.id || ""} />
-            <button className="rounded-lg border border-red-400/30 text-red-200 px-3 py-2 hover:bg-red-400/10">Delete draft</button>
-          </form>
+          {existing?.id && (
+            <form action={actionDelete} className="ml-auto">
+              <input type="hidden" name="id" defaultValue={existing.id} />
+              <button className="rounded-lg border border-red-400/30 text-red-200 px-3 py-2 hover:bg-red-400/10">
+                Delete draft
+              </button>
+            </form>
+          )}
         </div>
       </section>
 
@@ -296,19 +404,43 @@ export default async function NewsletterAdmin({
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">Drafts</h2>
         {drafts.length === 0 ? (
-          <p className="text-sm text-white/60">No drafts yet. Compile above to create one.</p>
+          <p className="text-sm text-white/60">
+            No drafts yet. Compile above to create one, then “Save Draft”.
+          </p>
         ) : (
           <ul className="space-y-2">
             {drafts.map((d) => (
-              <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
+              <li
+                key={d.id}
+                className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2"
+              >
                 <div className="text-sm">
                   <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
-                    {d.status}{d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
-                    {(d as any).audienceTag ? ` • audience: ${(d as any).audienceTag}` : ""}
+                    {d.status}
+                    {d.scheduledAt
+                      ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}`
+                      : ""}
+                    {` • updated ${new Date(d.updatedAt).toLocaleString()}`}
+                    {(d as any).audienceTag
+                      ? ` • audience: ${(d as any).audienceTag}`
+                      : ""}
                   </div>
                 </div>
-                <a href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`} className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10">Edit</a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`/admin/newsletter?id=${encodeURIComponent(d.id)}`}
+                    className="rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10"
+                  >
+                    Edit
+                  </a>
+                  <form action={actionDelete}>
+                    <input type="hidden" name="id" defaultValue={d.id} />
+                    <button className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10">
+                      Delete
+                    </button>
+                  </form>
+                </div>
               </li>
             ))}
           </ul>
