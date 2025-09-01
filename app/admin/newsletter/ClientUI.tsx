@@ -1,7 +1,7 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
 type DraftListItem = {
@@ -48,6 +48,14 @@ export default function ClientUI(props: {
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
 
+  // ⬅️ When a new draft is compiled + redirect with ?id=..., sync fields into editor immediately
+  useEffect(() => {
+    setTitle(existing.title);
+    setSubject(existing.subject);
+    setMarkdown(existing.markdown);
+    setAudienceTag(existing.audienceTag || "");
+  }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
+
   const previewHtml = (markdown || "")
     .split("\n")
     .map((l) => {
@@ -55,11 +63,30 @@ export default function ClientUI(props: {
       if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
       if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
       if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-      if (!l.trim()) return "";
+      if (!l.trim()) return "<br/>"; // ⬅️ keep visible paragraph breaks
       return `<p class="opacity-80">${l}</p>`;
     })
     .join("\n")
     .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
+
+  /** ------- Simple Markdown toolbar ------- */
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  function insert(before: string, after = "", placeholder = "text") {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    const sel = ta.value.slice(s, e) || placeholder;
+    const next = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
+    setMarkdown(next);
+    // restore caret roughly after inserted text
+    const newPos = (s ?? 0) + before.length + sel.length + after.length;
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = newPos;
+    });
+  }
+  const toolbarBtn =
+    "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
 
   return (
     <main className="container max-w-6xl py-10 space-y-8">
@@ -68,7 +95,7 @@ export default function ClientUI(props: {
         <p className="text-white/70">Pick sources, compile with AI, edit, schedule, send.</p>
       </header>
 
-      {/* 1) Choose content — compiling now SAVES as “compiled” */}
+      {/* 1) Choose content — compiling SAVES as “compiled” and the redirect pre-fills editor */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
@@ -140,9 +167,9 @@ export default function ClientUI(props: {
             <input
               name="audienceTag"
               placeholder="e.g. survivor-weekly"
-              defaultValue={audienceTag}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              value={audienceTag}
               onChange={(e) => setAudienceTag(e.target.value)}
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
 
@@ -156,7 +183,7 @@ export default function ClientUI(props: {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">2) Edit draft</h2>
         <form action={props.actionSave} className="grid gap-3">
-          <input type="hidden" name="id" defaultValue={existing.id} />
+          <input type="hidden" name="id" value={existing.id} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
             <input
@@ -176,10 +203,23 @@ export default function ClientUI(props: {
             />
           </label>
 
+          {/* Formatting toolbar */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button type="button" className={toolbarBtn} onClick={() => insert("**", "**")}>Bold</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("_", "_")}>Italics</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("<u>", "</u>")}>Underline</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("## ", "")}>H2</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("- ", "")}>List</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("[", "](https://)")}>Link</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>¶ Break</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n---\n\n", "")}>HR</button>
+          </div>
+
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
               <textarea
+                ref={textareaRef}
                 name="markdown"
                 rows={18}
                 value={markdown}
@@ -215,7 +255,7 @@ export default function ClientUI(props: {
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
           <form action={props.actionSchedule} className="flex items-end gap-2">
-            <input type="hidden" name="id" defaultValue={existing.id} />
+            <input type="hidden" name="id" value={existing.id} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
               <input type="datetime-local" name="scheduleAt" className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
@@ -224,13 +264,13 @@ export default function ClientUI(props: {
           </form>
 
           <form action={props.actionSendNow}>
-            <input type="hidden" name="id" defaultValue={existing.id} />
+            <input type="hidden" name="id" value={existing.id} />
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
           </form>
         </div>
       </section>
 
-      {/* Newsletters list */}
+      {/* Newsletters list (status + delete) */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">Newsletters</h2>
         {drafts.length === 0 ? (
