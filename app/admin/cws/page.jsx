@@ -200,6 +200,121 @@ export default function AdminCwsPage() {
     }
   }
 
+  // ---------- formatting toolbar helpers ----------
+  const btn =
+    "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
+
+  function insertAround(before, after = "", placeholder = "text") {
+    const ta = contentRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart ?? 0;
+    const e = ta.selectionEnd ?? 0;
+    const sel = (content || "").slice(s, e) || placeholder;
+    const next = (content || "").slice(0, s) + before + sel + after + (content || "").slice(e);
+    setContent(next);
+    queueMicrotask(() => {
+      ta.focus();
+      const pos = s + before.length + sel.length + after.length;
+      ta.selectionStart = ta.selectionEnd = pos;
+    });
+  }
+
+  function insertPlain(str) {
+    const ta = contentRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart ?? 0;
+    const e = ta.selectionEnd ?? 0;
+    const next = (content || "").slice(0, s) + str + (content || "").slice(e);
+    setContent(next);
+    queueMicrotask(() => {
+      ta.focus();
+      const pos = s + str.length;
+      ta.selectionStart = ta.selectionEnd = pos;
+    });
+  }
+
+  // ---------- live preview ----------
+  function renderPreview(md = "") {
+    const lines = md.replace(/\r\n/g, "\n").split("\n");
+    let html = "";
+    let inList = false;
+
+    const flushList = () => {
+      if (inList) {
+        html += '</ul>';
+        inList = false;
+      }
+    };
+
+    for (const raw of lines) {
+      const l = raw.trimEnd();
+
+      if (!l.trim()) {
+        flushList();
+        html += "<br/>";
+        continue;
+      }
+
+      if (l === "---") {
+        flushList();
+        html += '<hr class="my-3 border-white/20" />';
+        continue;
+      }
+
+      if (l.startsWith("### ")) {
+        flushList();
+        html += `<h3 class="font-semibold mt-3 mb-1">${escapeHtml(l.slice(4))}</h3>`;
+        continue;
+      }
+      if (l.startsWith("## ")) {
+        flushList();
+        html += `<h2 class="text-lg font-semibold mt-4 mb-2">${escapeHtml(l.slice(3))}</h2>`;
+        continue;
+      }
+      if (l.startsWith("# ")) {
+        flushList();
+        html += `<h1 class="text-xl font-semibold mb-2">${escapeHtml(l.slice(2))}</h1>`;
+        continue;
+      }
+
+      if (l.startsWith("- ")) {
+        if (!inList) {
+          html += '<ul class="list-disc ml-5 space-y-1">';
+          inList = true;
+        }
+        html += `<li>${escapeInline(l.slice(2))}</li>`;
+        continue;
+      }
+
+      flushList();
+      html += `<p class="opacity-80">${escapeInline(l)}</p>`;
+    }
+    flushList();
+    return html;
+  }
+
+  // allow simple inline markdown like [text](url) and keep <u>…</u>
+  function escapeInline(s) {
+    // basic link [text](url)
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, t, u) => {
+      return `<a class="underline" href="${u}" target="_blank" rel="noreferrer">${escapeHtml(t)}</a>`;
+    });
+    // keep <u>…</u> for underline but escape other tags
+    // temporarily protect underline
+    s = s.replace(/<u>/g, "%%U1%%").replace(/<\/u>/g, "%%U2%%");
+    s = escapeHtml(s);
+    return s.replace(/%%U1%%/g, "<u>").replace(/%%U2%%/g, "</u>");
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  const previewHtml = renderPreview(content);
+
   // ---------- UI ----------
   return (
     <div className="container max-w-5xl py-10 space-y-8">
@@ -352,15 +467,60 @@ export default function AdminCwsPage() {
           </label>
         </div>
 
-        <div>
-          <label className="block text-sm text-white/70 mb-1">Content (Markdown)</label>
-          <textarea
-            ref={contentRef}
-            className="input w-full min-h-[240px]"
-            placeholder="Write your recap in Markdown…"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-          />
+        {/* Formatting toolbar (sticky) */}
+        <div className="sticky top-0 z-10 -mx-5 px-5 py-2 bg-[#120F1E]/95 backdrop-blur border-y border-white/10">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button type="button" className={btn} onClick={() => insertAround("**", "**")}>
+              Bold
+            </button>
+            <button type="button" className={btn} onClick={() => insertAround("_", "_")}>
+              Italics
+            </button>
+            <button type="button" className={btn} onClick={() => insertAround("<u>", "</u>")}>
+              Underline
+            </button>
+            <button type="button" className={btn} onClick={() => insertAround("## ", "")}>
+              H2
+            </button>
+            <button type="button" className={btn} onClick={() => insertAround("- ", "")}>
+              List
+            </button>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => insertAround("[", "](https://)", "link text")}
+            >
+              Link
+            </button>
+            <button type="button" className={btn} onClick={() => insertPlain("\n\n")}>
+              ¶ Break
+            </button>
+            <button type="button" className={btn} onClick={() => insertPlain("\n\n---\n\n")}>
+              HR
+            </button>
+          </div>
+        </div>
+
+        {/* Split pane: editor (left) + preview (right) */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <label className="grid gap-1 text-sm">
+            <span className="text-white/70">Content (Markdown)</span>
+            <textarea
+              ref={contentRef}
+              className="input w-full min-h-[360px] font-mono text-sm"
+              placeholder="Write your recap in Markdown…"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+            />
+          </label>
+
+          <div className="rounded-lg border border-white/10 p-3 bg-black/20">
+            <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
+            <div
+              className="prose prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
