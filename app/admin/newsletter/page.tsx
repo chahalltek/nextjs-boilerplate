@@ -37,8 +37,8 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
 
 /* ---------------- Server Actions ---------------- */
 
-// NOTE: This compiles content but DOES NOT save any draft.
-async function _compile(formData: FormData) {
+// Compile content but DO NOT save a draft.
+async function actionCompile(formData: FormData) {
   "use server";
   const picks: SourcePick[] = ALL_SOURCES
     .filter(s => formData.get(`include:${s.key}`) === "on")
@@ -57,9 +57,9 @@ async function _compile(formData: FormData) {
   }
 
   const preset = String(formData.get("preset") || "") || undefined;
-  const globalFrom = String(formData.get("dateFrom") || "") || undefined;
-  const globalTo   = String(formData.get("dateTo")   || "") || undefined;
-  const { dateFrom, dateTo } = computeRange(preset, globalFrom, globalTo);
+  const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
+  const globalDateTo   = String(formData.get("dateTo")   || "") || undefined;
+  const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
   const { subject, markdown } = await compileNewsletter(picks, {
     dateFrom, dateTo,
@@ -68,12 +68,6 @@ async function _compile(formData: FormData) {
   });
 
   return { subject, markdown };
-}
-
-// Adapter for useFormState(prev, formData)
-async function actionCompileState(_: { subject?: string; markdown?: string } | null, formData: FormData) {
-  "use server";
-  return await _compile(formData);
 }
 
 async function actionSave(formData: FormData) {
@@ -154,7 +148,7 @@ export default async function NewsletterAdmin({
         audienceTag: (d as any).audienceTag || "",
       }))}
       actions={{
-        compileState: actionCompileState,
+        compile: actionCompile,   // called directly from the client (no saving)
         save: actionSave,
         schedule: actionSchedule,
         sendNow: actionSendNow,

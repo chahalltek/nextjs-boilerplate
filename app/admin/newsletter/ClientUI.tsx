@@ -1,8 +1,7 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useFormState } from "react-dom";
+import { useMemo, useState } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
 type DraftListItem = {
@@ -23,7 +22,7 @@ export default function ClientUI(props: {
   existing: { id: string; title: string; subject: string; markdown: string; audienceTag?: string };
   drafts: DraftListItem[];
   actions: {
-    compileState: (prev: CompileResult | null, formData: FormData) => Promise<CompileResult>;
+    compile: (formData: FormData) => Promise<CompileResult>;
     save: (formData: FormData) => Promise<void>;
     schedule: (formData: FormData) => Promise<void>;
     sendNow: (formData: FormData) => Promise<void>;
@@ -37,18 +36,8 @@ export default function ClientUI(props: {
   const [subject, setSubject] = useState(existing.subject);
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
-
-  // Compile with AI -> update editor only (no save)
-  const [compileState, compileAction] = useFormState<CompileResult, FormData>(
-    actions.compileState,
-    { subject: "", markdown: "" }
-  );
-  useEffect(() => {
-    if (compileState?.markdown) {
-      setMarkdown(compileState.markdown);
-      if (compileState.subject) setSubject(compileState.subject);
-    }
-  }, [compileState]);
+  const [compiling, setCompiling] = useState(false);
+  const [compileError, setCompileError] = useState<string | null>(null);
 
   // Lightweight preview
   const previewHtml = useMemo(() => {
@@ -66,6 +55,26 @@ export default function ClientUI(props: {
       .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
   }, [markdown]);
 
+  async function handleCompileSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setCompiling(true);
+    setCompileError(null);
+    try {
+      const fd = new FormData(e.currentTarget);
+      const res = await actions.compile(fd); // calls server action directly
+      if (res?.markdown) {
+        setMarkdown(res.markdown);
+        if (res.subject) setSubject(res.subject);
+      } else {
+        setCompileError("No content was returned.");
+      }
+    } catch (err: any) {
+      setCompileError(err?.message || "Compile failed.");
+    } finally {
+      setCompiling(false);
+    }
+  }
+
   return (
     <main className="container max-w-6xl py-10 space-y-8">
       <header>
@@ -78,7 +87,7 @@ export default function ClientUI(props: {
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
         {/* Compile form (does not persist) */}
-        <form action={compileAction} className="grid gap-3">
+        <form onSubmit={handleCompileSubmit} className="grid gap-3">
           {/* Quick ranges */}
           <fieldset className="grid gap-2">
             <span className="text-sm text-white/80">Quick range</span>
@@ -130,7 +139,7 @@ export default function ClientUI(props: {
             })}
           </div>
 
-          {/* Style + audience (audience used later when sending/saving) */}
+          {/* Style prompt */}
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Style / AI prompt</span>
             <textarea
@@ -141,9 +150,16 @@ export default function ClientUI(props: {
             />
           </label>
 
-          <button type="submit" className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit">
-            Compile with AI
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={compiling}
+              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit disabled:opacity-50"
+            >
+              {compiling ? "Compiling…" : "Compile with AI"}
+            </button>
+            {compileError && <span className="text-red-300 text-sm">{compileError}</span>}
+          </div>
         </form>
       </section>
 
