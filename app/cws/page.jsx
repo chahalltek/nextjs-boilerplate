@@ -71,10 +71,11 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Make Markdown behave like the admin preview:
- * - Insert a blank line before list items so Markdown recognizes lists
- * - Convert contiguous `a.`, `b.`, … (with optional indentation) to <ol type="a">…</ol>
- * - Normalize NBSP and CRLF
+ * Normalize author text so the public page renders like the admin preview:
+ * - Insert a blank line before numeric/bullet items so Markdown creates lists
+ * - Convert lettered items (a., b., …) — with optional indentation and wrapped
+ *   continuation lines — into a single <ol type="a"> block with proper <li>s
+ * - Normalize CRLF and NBSP
  */
 function normalizeMarkdown(md) {
   const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
@@ -86,26 +87,47 @@ function normalizeMarkdown(md) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Lettered list block with optional indentation: "  a. Item"
-    const letterMatch = line.match(/^\s*([a-z])\.\s+(.*)$/i);
-    if (letterMatch) {
-      if (!prevBlank) out.push("");
+    // LETTERED LIST BLOCK (e.g., "  a. First item…")
+    if (/^\s*[a-z]\.\s+/.test(line)) {
+      if (!prevBlank) out.push(""); // separate from prior paragraph
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
 
-      // collect contiguous a./b./c. lines
-      while (i < lines.length) {
-        const m = lines[i].match(/^\s*([a-z])\.\s+(.*)$/i);
-        if (!m) break;
-        out.push(`<li>${m[2]}</li>`);
+      // Collect contiguous lettered items. Each item may span multiple physical lines
+      // until the next lettered marker is found.
+      while (i < lines.length && /^\s*[a-z]\.\s+/.test(lines[i])) {
+        // Start a new item
+        let item = lines[i].replace(/^\s*[a-z]\.\s+/, "").trim();
         i++;
+
+        // Pull in continuation lines that belong to this item (until next lettered marker).
+        while (
+          i < lines.length &&
+          !/^\s*[a-z]\.\s+/.test(lines[i]) // next item would start here
+        ) {
+          const cont = lines[i];
+          // Stop early if there's a hard section break (two blanks before a non-lettered)
+          // but generally keep single/blank lines as spaces inside the <li>.
+          if (cont.trim() === "" && (i + 1 < lines.length) && /^\s*$/.test(lines[i + 1])) {
+            // collapse double-blank into a single paragraph separator
+            item += "\n\n";
+            i += 2;
+            continue;
+          }
+          item += (cont.trim() ? " " + cont.trim() : "");
+          i++;
+        }
+
+        // Collapse multiple spaces and normalize paragraph gaps inside the item
+        item = item.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        out.push(`<li>${item}</li>`);
       }
 
       out.push("</ol>", "");
       prevBlank = true;
-      continue; // skip the normal increment; we've already advanced i
+      continue; // already advanced i
     }
 
-    // Ensure a blank line before numeric or bullet list items
+    // STANDARD LIST ITEMS ("1. ", "- ", "* ", "+ ") — ensure a blank line before
     const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
     if (isStdItem && !prevBlank) out.push("");
 
@@ -195,7 +217,7 @@ export default async function CwsIndexPage() {
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]} // to render injected <ol type="a">
+                  rehypePlugins={[rehypeRaw]} // required to render injected <ol type="a">
                 >
                   {latest.content}
                 </ReactMarkdown>
