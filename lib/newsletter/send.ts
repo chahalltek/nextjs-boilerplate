@@ -2,6 +2,7 @@
 import type { NewsletterDraft } from "./store";
 import { listSubscribers } from "@/lib/subscribers/store";
 
+/** Tiny Markdown → basic HTML for email */
 function mdToBasicHtml(md: string) {
   return md
     .replace(/\r\n/g, "\n")
@@ -18,29 +19,17 @@ function mdToBasicHtml(md: string) {
     .replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>");
 }
 
-async function sendWithResend(to: string[], subject: string, html: string) {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
-  if (!key) return false;
-
-  const { Resend } = await import("resend");
-  const resend = new Resend(key);
-
-  const chunk = <T,>(arr: T[], n = 50) =>
-    arr.reduce<T[][]>((a, c, i) => {
-      const k = Math.floor(i / n);
-      (a[k] ||= []).push(c);
-      return a;
-    }, []);
-
-  for (const batch of chunk(to, 50)) {
-    await resend.emails.send({ from, to: batch, subject, html }).catch((e) => {
-      console.error("Resend error:", e?.message || e);
-    });
-  }
-  return true;
+/** Plain-text fallback */
+function mdToText(md: string) {
+  return md
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)")
+    .replace(/[#*_>`]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
+/** Normalize + dedupe emails */
 function cleanEmails(input?: string[] | null): string[] {
   if (!input) return [];
   const r = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -52,6 +41,49 @@ function cleanEmails(input?: string[] | null): string[] {
   return [...out];
 }
 
+function chunk<T>(arr: T[], n = 75): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+/**
+ * Send using Resend with BCC-only delivery.
+ * All recipients go in BCC; a single friendly "to" header is used for compliance.
+ */
+async function sendWithResend(bccList: string[], subject: string, html: string, text: string) {
+  const key = process.env.RESEND_API_KEY;
+  const FROM = process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
+  const TO_HEADER = process.env.NEWSLETTER_TO || FROM; // friendly To header (not the audience)
+  const LIST_UNSUB = process.env.NEWSLETTER_UNSUB_URL || "";
+  const CHUNK_SIZE = Number(process.env.NEWSLETTER_BCC_CHUNK || 75);
+
+  if (!key) return false;
+
+  const { Resend } = await import("resend");
+  const resend = new Resend(key);
+
+  const headers: Record<string, string> = { Precedence: "bulk" };
+  if (LIST_UNSUB) headers["List-Unsubscribe"] = `<${LIST_UNSUB}>`;
+
+  for (const bcc of chunk(bccList, CHUNK_SIZE)) {
+    try {
+      await resend.emails.send({
+        from: FROM,
+        to: TO_HEADER, // single visible recipient (alias)
+        bcc,           // everyone else hidden
+        subject,
+        html,
+        text,
+        headers,
+      });
+    } catch (e: any) {
+      console.error("Resend send error:", e?.message || e);
+    }
+  }
+  return true;
+}
+
 export async function sendNewsletter(
   draft: NewsletterDraft,
   opts?: { recipients?: string[] }
@@ -61,24 +93,25 @@ export async function sendNewsletter(
   const to =
     override.length > 0
       ? override
-      : (await listSubscribers(draft as any as string | undefined))
-          .map((s) => s.email)
-          .filter(Boolean);
+      : (await listSubscribers((draft as any)?.audienceTag)).map((s) => s.email).filter(Boolean);
 
-  if (!to.length) {
+  const recipients = cleanEmails(to);
+  if (!recipients.length) {
     console.log(`[newsletter] No recipients. Subject "${draft.subject}"`);
     return { sent: 0 };
   }
 
+  const subject = draft.subject?.trim() || "Newsletter";
   const html = mdToBasicHtml(draft.markdown);
+  const text = mdToText(draft.markdown);
 
-  const ok = await sendWithResend(to, draft.subject, html);
+  const ok = await sendWithResend(recipients, subject, html, text);
   if (!ok) {
     console.log(
-      `[newsletter] No email provider configured. Would send "${draft.subject}" to ${to.length} recipient(s).`
+      `[newsletter] No email provider configured. Would send "${subject}" to ${recipients.length} recipient(s).`
     );
   } else {
-    console.log(`[newsletter] Sent "${draft.subject}" to ${to.length} recipient(s)`);
+    console.log(`[newsletter] Sent "${subject}" to ${recipients.length} recipient(s) via BCC`);
   }
-  return { sent: to.length };
+  return { sent: recipients.length };
 }
