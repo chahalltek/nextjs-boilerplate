@@ -28,7 +28,7 @@ function escapeHtml(s: string) {
 
 async function sendWithResend(to: string[], subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
+  const from = process.env.NEWSLETTER_FROM || "Hey Skol Sister <admin@heyskolsister.com>";
   if (!key) return false;
 
   // Lazy import so the build doesn’t require the pkg if unset

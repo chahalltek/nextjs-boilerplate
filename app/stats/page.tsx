@@ -1,4 +1,4 @@
-// app/stats/page.tsx (or wherever your StatsPage lives)
+// app/stats/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -27,6 +27,96 @@ interface CombinedRow {
   proj: number;
   actual: number;
 }
+
+/* ---------- schedule ticker ---------- */
+type ScheduleGame = { away: string; home: string; start?: number };
+
+function formatKickoff(ts?: number) {
+  if (!ts || !Number.isFinite(ts)) return "";
+  // Sleeper sometimes returns seconds; normalize to ms
+  const d = new Date(ts < 2_000_000_000 ? ts * 1000 : ts);
+  const dow = d.toLocaleDateString(undefined, { weekday: "short" });
+  const t = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${dow} ${t}`;
+}
+
+function compactTeam(s: any) {
+  if (!s) return "?";
+  const x = String(s).toUpperCase().trim();
+  // Normalize some common oddities
+  if (x === "JAX") return "JAX";
+  if (x === "WSH") return "WSH";
+  return x.length <= 4 ? x : x.slice(0, 4);
+}
+
+async function fetchSleeperSchedule(year: number, week: number, seasonType: SeasonType): Promise<ScheduleGame[]> {
+  const tries = [
+    // Most common modern form
+    `https://api.sleeper.app/schedule/nfl/${year}/${week}?season_type=${seasonType}`,
+    // Older v1 variant
+    `https://api.sleeper.app/v1/schedule/nfl/${year}?season_type=${seasonType}&week=${week}`,
+  ];
+
+  for (const url of tries) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const body = await res.json();
+
+      const arr: any[] = Array.isArray(body)
+        ? body
+        : Array.isArray((body as any)?.games)
+        ? (body as any).games
+        : [];
+
+      if (!arr.length) continue;
+
+      const games: ScheduleGame[] = arr
+        .map((g: any) => {
+          const away =
+            g.away ?? g.away_team ?? g.team_away ?? g.t0 ?? g.a ?? g.away_id ?? g.awayAbbr ?? g.awayTeam;
+          const home =
+            g.home ?? g.home_team ?? g.team_home ?? g.t1 ?? g.h ?? g.home_id ?? g.homeAbbr ?? g.homeTeam;
+          const start = g.start_time ?? g.start ?? g.kickoff ?? g.start_time_epoch ?? g.timestamp ?? g.time;
+          if (!away || !home) return null;
+          return { away: compactTeam(away), home: compactTeam(home), start: Number(start) || undefined };
+        })
+        .filter(Boolean) as ScheduleGame[];
+
+      if (games.length) return games;
+    } catch {
+      // Try next shape; if all fail, fall through
+    }
+  }
+  return [];
+}
+
+function ScheduleTicker({ seasonType, week }: { seasonType: SeasonType; week: number }) {
+  const [items, setItems] = useState<string[]>([]);
+
+  useEffect(() => {
+    const year = new Date().getFullYear();
+    (async () => {
+      const games = await fetchSleeperSchedule(year, week, seasonType);
+      const line = games.map((g) => `${formatKickoff(g.start)} — ${g.away} @ ${g.home}`).filter(Boolean);
+      setItems(line);
+    })();
+  }, [seasonType, week]);
+
+  if (!items.length) return null;
+
+  return (
+    <div className="w-full overflow-hidden border-y border-white/10 bg-white/5">
+      {/* Simple marquee for a lightweight ticker */}
+      <marquee behavior="scroll" direction="left" scrollAmount={6}>
+        <div className="py-2 text-sm whitespace-nowrap">
+          {items.join("  •  ")}
+        </div>
+      </marquee>
+    </div>
+  );
+}
+/* ---------- schedule ticker (end) ---------- */
 
 const CURRENT_YEAR = new Date().getFullYear();
 const WEEK_OPTIONS: Record<SeasonType, number[]> = {
@@ -116,7 +206,6 @@ export default function StatsPage() {
       actMap.set(r.player_id, num(r.stats?.pts_ppr));
     }
 
-    // union of ids with at least one nonzero value
     const ids = new Set([...projMap.keys(), ...actMap.keys()]);
     const out: CombinedRow[] = [];
     for (const id of ids) {
@@ -125,9 +214,7 @@ export default function StatsPage() {
       const proj = projMap.get(id) ?? 0;
       const act = actMap.get(id) ?? 0;
 
-      // filter by role
       if (role !== "ALL" && position !== role) continue;
-      // default to WR if undefined so table is consistent
       out.push({
         id,
         name: info.full_name || id,
@@ -138,7 +225,6 @@ export default function StatsPage() {
         actual: act,
       });
     }
-    // sort by (actual first, then projected)
     out.sort((a, b) => (b.actual || 0) - (a.actual || 0) || (b.proj || 0) - (a.proj || 0));
     return out.slice(0, 50);
   }, [projections, actual, players, role]);
@@ -153,6 +239,9 @@ export default function StatsPage() {
           Data from Sleeper • Season {CURRENT_YEAR} • {seasonType === "pre" ? "Preseason" : "Regular Season"}
         </p>
       </header>
+
+      {/* --- NFL schedule ticker (same placement vibe as Sit/Start) --- */}
+      <ScheduleTicker seasonType={seasonType} week={week} />
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">

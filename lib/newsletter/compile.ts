@@ -222,7 +222,7 @@ export async function compileNewsletter(
     toSummarize.push({ source: "survivorLeaderboard", title: "Survivor Leaderboard", text });
   }
 
-  const defaultSubject = `Skol Sisters Weekly Rundown — ${rangeLabel()}`;
+  const defaultSubject = `Hey Skol Sister Weekly Rundown — ${rangeLabel()}`;
 
   // If only verbatim sections, just stitch them.
   if (!toSummarize.length) {
@@ -248,7 +248,7 @@ export async function compileNewsletter(
     const markdown =
       `# ${defaultSubject}\n\n` +
       (sections.length ? sections.map((s) => `## ${s.title}\n\n${s.markdown}`).join("\n\n") + "\n\n" : "") +
-      `## Highlights\n\n${bullets}\n\n—\n_You’re getting this because you subscribed on heyskolssister.com_`;
+      `## Highlights\n\n${bullets}\n\n—\n_;
     return { subject: defaultSubject, markdown: markdown.trim() };
   };
   if (!apiKey) return fallbackAssemble();
