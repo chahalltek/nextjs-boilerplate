@@ -13,6 +13,26 @@ export const dynamic = "force-dynamic";
 
 const genId = () => Math.random().toString(36).slice(2, 10);
 
+import { sendNewsletter } from "@/lib/newsletter/send";
+
+// …
+
+const actionSendTest = async (fd: FormData) => {
+  "use server";
+
+  const subject = String(fd.get("subject") || "");
+  const markdown = String(fd.get("markdown") || "");
+  const rawTo = String(fd.get("to") || "");
+
+  const recipients = rawTo
+    .split(/[,\s;]+/)           // commas, spaces, semicolons
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Minimal draft object—only subject/markdown are needed for the test
+  await sendNewsletter({ subject, markdown } as any, { recipients });
+};
+
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
