@@ -7,12 +7,9 @@ published: true
 What Are Waivers and why are they important?  This is one of the questions I get asked the most every season.
 
 
+After your draft, the player pool isn't static. Players get injured, new players emerge, and some players just underperform. Waivers are the system that allows you to pick up these available players from the "free agent" pool and add them to your team. When you pick up a player, you usually have to drop someone from your current roster to make space.
 
-After your draft, the player pool isn't static. Players get injured, new players emerge, and some players just underperform. Waivers are the system that allows you to pick up these available players from the "free agent" pool and add them to your team. When you pick up a player, you usually have to drop someone from your current roster to make space. 
-
-
-
-How Do Waivers Work?  
+How Do Waivers Work?
 
 1.  The Waiver Period: Most leagues have a "waiver period" after games begin usually at kickoff on Sunday.   During this time, players who were dropped by other teams, or players who were on NFL rosters but not drafted in your league, become "locked" on waivers. You can't just pick them up immediately.  
 
