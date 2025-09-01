@@ -4,9 +4,9 @@ date: '2025-08-31'
 excerpt: Understanding waivers is vital to building a winning team!
 published: true
 ---
-What Are Waivers and why are they important?  This is one of the questions I get asked the most every season.  /
+What Are Waivers and why are they important?  This is one of the questions I get asked the most every season./
 
-After your draft, the player pool isn't static. Players get injured, new players emerge, and some players just underperform. Waivers are the system that allows you to pick up these available players from the "free agent" pool and add them to your team. When you pick up a player, you usually have to drop someone from your current roster to make space.  /
+After your draft, the player pool isn't static. Players get injured, new players emerge, and some players just underperform. Waivers are the system that allows you to pick up these available players from the "free agent" pool and add them to your team. When you pick up a player, you usually have to drop someone from your current roster to make space. /
 
 How Do Waivers Work?  
 <br>
