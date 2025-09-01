@@ -181,19 +181,35 @@ export default async function NewsletterAdmin({
   }
 
   // NEW: send a test email to specific addresses
-  async function actionSendTest(formData: FormData) {
-    "use server";
+ async function actionSendTest(formData: FormData) {
+  "use server";
+  try {
     const id = String(formData.get("id") || "");
-    const raw = String(formData.get("testRecipients") || "");
-    const emails = raw
+    const subject = String(formData.get("subject") || "");
+    const markdown = String(formData.get("markdown") || "");
+    const raw = String(formData.get("to") || "");
+    const to = raw
       .split(/[,\s]+/)
       .map((s) => s.trim().toLowerCase())
       .filter((s) => s && /.+@.+\..+/.test(s));
 
-    if (!emails.length) {
-      // just reload the page if nothing valid was given
-      redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
+    if (to.length === 0) {
+      return { ok: false, message: "Enter at least one valid email address." };
     }
+
+     // Reuse your sender but force recipients:
+    await sendNewsletter(
+      { id, createdAt: "", updatedAt: "", subject, markdown, picks: [], status: "draft" },
+      { recipients: to }
+    );
+
+    return { ok: true, message: `Test sent to ${to.join(", ")}` };
+  } catch (err: any) {
+    console.error("Send test failed:", err);
+    return { ok: false, message: "Send test failed. See server logs." };
+  }
+}
+
 
     const d = await getDraft(id);
     if (!d) return;

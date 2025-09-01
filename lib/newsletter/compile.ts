@@ -257,7 +257,7 @@ export async function compileNewsletter(
   try {
     const openai = new OpenAI({ apiKey });
     const system =
-      "You are the Skol Sisters newsletter writer. Tone: witty, playful, NFL-savvy. " +
+      "You are the Hey Skol Sisters newsletter writer. Tone: witty, playful, NFL-savvy. " +
       "Produce one Markdown email (≈600–900 words). " +
       "NEVER modify content marked VERBATIM; copy exact. Summarize and stitch the rest.";
 
@@ -270,7 +270,6 @@ export async function compileNewsletter(
       house_style: style,
       verbatim_sections: sections.map((s) => ({ title: s.title, markdown: s.markdown })),
       materials_to_summarize: toSummarize,
-      footer: "_You’re getting this because you subscribed on heyskolssister.com_",
     };
 
     const completion = await openai.chat.completions.create({

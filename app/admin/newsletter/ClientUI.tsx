@@ -1,9 +1,9 @@
-// app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 
+/** ---------- Types passed from the server component ---------- */
 type DraftListItem = {
   id: string;
   title: string;
@@ -13,6 +13,82 @@ type DraftListItem = {
   audienceTag?: string;
 };
 
+type SendTestResult = { ok: boolean; message: string };
+
+/** Render a lightweight preview (headings, paragraphs, UL/OL, hr, links). */
+function renderPreview(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  const pushPara = (text: string) => {
+    if (!text.trim()) {
+      out.push("<br/>");
+      return;
+    }
+    out.push(`<p class="opacity-80">${text}</p>`);
+  };
+
+  while (i < lines.length) {
+    const l = lines[i];
+
+    if (l.startsWith("### ")) {
+      out.push(`<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`);
+      i++;
+      continue;
+    }
+    if (l.startsWith("## ")) {
+      out.push(`<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`);
+      i++;
+      continue;
+    }
+    if (l.startsWith("# ")) {
+      out.push(`<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`);
+      i++;
+      continue;
+    }
+    if (/^---+$/.test(l.trim())) {
+      out.push('<hr class="border-white/10 my-4" />');
+      i++;
+      continue;
+    }
+
+    // Unordered list (collect contiguous “- ” lines)
+    if (/^\s*-\s+/.test(l)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
+        items.push(`<li>${lines[i].replace(/^\s*-\s+/, "")}</li>`);
+        i++;
+      }
+      out.push(`<ul class="list-disc ml-5 space-y-1">${items.join("")}</ul>`);
+      continue;
+    }
+
+    // Ordered list (collect contiguous “1. ” style lines)
+    if (/^\s*\d+\.\s+/.test(l)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(`<li>${lines[i].replace(/^\s*\d+\.\s+/, "")}</li>`);
+        i++;
+      }
+      out.push(`<ol class="list-decimal ml-5 space-y-1">${items.join("")}</ol>`);
+      continue;
+    }
+
+    // Blank line -> visible paragraph break
+    if (!l.trim()) {
+      out.push("<br/>");
+      i++;
+      continue;
+    }
+
+    pushPara(l);
+    i++;
+  }
+
+  return out.join("\n");
+}
+
 export default function ClientUI(props: {
   existing: {
     id: string;
@@ -20,16 +96,16 @@ export default function ClientUI(props: {
     subject: string;
     markdown: string;
     audienceTag?: string;
-    previewHtml: string;
   };
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
   neverVerbatim: NewsletterSourceKey[];
+  // server actions
   actionCompile: (fd: FormData) => Promise<void>;
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
-  actionSendTest: (fd: FormData) => Promise<void>; // NEW
+  actionSendTest: (fd: FormData) => Promise<SendTestResult>;
   actionDelete: (fd: FormData) => Promise<void>;
 }) {
   const {
@@ -45,108 +121,64 @@ export default function ClientUI(props: {
     actionDelete,
   } = props;
 
-  const [title, setTitle] = useState(existing.title);
-  const [subject, setSubject] = useState(existing.subject);
-  const [markdown, setMarkdown] = useState(existing.markdown);
+  /** ---------- Editor state ---------- */
+  const [title, setTitle] = useState(existing.title || "Weekly Newsletter");
+  const [subject, setSubject] = useState(existing.subject || "");
+  const [markdown, setMarkdown] = useState(existing.markdown || "");
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
+  const [testTo, setTestTo] = useState(""); // comma/space separated emails
+  const [testResult, setTestResult] = useState<SendTestResult | null>(null);
+  const [sendingTest, setSendingTest] = useState(false);
 
-  // When a new draft is compiled (redirect with ?id=...), sync editor immediately
+  // When a new/other draft is loaded (?id=...), sync inputs
   useEffect(() => {
-    setTitle(existing.title);
-    setSubject(existing.subject);
-    setMarkdown(existing.markdown);
+    setTitle(existing.title || "Weekly Newsletter");
+    setSubject(existing.subject || "");
+    setMarkdown(existing.markdown || "");
     setAudienceTag(existing.audienceTag || "");
-  }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
+    setTestResult(null);
+  }, [existing.id]);
 
-  // -------- Preview (very light Markdown) --------
-  const previewHtml = (markdown || "")
-    .split("\n")
-    .map((l) => {
-      if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
-      if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
-      if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
-      if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-      if (!l.trim()) return "<br/>";
-      return `<p class="opacity-80">${l}</p>`;
-    })
-    .join("\n")
-    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
+  const previewHtml = useMemo(() => renderPreview(markdown || ""), [markdown]);
 
-  // -------- Editor helpers (fixed "¶ Break" inserting text) --------
-  const mdRef = useRef<HTMLTextAreaElement>(null);
-
-  function setMD(next: string) {
+  /** ---------- Simple Markdown toolbar ---------- */
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  function insert(before: string, after = "", placeholder = "") {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart ?? 0;
+    const e = ta.selectionEnd ?? 0;
+    const sel = ta.value.slice(s, e) || placeholder;
+    const next = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
     setMarkdown(next);
-    queueMicrotask(() => {
-      if (!mdRef.current) return;
-      const pos = Math.min(mdRef.current.value.length, mdRef.current.selectionStart ?? next.length);
-      mdRef.current.focus();
-      mdRef.current.setSelectionRange(pos, pos);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = s + before.length + sel.length + after.length;
+      ta.selectionStart = ta.selectionEnd = pos;
     });
   }
-
-  function applyInline(open: string, close = open) {
-    const el = mdRef.current;
-    if (!el) return;
-    const s = el.selectionStart ?? 0;
-    const e = el.selectionEnd ?? s;
-    const before = el.value.slice(0, s);
-    const selected = el.value.slice(s, e);
-    const after = el.value.slice(e);
-    const wrapped = `${open}${selected}${close}`;
-    setMD(before + wrapped + after);
-    queueMicrotask(() => {
-      const pos = before.length + wrapped.length;
-      el.setSelectionRange(pos, pos);
-    });
-  }
-
-  function insertAtCursor(snippet: string) {
-    const el = mdRef.current;
-    if (!el) return;
-    const s = el.selectionStart ?? 0;
-    const e = el.selectionEnd ?? s;
-    const before = el.value.slice(0, s);
-    const after = el.value.slice(e);
-    const next = before + snippet + after;
-    setMD(next);
-    queueMicrotask(() => {
-      const pos = before.length + snippet.length;
-      el.focus();
-      el.setSelectionRange(pos, pos);
-    });
-  }
-
-  function insertList() {
-    insertAtCursor("\n- Item 1\n- Item 2\n- Item 3\n");
-  }
-  function insertLink() {
-    const el = mdRef.current;
-    if (!el) return;
-    const s = el.selectionStart ?? 0;
-    const e = el.selectionEnd ?? s;
-    const selected = el.value.slice(s, e) || "link text";
-    const before = el.value.slice(0, s);
-    const after = el.value.slice(e);
-    const snippet = `[${selected}](https://example.com)`;
-    const next = before + snippet + after;
-    setMD(next);
-    queueMicrotask(() => {
-      const urlStart = before.length + snippet.indexOf("(") + 1;
-      const urlEnd = before.length + snippet.indexOf(")");
-      el.focus();
-      el.setSelectionRange(urlStart, urlEnd);
-    });
-  }
-  function insertBreak() {
-    insertAtCursor("\n\n"); // no placeholder
-  }
-  function insertHR() {
-    insertAtCursor("\n\n---\n\n");
-  }
-
   const toolbarBtn =
     "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
+
+  /** ---------- Test send handler (client wraps server action) ---------- */
+  async function onSendTest(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    fd.set("id", existing.id || "");
+    fd.set("subject", subject);
+    fd.set("markdown", markdown);
+    fd.set("to", testTo);
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await actionSendTest(fd);
+      setTestResult(res);
+    } catch (err: any) {
+      setTestResult({ ok: false, message: err?.message || "Failed to send test" });
+    } finally {
+      setSendingTest(false);
+    }
+  }
 
   return (
     <main className="container max-w-6xl py-10 space-y-8">
@@ -264,24 +296,22 @@ export default function ClientUI(props: {
           </label>
 
           {/* Sticky formatting toolbar */}
-          <div className="sticky top-0 z-10 -mx-3 px-3 py-2 bg-black/40 backdrop-blur border-b border-white/10">
-            <div className="flex flex-wrap gap-2 text-xs">
-              <button type="button" className={toolbarBtn} onClick={() => applyInline("**")}>Bold</button>
-              <button type="button" className={toolbarBtn} onClick={() => applyInline("_")}>Italics</button>
-              <button type="button" className={toolbarBtn} onClick={() => applyInline("<u>", "</u>")}>Underline</button>
-              <button type="button" className={toolbarBtn} onClick={() => insertAtCursor("\n\n## ")}>H2</button>
-              <button type="button" className={toolbarBtn} onClick={insertList}>List</button>
-              <button type="button" className={toolbarBtn} onClick={insertLink}>Link</button>
-              <button type="button" className={toolbarBtn} onClick={insertBreak}>¶ Break</button>
-              <button type="button" className={toolbarBtn} onClick={insertHR}>HR</button>
-            </div>
+          <div className="sticky top-2 z-10 bg-black/30 backdrop-blur rounded-md p-2 flex flex-wrap gap-2 text-xs border border-white/10">
+            <button type="button" className={toolbarBtn} onClick={() => insert("**", "**", "bold")}>Bold</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("_", "_", "em")}>Italics</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("<u>", "</u>", "underline")}>Underline</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("## ", "", "Heading")}>H2</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("- ", "", "item ")}>List</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("[", "](https://)", "link text")}>Link</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "", "")}>¶ Break</button>
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n---\n\n", "", "")}>HR</button>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
               <textarea
-                ref={mdRef}
+                ref={textareaRef}
                 name="markdown"
                 rows={18}
                 value={markdown}
@@ -289,7 +319,7 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
             </label>
-            <div className="rounded-lg border border-white/10 p-3 bg-black/20">
+            <div className="rounded-lg border border-white/10 p-3 bg-black/20 overflow-auto">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
               <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
@@ -312,24 +342,33 @@ export default function ClientUI(props: {
         </form>
       </section>
 
-      {/* 2.5) Send a test email */}
+      {/* 2.5) Send a test */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">2.5) Send test email</h2>
-        <p className="text-sm text-white/70">
-          Send this draft to specific addresses (comma-separated) before sending to your full audience.
-        </p>
-        <form action={actionSendTest} className="flex flex-wrap items-end gap-2">
+        <h2 className="text-lg font-semibold">Send a test</h2>
+        <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="id" value={existing.id} />
-          <label className="grid gap-1 text-sm min-w-[280px] flex-1">
-            <span className="text-white/80">Recipient emails</span>
+          <label className="grid gap-1 text-sm min-w-[260px] flex-1">
+            <span className="text-white/80">Recipient(s)</span>
             <input
-              name="testRecipients"
-              placeholder="you@example.com, teammate@example.com"
+              name="to"
+              placeholder="you@example.com, other@site.com"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
-          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send test</button>
+          <button
+            disabled={sendingTest}
+            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
+          >
+            {sendingTest ? "Sending…" : "Send test"}
+          </button>
         </form>
+        {testResult && (
+          <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+            {testResult.message}
+          </p>
+        )}
       </section>
 
       {/* 3) Schedule / Send */}
@@ -362,7 +401,7 @@ export default function ClientUI(props: {
             {drafts.map((d) => (
               <li key={d.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2">
                 <div className="text-sm">
-                  <div className="font-medium">{d.title}</div>
+                  <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
                     {d.status}
                     {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
