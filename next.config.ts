@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
- experimental: {
+  experimental: {
     outputFileTracingExcludes: {
       "*": [
         "**/.git/**",
@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
         "public/brand/**",
         "public/starter-pack.pdf",
       ],
+    },
+  },
 };
 
 export default nextConfig;
