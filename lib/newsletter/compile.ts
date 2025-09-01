@@ -10,6 +10,8 @@ type PerSourceOpts = Partial<Record<NewsletterSourceKey, {
   limit?: number;
 }>>;
 
+const log = (...a: any[]) => process.env.NEWSLETTER_DEBUG === "1" && console.log("[newsletter]", ...a);
+
 export async function compileNewsletter(
   picks: SourcePick[],
   opts?: {
@@ -24,10 +26,10 @@ export async function compileNewsletter(
 
   const wanted = new Set<NewsletterSourceKey>(picks.map(p => p.key));
   const byKey = (k: NewsletterSourceKey) => picks.find(p => p.key === k);
-  const pso = (k: NewsletterSourceKey) => opts?.perSource?.[k];
+  const pso   = (k: NewsletterSourceKey) => opts?.perSource?.[k];
 
   const within = (d?: Date, key?: NewsletterSourceKey) => {
-    if (!d) return true;
+    if (!d) return true; // items without dates are allowed
     const from = pso(key!)?.dateFrom ? new Date(pso(key!)!.dateFrom!) : globalFrom;
     const to   = pso(key!)?.dateTo   ? new Date(pso(key!)!.dateTo!)   : globalTo;
     if (from && d < from) return false;
@@ -35,8 +37,8 @@ export async function compileNewsletter(
     return true;
   };
   const cap = <T,>(arr: T[], key?: NewsletterSourceKey) => {
-    const n = pso(key!)?.limit;
-    return typeof n === "number" && n > 0 ? arr.slice(0, n) : arr;
+    const n = pso(key!)?.limit ?? 5;
+    return n > 0 ? arr.slice(0, n) : arr;
   };
 
   function rangeLabel() {
@@ -79,104 +81,81 @@ export async function compileNewsletter(
       try {
         const raw = await fs.readFile(path.join(dir, f), "utf8");
         const json = JSON.parse(raw);
-        if (Array.isArray(json)) out.push(...json);
-        else out.push(json);
+        if (Array.isArray(json)) out.push(...json); else out.push(json);
       } catch {}
     }
     return out;
   }
 
+  // Helper: filter by date; if empty but there ARE items overall, fall back to latest
+  function withFallback<T extends { date?: Date }>(all: T[], key: NewsletterSourceKey): T[] {
+    const filtered = all.filter(p => within(p.date, key));
+    if (filtered.length) return cap(filtered, key);
+    log(`no matches for ${key} in range; falling back to latest`);
+    return cap(all, key);
+  }
+
   const sections: { title: string; markdown: string; verbatim: boolean }[] = [];
   const toSummarize: { source: NewsletterSourceKey; title: string; text: string }[] = [];
 
-  // Blog
+  // Blog (app/content/posts)
   if (wanted.has("blog")) {
     const pick = byKey("blog")!;
-    let posts = (await readMarkdownDir("app/content/posts")).filter(p => within(p.date, "blog"));
-    posts = cap(posts, "blog");
+    const all = await readMarkdownDir("app/content/posts");
+    let posts = withFallback(all, "blog");
+    log("blog: total", all.length, "chosen", posts.length);
     if (posts.length) {
       if (pick.verbatim) {
-        sections.push({
-          title: "From the Blog",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
-          verbatim: true,
-        });
+        sections.push({ title: "From the Blog", markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"), verbatim: true });
       } else {
-        toSummarize.push({
-          source: "blog",
-          title: "From the Blog",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
-        });
+        toSummarize.push({ source: "blog", title: "From the Blog", text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n") });
       }
     }
   }
 
-  // Weekly Recap (fixed path: app/content/recaps)
+  // Weekly Recap (app/content/recaps)
   if (wanted.has("weeklyRecap")) {
     const pick = byKey("weeklyRecap")!;
-    let recaps = (await readMarkdownDir("app/content/recaps")).filter(r => within(r.date, "weeklyRecap"));
-    recaps = cap(recaps, "weeklyRecap");
+    const all = await readMarkdownDir("app/content/recaps");
+    let recaps = withFallback(all, "weeklyRecap");
+    log("weeklyRecap: total", all.length, "chosen", recaps.length);
     if (recaps.length) {
       if (pick.verbatim) {
-        sections.push({
-          title: "Weekly Recap",
-          markdown: recaps.map(r => `### ${r.title}\n\n${r.body}\n`).join("\n"),
-          verbatim: true,
-        });
+        sections.push({ title: "Weekly Recap", markdown: recaps.map(r => `### ${r.title}\n\n${r.body}\n`).join("\n"), verbatim: true });
       } else {
-        toSummarize.push({
-          source: "weeklyRecap",
-          title: "Weekly Recap",
-          text: recaps.map(r => `Title: ${r.title}\nBody:\n${r.body}\n`).join("\n---\n"),
-        });
+        toSummarize.push({ source: "weeklyRecap", title: "Weekly Recap", text: recaps.map(r => `Title: ${r.title}\nBody:\n${r.body}\n`).join("\n---\n") });
       }
     }
   }
 
-  // Hold’em / Fold’em
+  // Hold’em / Fold’em (heuristic)
   if (wanted.has("holdem")) {
     const pick = byKey("holdem")!;
-    let posts = (await readMarkdownDir("app/content/posts"))
-      .filter(p => within(p.date, "holdem"))
+    const all = (await readMarkdownDir("app/content/posts"))
       .filter(p => /hold[\s’'`-]*em|stash|fold/i.test(p.title));
-    posts = cap(posts, "holdem");
+    const posts = withFallback(all, "holdem");
+    log("holdem: total", all.length, "chosen", posts.length);
     if (posts.length) {
       if (pick.verbatim) {
-        sections.push({
-          title: "Hold’em / Fold’em",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
-          verbatim: true,
-        });
+        sections.push({ title: "Hold’em / Fold’em", markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"), verbatim: true });
       } else {
-        toSummarize.push({
-          source: "holdem",
-          title: "Hold’em / Fold’em",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
-        });
+        toSummarize.push({ source: "holdem", title: "Hold’em / Fold’em", text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n") });
       }
     }
   }
 
-  // Start / Sit
+  // Start / Sit (heuristic)
   if (wanted.has("sitStart")) {
     const pick = byKey("sitStart")!;
-    let posts = (await readMarkdownDir("app/content/posts"))
-      .filter(p => within(p.date, "sitStart"))
+    const all = (await readMarkdownDir("app/content/posts"))
       .filter(p => /start\s*\/?\s*sit|start-sit|start vs sit/i.test(p.title));
-    posts = cap(posts, "sitStart");
+    const posts = withFallback(all, "sitStart");
+    log("sitStart: total", all.length, "chosen", posts.length);
     if (posts.length) {
       if (pick.verbatim) {
-        sections.push({
-          title: "Start / Sit",
-          markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"),
-          verbatim: true,
-        });
+        sections.push({ title: "Start / Sit", markdown: posts.map(p => `### ${p.title}\n\n${p.body}\n`).join("\n"), verbatim: true });
       } else {
-        toSummarize.push({
-          source: "sitStart",
-          title: "Start / Sit",
-          text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n"),
-        });
+        toSummarize.push({ source: "sitStart", title: "Start / Sit", text: posts.map(p => `Title: ${p.title}\nBody:\n${p.body}\n`).join("\n---\n") });
       }
     }
   }
@@ -184,10 +163,11 @@ export async function compileNewsletter(
   // Survivor Polls (always summarized)
   if (wanted.has("survivorPolls")) {
     const polls = await readPolls();
-    const items = cap(
-      polls.filter((p: any) => within(p?.date ? new Date(p.date) : undefined, "survivorPolls")),
+    const items = withFallback(
+      polls.map((p: any) => ({ ...p, date: p?.date ? new Date(p.date) : undefined })),
       "survivorPolls"
     );
+    log("survivorPolls: total", polls.length, "chosen", items.length);
     if (items.length) {
       const text = items.map((p: any) =>
         `Question: ${p.question}\n` +
@@ -205,7 +185,7 @@ export async function compileNewsletter(
 
   const defaultSubject = `Skol Sisters Weekly Rundown — ${rangeLabel()}`;
 
-  // No AI needed if everything is verbatim
+  // If everything is verbatim (no summaries needed), build directly
   if (!toSummarize.length) {
     const markdown = `# ${defaultSubject}\n\n` +
       sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n");
@@ -214,7 +194,7 @@ export async function compileNewsletter(
 
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER;
 
-  // Fallback if no key
+  // Fallback when no key
   if (!apiKey) {
     const bullets = toSummarize
       .map(m => `### ${m.title}\n\n${m.text.split("\n").slice(0, 12).join("\n")}`)
@@ -225,7 +205,7 @@ export async function compileNewsletter(
     return { subject: defaultSubject, markdown: markdown.trim() };
   }
 
-  // ---------- OpenAI via fetch (no SDK) ----------
+  // ---- OpenAI via fetch (no SDK) ----
   const system =
     "You are the Skol Sisters newsletter writer. Tone: witty, playful, NFL-savvy. " +
     "Produce a single newsletter-length Markdown email (≈600–900 words). " +
@@ -242,18 +222,13 @@ export async function compileNewsletter(
     footer: "_You’re getting this because you subscribed on heyskolssister.com_",
   };
 
-  const model = process.env.OPENAI_NEWSLETTER_MODEL || "gpt-4o-mini";
-
   let md = "";
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model,
+        model: process.env.OPENAI_NEWSLETTER_MODEL || "gpt-4o-mini",
         temperature: 0.7,
         messages: [
           { role: "system", content: system },
@@ -270,17 +245,13 @@ export async function compileNewsletter(
     });
     const json: any = await resp.json().catch(() => ({}));
     md = json?.choices?.[0]?.message?.content?.trim() || "";
-  } catch {
-    // fall through to minimal assembler below
-  }
+  } catch {}
 
   const subject = /#\s+(.+)/.exec(md)?.[1]?.trim() || defaultSubject;
 
-  if (md) {
-    return { subject, markdown: md };
-  }
+  if (md) return { subject, markdown: md };
 
-  // Minimal fallback if API fails
+  // Last-resort assembler if API fails
   const bullets = toSummarize
     .map(m => `### ${m.title}\n\n${m.text.split("\n").slice(0, 12).join("\n")}`)
     .join("\n\n");
