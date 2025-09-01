@@ -29,6 +29,7 @@ export default function ClientUI(props: {
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
+  actionSendTest: (fd: FormData) => Promise<void>; // NEW
   actionDelete: (fd: FormData) => Promise<void>;
 }) {
   const {
@@ -40,6 +41,7 @@ export default function ClientUI(props: {
     actionSave,
     actionSchedule,
     actionSendNow,
+    actionSendTest,
     actionDelete,
   } = props;
 
@@ -48,7 +50,7 @@ export default function ClientUI(props: {
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
 
-  // ⬅️ When a new draft is compiled + redirect with ?id=..., sync fields into editor immediately
+  // When a new draft is compiled (redirect with ?id=...), sync editor immediately
   useEffect(() => {
     setTitle(existing.title);
     setSubject(existing.subject);
@@ -56,6 +58,7 @@ export default function ClientUI(props: {
     setAudienceTag(existing.audienceTag || "");
   }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
 
+  // -------- Preview (very light Markdown) --------
   const previewHtml = (markdown || "")
     .split("\n")
     .map((l) => {
@@ -63,28 +66,85 @@ export default function ClientUI(props: {
       if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
       if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
       if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-      if (!l.trim()) return "<br/>"; // ⬅️ keep visible paragraph breaks
+      if (!l.trim()) return "<br/>";
       return `<p class="opacity-80">${l}</p>`;
     })
     .join("\n")
     .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
 
-  /** ------- Simple Markdown toolbar ------- */
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  function insert(before: string, after = "", placeholder = "text") {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const { selectionStart: s, selectionEnd: e } = ta;
-    const sel = ta.value.slice(s, e) || placeholder;
-    const next = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
+  // -------- Editor helpers (fixed "¶ Break" inserting text) --------
+  const mdRef = useRef<HTMLTextAreaElement>(null);
+
+  function setMD(next: string) {
     setMarkdown(next);
-    // restore caret roughly after inserted text
-    const newPos = (s ?? 0) + before.length + sel.length + after.length;
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = newPos;
+    queueMicrotask(() => {
+      if (!mdRef.current) return;
+      const pos = Math.min(mdRef.current.value.length, mdRef.current.selectionStart ?? next.length);
+      mdRef.current.focus();
+      mdRef.current.setSelectionRange(pos, pos);
     });
   }
+
+  function applyInline(open: string, close = open) {
+    const el = mdRef.current;
+    if (!el) return;
+    const s = el.selectionStart ?? 0;
+    const e = el.selectionEnd ?? s;
+    const before = el.value.slice(0, s);
+    const selected = el.value.slice(s, e);
+    const after = el.value.slice(e);
+    const wrapped = `${open}${selected}${close}`;
+    setMD(before + wrapped + after);
+    queueMicrotask(() => {
+      const pos = before.length + wrapped.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  function insertAtCursor(snippet: string) {
+    const el = mdRef.current;
+    if (!el) return;
+    const s = el.selectionStart ?? 0;
+    const e = el.selectionEnd ?? s;
+    const before = el.value.slice(0, s);
+    const after = el.value.slice(e);
+    const next = before + snippet + after;
+    setMD(next);
+    queueMicrotask(() => {
+      const pos = before.length + snippet.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  function insertList() {
+    insertAtCursor("\n- Item 1\n- Item 2\n- Item 3\n");
+  }
+  function insertLink() {
+    const el = mdRef.current;
+    if (!el) return;
+    const s = el.selectionStart ?? 0;
+    const e = el.selectionEnd ?? s;
+    const selected = el.value.slice(s, e) || "link text";
+    const before = el.value.slice(0, s);
+    const after = el.value.slice(e);
+    const snippet = `[${selected}](https://example.com)`;
+    const next = before + snippet + after;
+    setMD(next);
+    queueMicrotask(() => {
+      const urlStart = before.length + snippet.indexOf("(") + 1;
+      const urlEnd = before.length + snippet.indexOf(")");
+      el.focus();
+      el.setSelectionRange(urlStart, urlEnd);
+    });
+  }
+  function insertBreak() {
+    insertAtCursor("\n\n"); // no placeholder
+  }
+  function insertHR() {
+    insertAtCursor("\n\n---\n\n");
+  }
+
   const toolbarBtn =
     "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
 
@@ -92,10 +152,10 @@ export default function ClientUI(props: {
     <main className="container max-w-6xl py-10 space-y-8">
       <header>
         <h1 className="text-3xl font-bold">Newsletter</h1>
-        <p className="text-white/70">Pick sources, compile with AI, edit, schedule, send.</p>
+        <p className="text-white/70">Pick sources, compile with AI, edit, test, schedule, send.</p>
       </header>
 
-      {/* 1) Choose content — compiling SAVES as “compiled” and the redirect pre-fills editor */}
+      {/* 1) Choose content */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">1) Choose content</h2>
 
@@ -182,7 +242,7 @@ export default function ClientUI(props: {
       {/* 2) Edit draft */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">2) Edit draft</h2>
-        <form action={props.actionSave} className="grid gap-3">
+        <form action={actionSave} className="grid gap-3">
           <input type="hidden" name="id" value={existing.id} />
           <label className="grid gap-1 text-sm">
             <span className="text-white/80">Internal title</span>
@@ -203,23 +263,25 @@ export default function ClientUI(props: {
             />
           </label>
 
-          {/* Formatting toolbar */}
-          <div className="flex flex-wrap gap-2 text-xs">
-            <button type="button" className={toolbarBtn} onClick={() => insert("**", "**")}>Bold</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("_", "_")}>Italics</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("<u>", "</u>")}>Underline</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("## ", "")}>H2</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("- ", "")}>List</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("[", "](https://)")}>Link</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>¶ Break</button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n---\n\n", "")}>HR</button>
+          {/* Sticky formatting toolbar */}
+          <div className="sticky top-0 z-10 -mx-3 px-3 py-2 bg-black/40 backdrop-blur border-b border-white/10">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button type="button" className={toolbarBtn} onClick={() => applyInline("**")}>Bold</button>
+              <button type="button" className={toolbarBtn} onClick={() => applyInline("_")}>Italics</button>
+              <button type="button" className={toolbarBtn} onClick={() => applyInline("<u>", "</u>")}>Underline</button>
+              <button type="button" className={toolbarBtn} onClick={() => insertAtCursor("\n\n## ")}>H2</button>
+              <button type="button" className={toolbarBtn} onClick={insertList}>List</button>
+              <button type="button" className={toolbarBtn} onClick={insertLink}>Link</button>
+              <button type="button" className={toolbarBtn} onClick={insertBreak}>¶ Break</button>
+              <button type="button" className={toolbarBtn} onClick={insertHR}>HR</button>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Body (Markdown)</span>
               <textarea
-                ref={textareaRef}
+                ref={mdRef}
                 name="markdown"
                 rows={18}
                 value={markdown}
@@ -250,11 +312,31 @@ export default function ClientUI(props: {
         </form>
       </section>
 
+      {/* 2.5) Send a test email */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+        <h2 className="text-lg font-semibold">2.5) Send test email</h2>
+        <p className="text-sm text-white/70">
+          Send this draft to specific addresses (comma-separated) before sending to your full audience.
+        </p>
+        <form action={actionSendTest} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="id" value={existing.id} />
+          <label className="grid gap-1 text-sm min-w-[280px] flex-1">
+            <span className="text-white/80">Recipient emails</span>
+            <input
+              name="testRecipients"
+              placeholder="you@example.com, teammate@example.com"
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+            />
+          </label>
+          <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send test</button>
+        </form>
+      </section>
+
       {/* 3) Schedule / Send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
-          <form action={props.actionSchedule} className="flex items-end gap-2">
+          <form action={actionSchedule} className="flex items-end gap-2">
             <input type="hidden" name="id" value={existing.id} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
@@ -263,14 +345,14 @@ export default function ClientUI(props: {
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Schedule</button>
           </form>
 
-          <form action={props.actionSendNow}>
+          <form action={actionSendNow}>
             <input type="hidden" name="id" value={existing.id} />
             <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">Send now</button>
           </form>
         </div>
       </section>
 
-      {/* Newsletters list (status + delete) */}
+      {/* Newsletters list */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
         <h2 className="text-lg font-semibold">Newsletters</h2>
         {drafts.length === 0 ? (
@@ -295,7 +377,7 @@ export default function ClientUI(props: {
                   >
                     Edit
                   </a>
-                  <form action={props.actionDelete}>
+                  <form action={actionDelete}>
                     <input type="hidden" name="id" value={d.id} />
                     <button className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10">
                       Delete
