@@ -33,9 +33,12 @@ export default function ClientUI(props: {
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
+  /** ⬇️ accept the server action that returns void */
+  actionSendTest: (fd: FormData) => Promise<void>;
   actionDelete: (fd: FormData) => Promise<void>;
-  actionSendTest: (fd: FormData) => Promise<SendTestResult>;
-}) {
+})
+
+ {
   const {
     existing,
     drafts,
@@ -54,6 +57,9 @@ export default function ClientUI(props: {
   const [subject, setSubject] = useState(existing.subject);
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
+  const [testTo, setTestTo] = useState("");
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   /* sync when a different draft loads */
   useEffect(() => {
@@ -101,25 +107,26 @@ export default function ClientUI(props: {
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<SendTestResult | null>(null);
 
-  async function onSendTest(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSendingTest(true);
-    setTestResult(null);
-    try {
-      const data = new FormData(e.currentTarget);
-      // always use current editor values
-      data.set("subject", subject);
-      data.set("markdown", markdown);
-      const res = await actionSendTest(data);
-      setTestResult(
-        res ?? { ok: true, message: `Sent test to ${(data.get("to") || "").toString()}` }
-      );
-    } catch (err: any) {
-      setTestResult({ ok: false, message: err?.message || "Send failed." });
-    } finally {
-      setSendingTest(false);
-    }
+ async function onSendTest(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  setSendingTest(true);
+  setTestResult(null);
+  try {
+    const fd = new FormData();
+    // use current editor values so the test matches what you see
+    fd.set("id", existing.id);
+    fd.set("subject", subject);
+    fd.set("markdown", markdown);
+    fd.set("to", testTo);
+
+    await props.actionSendTest(fd); // server action returns void
+    setTestResult({ ok: true, message: "✅ Test email sent." });
+  } catch (err: any) {
+    setTestResult({ ok: false, message: `❌ Send failed: ${err?.message || "Unknown error"}` });
+  } finally {
+    setSendingTest(false);
   }
+}
 
   return (
     <main className="container max-w-6xl py-10 space-y-8">
@@ -275,41 +282,32 @@ export default function ClientUI(props: {
       </section>
 
       {/* 2.5) Send a test */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Send a test</h2>
-        <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
-          <input type="hidden" name="id" value={existing.id} />
-          <input type="hidden" name="subject" value={subject} />
-          <input type="hidden" name="markdown" value={markdown} />
-          <label className="grid gap-1 text-sm min-w-[260px] flex-1">
-            <span className="text-white/80">Recipient(s)</span>
-            <input
-              name="to"
-              placeholder="you@example.com, other@site.com"
-              value={testTo}
-              onChange={(e) => setTestTo(e.target.value)}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-            />
-          </label>
-          <button
-            disabled={sendingTest}
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
-          >
-            {sendingTest ? "Sending…" : "Send test"}
-          </button>
-        </form>
-        {testResult && (
-          <div
-            className={`rounded border px-3 py-2 text-sm ${
-              testResult.ok
-                ? "border-emerald-400 text-emerald-200 bg-emerald-400/10"
-                : "border-red-400 text-red-200 bg-red-400/10"
-            }`}
-          >
-            {testResult.message || (testResult.ok ? "Test email sent." : "Test failed.")}
-          </div>
-        )}
-      </section>
+<section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
+  <h2 className="text-lg font-semibold">Send a test</h2>
+  <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
+    <label className="grid gap-1 text-sm min-w-[260px] flex-1">
+      <span className="text-white/80">Recipient(s)</span>
+      <input
+        name="to"
+        placeholder="you@example.com, other@site.com"
+        value={testTo}
+        onChange={(e) => setTestTo(e.target.value)}
+        className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+      />
+    </label>
+    <button
+      disabled={sendingTest}
+      className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
+    >
+      {sendingTest ? "Sending…" : "Send test"}
+    </button>
+  </form>
+  {testResult && (
+    <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+      {testResult.message}
+    </p>
+  )}
+</section>
 
       {/* 3) Schedule / Send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
