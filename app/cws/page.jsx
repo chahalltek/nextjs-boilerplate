@@ -3,6 +3,7 @@ import { listDir, getFile } from "@/lib/github";
 import matter from "gray-matter";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import NflScheduleTicker from "@/components/NflScheduleTicker";
 
 export const runtime = "nodejs";
@@ -127,59 +128,4 @@ export default async function CwsIndexPage() {
         <NflScheduleTicker />
       </div>
 
-      <div className="max-w-5xl mx-auto py-10 space-y-10">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Weekly Recap</h1>
-          <RssBadge />
-        </div>
-
-        {!latest ? (
-          <>
-            <div className="text-white/70">No recaps yet. Check back soon!</div>
-            <CwsExplainer />
-          </>
-        ) : (
-          <>
-            <article className="card p-5 space-y-3">
-              <div className="text-sm text-white/60">{latest.date}</div>
-              <h2 className="text-xl font-semibold">{latest.title}</h2>
-              {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown>{latest.content}</ReactMarkdown>
-              </div>
-              <div>
-                <Link
-                  href={`/cws/${encodeURIComponent(latest.slug)}`}
-                  className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
-                >
-                  Open comments & reactions →
-                </Link>
-              </div>
-            </article>
-
-            <CwsExplainer />
-
-            {older.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Previous Weeks</h3>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {older.map((r) => (
-                    <Link
-                      key={r.slug}
-                      href={`/cws/${encodeURIComponent(r.slug)}`}
-                      className="card p-4 block hover:bg-white/5"
-                    >
-                      <div className="text-xs text-white/50">{r.date}</div>
-                      <div className="font-medium">{r.title}</div>
-                      {r.excerpt && <div className="text-sm text-white/70 mt-1">{r.excerpt}</div>}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+      <div className="ma
