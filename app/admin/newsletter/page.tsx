@@ -11,6 +11,8 @@ import {
   type SourcePick,
 } from "@/lib/newsletter/store";
 
+import { listDir, getFile } from "@/lib/github";
+import matter from "gray-matter";
 import ClientUI from "./ClientUI";
 
 export const runtime = "nodejs";
@@ -18,6 +20,7 @@ export const dynamic = "force-dynamic";
 
 const genId = () => Math.random().toString(36).slice(2, 10);
 
+// ----- Sources shown in the UI ------------------------------------------------
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
@@ -28,6 +31,7 @@ const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
 ];
 const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderboard"];
 
+// ----- Date helpers -----------------------------------------------------------
 function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   if (dateFrom || dateTo) return { dateFrom, dateTo };
   const now = new Date();
@@ -47,12 +51,74 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   return { dateFrom: undefined, dateTo: undefined };
 }
 
+// ----- CWS fallback fetch (guards against empty Weekly Recap in compile) ------
+const CWS_DIR = "content/recaps";
+const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
+
+type Recap = {
+  slug: string;
+  title: string;
+  date: string;
+  content: string;
+  excerpt?: string;
+};
+
+function toTime(dateStr?: string) {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr);
+  if (!isNaN(d as any)) return d.getTime();
+  const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  return 0;
+}
+
+async function pullCwsWithinRange(dateFrom?: string, dateTo?: string, limit = 1): Promise<Recap[]> {
+  const items = await listDir(CWS_DIR).catch(() => []);
+  const files = items.filter((it: any) => it.type === "file" && /\.mdx?$/i.test(it.name));
+
+  const recaps: Recap[] = [];
+  for (const f of files) {
+    const file = await getFile(f.path).catch(() => null);
+    if (!file?.contentBase64) continue;
+
+    const raw = b64(file.contentBase64);
+    const parsed = matter(raw);
+    const fm: any = parsed.data || {};
+
+    const draft = fm.draft === true || String(fm.draft ?? "").trim().toLowerCase() === "true";
+    const publishedStr = String(fm.published ?? fm.active ?? "true").toLowerCase();
+    const visible = !["false", "0", "no"].includes(publishedStr);
+    const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
+    const scheduledInFuture = publishAt && Date.now() < publishAt.getTime();
+    if (draft || !visible || scheduledInFuture) continue;
+
+    // Optional date filtering
+    const dt = toTime(fm.date || "");
+    const fromOK = dateFrom ? dt >= toTime(dateFrom) : true;
+    const toOK = dateTo ? dt <= toTime(dateTo) : true;
+    if (!fromOK || !toOK) continue;
+
+    recaps.push({
+      slug: f.name.replace(/\.(md|mdx)$/i, ""),
+      title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
+      date: fm.date || "",
+      excerpt: fm.excerpt || "",
+      content: parsed.content || "",
+    });
+  }
+
+  recaps.sort((a, b) => toTime(b.date) - toTime(a.date));
+  return recaps.slice(0, Math.max(1, limit));
+}
+
+// ----- Page -------------------------------------------------------------------
 export default async function NewsletterAdmin({
   searchParams,
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
+  const compiledFlash = searchParams?.compiled === "1";
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
@@ -60,6 +126,7 @@ export default async function NewsletterAdmin({
   async function actionCompile(formData: FormData) {
     "use server";
     const { compileNewsletter } = await import("@/lib/newsletter/compile");
+
     const picks: SourcePick[] = ALL_SOURCES
       .filter((s) => formData.get(`include:${s.key}`) === "on")
       .map((s) => ({
@@ -85,24 +152,45 @@ export default async function NewsletterAdmin({
     const globalDateTo = String(formData.get("dateTo") || "") || undefined;
     const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
-    const { subject, markdown } = await compileNewsletter(picks, {
+    // Compile via main pipeline
+    let { subject, markdown } = await compileNewsletter(picks, {
       dateFrom,
       dateTo,
       stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
       perSource,
     });
 
-    // Create draft (status remains "draft" in storage; UI will show "compiled")
+    // --- Guard: ensure Weekly Recap made it in if requested -------------------
+    const wantsCws = picks.some((p) => p.key === "weeklyRecap");
+    const hasCwsAlready = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
+    if (wantsCws && !hasCwsAlready) {
+      try {
+        const cws = await pullCwsWithinRange(dateFrom, dateTo, 1);
+        if (cws.length) {
+          const block =
+            `\n\n## Weekly Recap\n\n` +
+            `**${cws[0].title}** (${cws[0].date})\n\n` +
+            `${cws[0].content.trim()}\n`;
+          markdown = (markdown || "").trim() + block;
+        }
+      } catch (e) {
+        console.error("CWS fallback failed:", e);
+      }
+    }
+    // --------------------------------------------------------------------------
+
     const draft = await saveDraft({
       subject: subject || "Weekly Newsletter",
-      markdown,
+      markdown: markdown || "",
       picks,
       status: "draft",
       scheduledAt: null,
       audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
       title: "Weekly Newsletter",
     });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}`);
+
+    // Show a small confirmation banner on return
+    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1`);
   }
 
   async function actionSave(formData: FormData) {
@@ -146,7 +234,7 @@ export default async function NewsletterAdmin({
     const id = String(formData.get("id") || "");
     const d = await getDraft(id);
     if (!d) return;
-    await sendNewsletter(d);
+    await sendNewsletter(d); // uses BCC + chunking under the hood
     await markStatus(id, "sent");
     redirect(`/admin/newsletter`);
   }
@@ -181,6 +269,7 @@ export default async function NewsletterAdmin({
             };
 
       if (recipients.length > 0) {
+        // SAFE: sendNewsletter(draft, { recipients }) sends ONLY to these addresses (via BCC)
         await sendNewsletter(draft, { recipients });
       } else {
         console.warn("Send test skipped: no recipients provided.");
@@ -233,24 +322,32 @@ export default async function NewsletterAdmin({
   });
 
   return (
-    <ClientUI
-      existing={{
-        id: existing?.id || "",
-        title: existing?.title || "Weekly Newsletter",
-        subject: existing?.subject || "Your weekly Skol Sisters rundown",
-        markdown: existing?.markdown || "",
-        audienceTag: (existing as any)?.audienceTag,
-        previewHtml,
-      }}
-      drafts={prettyDrafts}
-      allSources={ALL_SOURCES}
-      neverVerbatim={NEVER_VERBATIM}
-      actionCompile={actionCompile}
-      actionSave={actionSave}
-      actionSchedule={actionSchedule}
-      actionSendNow={actionSendNow}
-      actionSendTest={actionSendTest}
-      actionDelete={actionDelete}
-    />
+    <main className="container max-w-6xl py-8 space-y-4">
+      {compiledFlash && (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 text-green-300 px-3 py-2">
+          Draft compiled successfully. You can edit and send below.
+        </div>
+      )}
+
+      <ClientUI
+        existing={{
+          id: existing?.id || "",
+          title: existing?.title || "Weekly Newsletter",
+          subject: existing?.subject || "Your weekly Skol Sisters rundown",
+          markdown: existing?.markdown || "",
+          audienceTag: (existing as any)?.audienceTag,
+          previewHtml,
+        }}
+        drafts={prettyDrafts}
+        allSources={ALL_SOURCES}
+        neverVerbatim={NEVER_VERBATIM}
+        actionCompile={actionCompile}
+        actionSave={actionSave}
+        actionSchedule={actionSchedule}
+        actionSendNow={actionSendNow}
+        actionSendTest={actionSendTest}
+        actionDelete={actionDelete}
+      />
+    </main>
   );
 }
