@@ -7,7 +7,7 @@ const RESEND_KEY   = process.env.RESEND_API_KEY || "";
 const FROM         = process.env.RESEND_FROM || "Hey Skol Sister <no-reply@heyskolsister.com>";
 const REPLY_TO     = process.env.RESEND_REPLY_TO || undefined;
 const BATCH_SIZE   = Math.max(1, Number(process.env.RESEND_BCC_BATCH_SIZE || 50));
-const LIST_EMAIL   = process.env.LIST_EMAIL || "unsubscribe@heyskolsister.com"; // optional, improves deliverability
+const LIST_EMAIL   = process.env.LIST_EMAIL || "unsubscribe@heyskolsister.com"; // optional
 
 export type SendOpts = { recipients?: string[]; audienceTag?: string };
 export type SendResult = {
@@ -79,9 +79,8 @@ export async function sendNewsletter(
         subject: draft.subject || "Hey Skol Sister",
         html,
         text,
-        replyTo: REPLY_TO, // <-- correct key (was reply_to)
+        replyTo: REPLY_TO, // correct key for SDK
         headers: {
-          // These headers are helpful for compliance/deliverability but optional
           ...(LIST_EMAIL ? { "List-Unsubscribe": `<mailto:${LIST_EMAIL}>` } : {}),
           "X-Entity-Ref-ID": draft.id,
         },
@@ -92,8 +91,12 @@ export async function sendNewsletter(
         ],
       });
 
-      if (res?.id) {
-        if (!firstId) firstId = res.id;
+      // New SDK shape: { data, error }
+      if (res.error) {
+        failed += batch.length;
+        errors.push(res.error.message || "Resend error");
+      } else if (res.data?.id) {
+        if (!firstId) firstId = res.data.id;
         delivered += batch.length;
       } else {
         failed += batch.length;
