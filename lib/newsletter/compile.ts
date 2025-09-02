@@ -1,3 +1,4 @@
+// lib/newsletter/compile.ts
 import fs from "fs/promises";
 import path from "path";
 import matter from "gray-matter";
@@ -47,7 +48,7 @@ export async function compileNewsletter(
     return "This Week";
   }
 
-  // Try one of several possible content roots (handles either /content or /app/content)
+  // Try several possible content roots (handles /content or /app/content)
   async function readMarkdownDirOneOf(relRoots: string[]) {
     for (const rel of relRoots) {
       const dir = path.join(process.cwd(), rel);
@@ -55,7 +56,7 @@ export async function compileNewsletter(
       try { files = await fs.readdir(dir); } catch { continue; }
       const out: { title: string; date?: Date; body: string; slug: string }[] = [];
       for (const f of files) {
-        if (!/\.(md|mdx)$/i.test(f)) continue;
+        if (!/\.mdx?$/i.test(f)) continue;
         try {
           const full = path.join(dir, f);
           const raw = await fs.readFile(full, "utf8");
@@ -71,9 +72,7 @@ export async function compileNewsletter(
       out.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
       if (out.length) return out;
     }
-    return [] as {
-      title: string; date?: Date; body: string; slug: string
-    }[];
+    return [] as { title: string; date?: Date; body: string; slug: string }[];
   }
 
   async function readPolls(): Promise<any[]> {
@@ -100,10 +99,15 @@ export async function compileNewsletter(
   const sections: { title: string; markdown: string; verbatim: boolean }[] = [];
   const toSummarize: { source: NewsletterSourceKey; title: string; text: string }[] = [];
 
-  // Blog
+  // Blog (supports content/posts AND content/blog)
   if (wanted.has("blog")) {
     const pick = byKey("blog")!;
-    let posts = (await readMarkdownDirOneOf(["content/posts", "app/content/posts"])).filter(p => within(p.date, "blog"));
+    let posts = (await readMarkdownDirOneOf([
+      "content/posts",
+      "app/content/posts",
+      "content/blog",
+      "app/content/blog",
+    ])).filter(p => within(p.date, "blog"));
     posts = cap(posts, "blog");
     if (posts.length) {
       if (pick.verbatim) {
@@ -125,7 +129,8 @@ export async function compileNewsletter(
   // Weekly Recap
   if (wanted.has("weeklyRecap")) {
     const pick = byKey("weeklyRecap")!;
-    let recaps = (await readMarkdownDirOneOf(["content/recaps", "app/content/recaps"])).filter(r => within(r.date, "weeklyRecap"));
+    let recaps = (await readMarkdownDirOneOf(["content/recaps", "app/content/recaps"]))
+      .filter(r => within(r.date, "weeklyRecap"));
     recaps = cap(recaps, "weeklyRecap");
     if (recaps.length) {
       if (pick.verbatim) {
@@ -147,7 +152,12 @@ export async function compileNewsletter(
   // Hold’em / Fold’em (heuristic on titles)
   if (wanted.has("holdem")) {
     const pick = byKey("holdem")!;
-    let posts = (await readMarkdownDirOneOf(["content/posts", "app/content/posts"]))
+    let posts = (await readMarkdownDirOneOf([
+      "content/posts",
+      "app/content/posts",
+      "content/blog",
+      "app/content/blog",
+    ]))
       .filter(p => within(p.date, "holdem"))
       .filter(p => /hold[\s’'`-]*em|stash|fold/i.test(p.title));
     posts = cap(posts, "holdem");
@@ -171,7 +181,12 @@ export async function compileNewsletter(
   // Start / Sit (heuristic)
   if (wanted.has("sitStart")) {
     const pick = byKey("sitStart")!;
-    let posts = (await readMarkdownDirOneOf(["content/posts", "app/content/posts"]))
+    let posts = (await readMarkdownDirOneOf([
+      "content/posts",
+      "app/content/posts",
+      "content/blog",
+      "app/content/blog",
+    ]))
       .filter(p => within(p.date, "sitStart"))
       .filter(p => /start\s*\/?\s*sit|start-sit|start vs sit/i.test(p.title));
     posts = cap(posts, "sitStart");
@@ -215,7 +230,7 @@ export async function compileNewsletter(
   }
 
   // ---------- Build ----------
-  const defaultSubject = `Hey Skol Sister Weekly Rundown — ${rangeLabel()}`;
+  const defaultSubject = "Your weekly Hey Skol Sister rundown!";
 
   // All verbatim, nothing to summarize
   if (!toSummarize.length) {
@@ -224,15 +239,17 @@ export async function compileNewsletter(
     return { subject: defaultSubject, markdown: markdown.trim() };
   }
 
-  // Try OpenAI first
+  // Try OpenAI first (ensure OPENAI_API_KEY is set in env)
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_SERVER;
   if (apiKey) {
     try {
       const openai = new OpenAI({ apiKey });
       const system =
         "You are the Hey Skol Sister newsletter writer. Tone: witty, playful, NFL-savvy. " +
-        "Produce a single newsletter-length Markdown email (≈600–900 words). " +
-        "NEVER modify content marked VERBATIM; copy exact. Summarize and stitch the rest.";
+        "Output must be a single Markdown email (≈600–900 words). " +
+        "NEVER alter text in VERBATIM sections; copy them exactly. " +
+        "For all other material, WRITE ORIGINAL SUMMARIES — do not quote long passages or reproduce bodies verbatim. " +
+        "Keep summaries tight (2–4 sentences each) and add short connective intros. Use clear headings.";
 
       const style = opts?.stylePrompt?.trim()
         || "Make it funny and witty (never mean). Use short paragraphs and clear headings. Keep to newsletter length.";
@@ -252,12 +269,14 @@ export async function compileNewsletter(
           {
             role: "user",
             content:
-              "Assemble ONE Markdown newsletter. Start with an H1 title, then sections. " +
-              "Respect VERBATIM exactly; add connective tissue and polish for summarized parts. " +
-              "Finish with a brief sign-off.\n\n" +
+              "Assemble ONE Markdown newsletter. Start with an H1 title, then sections.\n" +
+              "Respect VERBATIM exactly; for non-verbatim content, summarize in your own words.\n" +
+              "Avoid pasting more than one sentence verbatim from any source. Do not include code fences around the output.\n\n" +
               "INPUT JSON:\n```json\n" + JSON.stringify(payload, null, 2) + "\n```",
           },
         ],
+        // optional: guard against overly long responses
+        // max_tokens: 1500,
       });
 
       const md = completion.choices[0]?.message?.content?.trim() || "";
@@ -269,11 +288,15 @@ export async function compileNewsletter(
     }
   }
 
-  // Fallback assembler (no truncation, no footer)
+  // Fallback assembler: headings + short “see more” stubs (no raw bodies)
+  const fallbackSummaries = toSummarize
+    .map(m => `## ${m.title}\n\n*Highlights from ${rangeLabel()}. See site for details.*`)
+    .join("\n\n");
+
   const markdown =
     `# ${defaultSubject}\n\n` +
     (sections.length ? sections.map(s => `## ${s.title}\n\n${s.markdown}`).join("\n\n") + "\n\n" : "") +
-    toSummarize.map(m => `## ${m.title}\n\n${m.text}`).join("\n\n");
+    fallbackSummaries;
 
   return { subject: defaultSubject, markdown: markdown.trim() };
 }
