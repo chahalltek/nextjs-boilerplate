@@ -4,6 +4,7 @@ import type { NewsletterDraft } from "@/lib/newsletter/store";
 /** Optional override for the email logo */
 const LOGO_URL =
   process.env.NEWSLETTER_LOGO_URL || "https://heyskolsister.com/logo.png";
+const LOGO_HEIGHT = Number(process.env.NEWSLETTER_LOGO_HEIGHT || 72); 
 const SITE = "https://heyskolsister.com";
 
 const NAV = [
