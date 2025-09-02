@@ -1,13 +1,9 @@
 // app/cws/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import rehypeRaw from "rehype-raw";
+import matter from "gray-matter";
 import NflScheduleTicker from "@/components/NflScheduleTicker";
 import { listDir, getFile } from "@/lib/github";
-import matter from "gray-matter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +18,6 @@ export const metadata: Metadata = {
 };
 
 const DIR = "content/recaps";
-const RSS_PATH =
-  "M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z";
-
 const b64 = (s?: string) => Buffer.from(s || "", "base64").toString("utf8");
 
 function toTime(dateStr?: string) {
@@ -41,8 +34,165 @@ type Recap = {
   title: string;
   date: string;
   excerpt: string;
-  content: string;
+  html: string; // pre-rendered HTML (admin-preview style)
 };
+
+// --- Minimal, admin-style Markdown -> HTML renderer --------------------
+function renderRecapHtml(md: string): string {
+  // normalize line endings & spaces
+  const lines = md.replace(/\r/g, "").replace(/\u00A0/g, " ").split("\n");
+
+  const out: string[] = [];
+  let i = 0;
+
+  const closeList = () => {
+    if (state.currentList) {
+      out.push(state.currentList === "ol-num"
+        ? "</ol>"
+        : state.currentList === "ol-alpha"
+        ? "</ol>"
+        : "</ul>");
+      state.currentList = null;
+    }
+  };
+
+  const state: { currentList: "ol-num" | "ol-alpha" | "ul" | null } = {
+    currentList: null,
+  };
+
+  const isH1 = (s: string) => /^#\s+/.test(s);
+  const isH2 = (s: string) => /^##\s+/.test(s);
+  const isH3 = (s: string) => /^###\s+/.test(s);
+
+  const isNum = (s: string) => /^\s*\d+\.\s+/.test(s);
+  const isAlpha = (s: string) => /^\s*[a-z]\.\s*$/i.test(s) || /^\s*[a-z]\.\s+/.test(s);
+  const isBullet = (s: string) => /^\s*[-*+]\s+/.test(s);
+
+  const pullItem = (startIndex: number, type: "num" | "alpha" | "bullet") => {
+    // Grab continuation lines until we hit the next item (of any list type) or a hard break
+    const items: string[] = [];
+    let j = startIndex;
+
+    // get first line text (strip marker if inline)
+    const first = lines[j];
+    let text = first;
+    if (type === "num") text = text.replace(/^\s*\d+\.\s+/, "");
+    else if (type === "alpha") text = text.replace(/^\s*[a-z]\.\s*/i, "");
+    else text = text.replace(/^\s*[-*+]\s+/, "");
+    items.push(text);
+    j++;
+
+    // collect continuation lines (wrapped paragraphs) until next marker / blank-blank boundary
+    while (j < lines.length) {
+      const l = lines[j];
+
+      // new list item starts -> stop
+      if (isNum(l) || isBullet(l) || isAlpha(l)) break;
+
+      // two blank lines -> paragraph boundary outside list
+      if (l.trim() === "" && j + 1 < lines.length && lines[j + 1].trim() === "") break;
+
+      // single blank line inside this item -> keep as paragraph separator token
+      items.push(l);
+      j++;
+    }
+
+    // collapse soft wraps inside paragraphs but preserve empty lines as <p> breaks
+    const html = items
+      .join("\n")
+      .replace(/[ \t]+$/gm, "")
+      .split(/\n{2,}/) // paragraphs within the item
+      .map((p) => `<p>${p.replace(/\n/g, " ").trim()}</p>`)
+      .join("");
+
+    return { html, next: j };
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Headings
+    if (isH1(line)) {
+      closeList();
+      out.push(`<h1 class="text-xl font-semibold mb-2">${line.replace(/^#\s+/, "")}</h1>`);
+      i++; continue;
+    }
+    if (isH2(line)) {
+      closeList();
+      out.push(`<h2 class="text-lg font-semibold mt-4 mb-2">${line.replace(/^##\s+/, "")}</h2>`);
+      i++; continue;
+    }
+    if (isH3(line)) {
+      closeList();
+      out.push(`<h3 class="font-semibold mt-3 mb-1">${line.replace(/^###\s+/, "")}</h3>`);
+      i++; continue;
+    }
+
+    // Alpha list (a., b., ...) — marker may be alone on its own line
+    if (isAlpha(line)) {
+      if (state.currentList !== "ol-alpha") {
+        closeList();
+        out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
+        state.currentList = "ol-alpha";
+      }
+      const { html, next } = pullItem(i, "alpha");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    // Numbered list
+    if (isNum(line)) {
+      if (state.currentList !== "ol-num") {
+        closeList();
+        out.push('<ol class="list-inside ml-5 space-y-1">');
+        state.currentList = "ol-num";
+      }
+      const { html, next } = pullItem(i, "num");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    // Bulleted list
+    if (isBullet(line)) {
+      if (state.currentList !== "ul") {
+        closeList();
+        out.push('<ul class="list-disc list-inside ml-5 space-y-1">');
+        state.currentList = "ul";
+      }
+      const { html, next } = pullItem(i, "bullet");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    // Blank line
+    if (line.trim() === "") {
+      closeList();
+      // collapse multiple blanks to one <br> gap
+      if (out.length && out[out.length - 1] !== "<br/>") out.push("<br/>");
+      i++; continue;
+    }
+
+    // Plain paragraph (collapse soft wraps until a blank line or a marker)
+    closeList();
+    const paras: string[] = [line];
+    let j = i + 1;
+    while (j < lines.length) {
+      const l = lines[j];
+      if (l.trim() === "") break;
+      if (isNum(l) || isBullet(l) || isAlpha(l) || isH1(l) || isH2(l) || isH3(l)) break;
+      paras.push(l);
+      j++;
+    }
+    out.push(
+      `<p class="opacity-80">${paras.join("\n").replace(/\n/g, " ").trim()}</p>`
+    );
+    i = j;
+  }
+
+  closeList();
+  return out.join("\n");
+}
+// ----------------------------------------------------------------------
 
 async function fetchPublishedRecaps(): Promise<Recap[]> {
   const items = await listDir(DIR).catch(() => []);
@@ -59,13 +209,10 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
 
     const draft =
       fm.draft === true || String(fm.draft ?? "").trim().toLowerCase() === "true";
-
     const publishedStr = String(fm.published ?? fm.active ?? "true").toLowerCase();
     const visible = !["false", "0", "no"].includes(publishedStr);
-
     const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
     const scheduledInFuture = publishAt && Date.now() < publishAt.getTime();
-
     if (draft || !visible || scheduledInFuture) continue;
 
     recaps.push({
@@ -73,7 +220,7 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      content: normalizeMarkdown(parsed.content || ""),
+      html: renderRecapHtml(parsed.content || ""),
     });
   }
 
@@ -81,84 +228,9 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
   return recaps;
 }
 
-/**
- * Normalize like the admin preview:
- *  - Ensure a blank line before numeric/bullet items so Markdown makes lists
- *  - Convert lettered items (a., b., …) — even when the marker is on its own line —
- *    into one <ol type="a"> with <li> that preserve inner line breaks
- */
-function normalizeMarkdown(md: string): string {
-  const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
-  const lines = src.split("\n");
-  const out: string[] = [];
-  let i = 0;
-  let prevBlank = true;
-
-  const isLetterMarker = (s: string) => /^\s*[a-z]\.\s*(.*)?$/i.test(s);
-
-  const paragraphize = (text: string) =>
-    text
-      .replace(/[ \t]+$/gm, "")
-      .split(/\n{2,}/) // paragraphs
-      .map((p) => `<p>${p.replace(/\n/g, "<br />").trim()}</p>`)
-      .join("");
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Lettered list block
-    if (isLetterMarker(line)) {
-      if (!prevBlank) out.push("");
-      out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
-
-      while (i < lines.length && isLetterMarker(lines[i])) {
-        const m = lines[i].match(/^\s*[a-z]\.\s*(.*)?$/i);
-        let itemLines: string[] = [];
-        if (m && m[1]) itemLines.push(m[1]); // inline text after "a. "
-        i++;
-
-        // Continuation lines until next letter marker; keep blanks
-        while (i < lines.length && !isLetterMarker(lines[i])) {
-          if (
-            itemLines.length > 0 &&
-            (/^\s*\d+\.\s+/.test(lines[i]) || /^\s*[-*+]\s+/.test(lines[i]))
-          )
-            break;
-
-          itemLines.push(lines[i]);
-
-          // If next non-blank is a new lettered item, end this one
-          let k = i + 1;
-          while (k < lines.length && lines[k].trim() === "") k++;
-          if (k < lines.length && isLetterMarker(lines[k])) {
-            i = k;
-            break;
-          }
-          i++;
-        }
-
-        const rawItem = itemLines.join("\n");
-        out.push(`<li>${paragraphize(rawItem)}</li>`);
-      }
-
-      out.push("</ol>", "");
-      prevBlank = true;
-      continue;
-    }
-
-    // Ensure Markdown recognizes regular lists
-    const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
-    if (isStdItem && !prevBlank) out.push("");
-
-    out.push(line);
-    prevBlank = line.trim() === "";
-    i++;
-  }
-
-  return out.join("\n");
-}
-
 function RssBadge() {
+  const RSS_PATH =
+    "M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z";
   return (
     <Link
       href="/cws/rss"
@@ -243,25 +315,10 @@ export default async function CwsIndexPage() {
               <div className="text-sm text-white/60">{latest.date}</div>
               <h2 className="text-xl font-semibold">{latest.title}</h2>
               {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown
-                  // Cast to quiet the DefinitelyTyped plugin churn
-                  remarkPlugins={[remarkGfm as any, remarkBreaks as any]}
-                  rehypePlugins={[rehypeRaw as any]}
-                  skipHtml={false}
-                  components={{
-                    ol: ({ node, ...props }) => (
-                      <ol className="list-inside ml-5 space-y-1" {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul className="list-disc list-inside ml-5 space-y-1" {...props} />
-                    ),
-                    li: ({ node, ...props }) => <li className="[&>p]:my-1" {...props} />,
-                  }}
-                >
-                  {latest.content}
-                </ReactMarkdown>
-              </div>
+              <div
+                className="prose prose-invert max-w-none [&_ol]:list-inside [&_ol]:ml-5 [&_ol]:space-y-1 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-5 [&_ul]:space-y-1 [&_li>p]:my-1"
+                dangerouslySetInnerHTML={{ __html: latest.html }}
+              />
               <div>
                 <Link
                   href={`/cws/${encodeURIComponent(latest.slug)}`}
