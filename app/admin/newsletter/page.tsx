@@ -258,11 +258,7 @@ export default async function NewsletterAdmin({
   async function actionSendTest(formData: FormData) {
     "use server";
     const { sendNewsletter } = await import("@/lib/newsletter/send");
-qs.set("test", res.ok ? "1" : "0");
-qs.set("testDelivered", String(res.delivered));
-qs.set("testFailed", String(res.failed));
-if (res.id) qs.set("testId", res.id);
-if (res.errors.length) qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
+
     const id = String(formData.get("id") || "");
     const subject = String(formData.get("subject") || "");
     const markdown = String(formData.get("markdown") || "");
@@ -274,27 +270,27 @@ if (res.errors.length) qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
     const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
 
     const base = id ? await getDraft(id) : null;
-    const draft: NewsletterDraft =
-      base
-        ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
-        : {
-            id: genId(),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            subject: subject || "Newsletter Test",
-            markdown,
-            picks: [],
-            status: "draft",
-            scheduledAt: null,
-            audienceTag: undefined,
-          };
+    const draft: NewsletterDraft = base
+      ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
+      : {
+          id: genId(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          subject: subject || "Newsletter Test",
+          markdown,
+          picks: [],
+          status: "draft",
+          scheduledAt: null,
+          audienceTag: undefined,
+        };
 
-    const qs = new URLSearchParams();
-    qs.set("nonce", String(Date.now()));
+    const qs = new URLSearchParams({ nonce: String(Date.now()) });
+    const baseUrl = `/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}`;
+
     if (!recipients.length) {
       qs.set("test", "0");
       qs.set("testMsg", "No recipients provided.");
-      return redirect(`/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}&${qs}`);
+      return redirect(`${baseUrl}&${qs.toString()}`);
     }
 
     try {
@@ -302,14 +298,16 @@ if (res.errors.length) qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
       qs.set("test", res?.ok === false ? "0" : "1");
       if (typeof res?.delivered === "number") qs.set("testDelivered", String(res.delivered));
       if (typeof res?.failed === "number") qs.set("testFailed", String(res.failed));
-      if (Array.isArray(res?.errors) && res.errors.length)
+      if (res?.id) qs.set("testId", String(res.id));
+      if (Array.isArray(res?.errors) && res.errors.length) {
         qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
+      }
     } catch (e: any) {
       qs.set("test", "0");
       qs.set("testMsg", e?.message || "Unknown error");
     }
 
-    return redirect(`/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}&${qs}`);
+    return redirect(`${baseUrl}&${qs.toString()}`);
   }
 
   async function actionDelete(formData: FormData) {
