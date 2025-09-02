@@ -1,44 +1,48 @@
 // app/cws/page.tsx
-import type { Metadata } from "next";
-import Link from "next/link";
-import matter from "gray-matter";
-import NflScheduleTicker from "@/components/NflScheduleTicker";
+import React from "react";
 import { listDir, getFile } from "@/lib/github";
+import matter from "gray-matter";
+import Link from "next/link";
+import NflScheduleTicker from "@/components/NflScheduleTicker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "Weekly Recap — Hey Skol Sister",
   description:
     "Coulda, Woulda, Shoulda: weekly fantasy recaps, lessons learned, and community reactions.",
   alternates: { types: { "application/rss+xml": "/cws/rss" } },
 };
 
-const DIR = "content/recaps";
-const b64 = (s?: string) => Buffer.from(s || "", "base64").toString("utf8");
-
-function toTime(dateStr?: string) {
-  if (!dateStr) return 0;
-  const d = new Date(dateStr);
-  if (!isNaN(d as any)) return d.getTime();
-  const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
-  return 0;
-}
-
+// ----------------------------------------------------------------------------
+// Types & small utils
+// ----------------------------------------------------------------------------
 type Recap = {
   slug: string;
   title: string;
   date: string;
   excerpt: string;
-  html: string; // pre-rendered HTML (admin-preview style)
+  content: string;
 };
 
-// --- Minimal, admin-style Markdown -> HTML renderer --------------------
-// --- Minimal, admin-style Markdown -> HTML renderer (with inline formatting) ---
+const DIR = "content/recaps";
+const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
+
+function toTime(dateStr?: string) {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr);
+  if (!isNaN(d.valueOf())) return d.getTime();
+  const m = String(dateStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  return 0;
+}
+
+// ----------------------------------------------------------------------------
+// Minimal, admin-style Markdown -> HTML renderer (with inline formatting)
+// ----------------------------------------------------------------------------
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -50,8 +54,11 @@ function inlineMd(s: string) {
   // inline code: `code`
   x = x.replace(/`([^`]+)`/g, "<code>$1</code>");
 
-  // links: [text](https://url)
-  x = x.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, `<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>`);
+  // links: [text](https?://url)
+  x = x.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    `<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>`
+  );
 
   // bold: **text** or __text__
   x = x.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -122,18 +129,29 @@ function renderRecapHtml(md: string): string {
 
     if (isH1(line)) {
       closeList();
-      out.push(`<h1 class="text-xl font-semibold mb-2">${inlineMd(line.replace(/^#\s+/, ""))}</h1>`);
-      i++; continue;
+      out.push(
+        `<h1 class="text-xl font-semibold mb-2">${inlineMd(line.replace(/^#\s+/, ""))}</h1>`
+      );
+      i++;
+      continue;
     }
     if (isH2(line)) {
       closeList();
-      out.push(`<h2 class="text-lg font-semibold mt-4 mb-2">${inlineMd(line.replace(/^##\s+/, ""))}</h2>`);
-      i++; continue;
+      out.push(
+        `<h2 class="text-lg font-semibold mt-4 mb-2">${inlineMd(
+          line.replace(/^##\s+/, "")
+        )}</h2>`
+      );
+      i++;
+      continue;
     }
     if (isH3(line)) {
       closeList();
-      out.push(`<h3 class="font-semibold mt-3 mb-1">${inlineMd(line.replace(/^###\s+/, ""))}</h3>`);
-      i++; continue;
+      out.push(
+        `<h3 class="font-semibold mt-3 mb-1">${inlineMd(line.replace(/^###\s+/, ""))}</h3>`
+      );
+      i++;
+      continue;
     }
 
     if (isAlpha(line)) {
@@ -144,7 +162,8 @@ function renderRecapHtml(md: string): string {
       }
       const { html, next } = pullItem(i, "alpha");
       out.push(`<li>${html}</li>`);
-      i = next; continue;
+      i = next;
+      continue;
     }
 
     if (isNum(line)) {
@@ -155,7 +174,8 @@ function renderRecapHtml(md: string): string {
       }
       const { html, next } = pullItem(i, "num");
       out.push(`<li>${html}</li>`);
-      i = next; continue;
+      i = next;
+      continue;
     }
 
     if (isBullet(line)) {
@@ -166,13 +186,15 @@ function renderRecapHtml(md: string): string {
       }
       const { html, next } = pullItem(i, "bullet");
       out.push(`<li>${html}</li>`);
-      i = next; continue;
+      i = next;
+      continue;
     }
 
     if (line.trim() === "") {
       closeList();
       if (out.length && out[out.length - 1] !== "<br/>") out.push("<br/>");
-      i++; continue;
+      i++;
+      continue;
     }
 
     // plain paragraph with soft-wrap collapsing + inline formatting
@@ -186,143 +208,8 @@ function renderRecapHtml(md: string): string {
       paras.push(l);
       j++;
     }
-    out.push(`<p class="opacity-80">${inlineMd(paras.join("\n").replace(/\n/g, " ").trim())}</p>`);
-    i = j;
-  }
-
-  closeList();
-  return out.join("\n");
-}
-
-  const state: { currentList: "ol-num" | "ol-alpha" | "ul" | null } = {
-    currentList: null,
-  };
-
-  const isH1 = (s: string) => /^#\s+/.test(s);
-  const isH2 = (s: string) => /^##\s+/.test(s);
-  const isH3 = (s: string) => /^###\s+/.test(s);
-
-  const isNum = (s: string) => /^\s*\d+\.\s+/.test(s);
-  const isAlpha = (s: string) => /^\s*[a-z]\.\s*$/i.test(s) || /^\s*[a-z]\.\s+/.test(s);
-  const isBullet = (s: string) => /^\s*[-*+]\s+/.test(s);
-
-  const pullItem = (startIndex: number, type: "num" | "alpha" | "bullet") => {
-    // Grab continuation lines until we hit the next item (of any list type) or a hard break
-    const items: string[] = [];
-    let j = startIndex;
-
-    // get first line text (strip marker if inline)
-    const first = lines[j];
-    let text = first;
-    if (type === "num") text = text.replace(/^\s*\d+\.\s+/, "");
-    else if (type === "alpha") text = text.replace(/^\s*[a-z]\.\s*/i, "");
-    else text = text.replace(/^\s*[-*+]\s+/, "");
-    items.push(text);
-    j++;
-
-    // collect continuation lines (wrapped paragraphs) until next marker / blank-blank boundary
-    while (j < lines.length) {
-      const l = lines[j];
-
-      // new list item starts -> stop
-      if (isNum(l) || isBullet(l) || isAlpha(l)) break;
-
-      // two blank lines -> paragraph boundary outside list
-      if (l.trim() === "" && j + 1 < lines.length && lines[j + 1].trim() === "") break;
-
-      // single blank line inside this item -> keep as paragraph separator token
-      items.push(l);
-      j++;
-    }
-
-    // collapse soft wraps inside paragraphs but preserve empty lines as <p> breaks
-    const html = items
-      .join("\n")
-      .replace(/[ \t]+$/gm, "")
-      .split(/\n{2,}/) // paragraphs within the item
-      .map((p) => `<p>${p.replace(/\n/g, " ").trim()}</p>`)
-      .join("");
-
-    return { html, next: j };
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Headings
-    if (isH1(line)) {
-      closeList();
-      out.push(`<h1 class="text-xl font-semibold mb-2">${line.replace(/^#\s+/, "")}</h1>`);
-      i++; continue;
-    }
-    if (isH2(line)) {
-      closeList();
-      out.push(`<h2 class="text-lg font-semibold mt-4 mb-2">${line.replace(/^##\s+/, "")}</h2>`);
-      i++; continue;
-    }
-    if (isH3(line)) {
-      closeList();
-      out.push(`<h3 class="font-semibold mt-3 mb-1">${line.replace(/^###\s+/, "")}</h3>`);
-      i++; continue;
-    }
-
-    // Alpha list (a., b., ...) — marker may be alone on its own line
-    if (isAlpha(line)) {
-      if (state.currentList !== "ol-alpha") {
-        closeList();
-        out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
-        state.currentList = "ol-alpha";
-      }
-      const { html, next } = pullItem(i, "alpha");
-      out.push(`<li>${html}</li>`);
-      i = next; continue;
-    }
-
-    // Numbered list
-    if (isNum(line)) {
-      if (state.currentList !== "ol-num") {
-        closeList();
-        out.push('<ol class="list-inside ml-5 space-y-1">');
-        state.currentList = "ol-num";
-      }
-      const { html, next } = pullItem(i, "num");
-      out.push(`<li>${html}</li>`);
-      i = next; continue;
-    }
-
-    // Bulleted list
-    if (isBullet(line)) {
-      if (state.currentList !== "ul") {
-        closeList();
-        out.push('<ul class="list-disc list-inside ml-5 space-y-1">');
-        state.currentList = "ul";
-      }
-      const { html, next } = pullItem(i, "bullet");
-      out.push(`<li>${html}</li>`);
-      i = next; continue;
-    }
-
-    // Blank line
-    if (line.trim() === "") {
-      closeList();
-      // collapse multiple blanks to one <br> gap
-      if (out.length && out[out.length - 1] !== "<br/>") out.push("<br/>");
-      i++; continue;
-    }
-
-    // Plain paragraph (collapse soft wraps until a blank line or a marker)
-    closeList();
-    const paras: string[] = [line];
-    let j = i + 1;
-    while (j < lines.length) {
-      const l = lines[j];
-      if (l.trim() === "") break;
-      if (isNum(l) || isBullet(l) || isAlpha(l) || isH1(l) || isH2(l) || isH3(l)) break;
-      paras.push(l);
-      j++;
-    }
     out.push(
-      `<p class="opacity-80">${paras.join("\n").replace(/\n/g, " ").trim()}</p>`
+      `<p class="opacity-80">${inlineMd(paras.join("\n").replace(/\n/g, " ").trim())}</p>`
     );
     i = j;
   }
@@ -330,7 +217,7 @@ function renderRecapHtml(md: string): string {
   closeList();
   return out.join("\n");
 }
-// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 
 async function fetchPublishedRecaps(): Promise<Recap[]> {
   const items = await listDir(DIR).catch(() => []);
@@ -343,14 +230,19 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
 
     const raw = b64(file.contentBase64);
     const parsed = matter(raw);
-    const fm = (parsed.data as any) || {};
+    const fm: any = parsed.data || {};
 
     const draft =
       fm.draft === true || String(fm.draft ?? "").trim().toLowerCase() === "true";
+
+    // Accept either `published` or `active`
     const publishedStr = String(fm.published ?? fm.active ?? "true").toLowerCase();
     const visible = !["false", "0", "no"].includes(publishedStr);
+
+    // Scheduled publish time support
     const publishAt = fm.publishAt ? new Date(fm.publishAt) : null;
     const scheduledInFuture = publishAt && Date.now() < publishAt.getTime();
+
     if (draft || !visible || scheduledInFuture) continue;
 
     recaps.push({
@@ -358,7 +250,7 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      html: renderRecapHtml(parsed.content || ""),
+      content: parsed.content || "",
     });
   }
 
@@ -367,8 +259,6 @@ async function fetchPublishedRecaps(): Promise<Recap[]> {
 }
 
 function RssBadge() {
-  const RSS_PATH =
-    "M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z";
   return (
     <Link
       href="/cws/rss"
@@ -376,7 +266,7 @@ function RssBadge() {
       className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white hover:bg-white/10"
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-        <path d={RSS_PATH} />
+        <path d="M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z" />
       </svg>
       RSS
     </Link>
@@ -407,7 +297,8 @@ function CwsExplainer() {
               <em>one tiny decision</em> that changed everything.
             </li>
             <li>
-              <strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.
+              <strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker
+              therapy.
             </li>
           </ul>
         </div>
@@ -417,7 +308,9 @@ function CwsExplainer() {
           <ul className="list-disc pl-5 mt-3 space-y-1">
             <li>Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.</li>
             <li>Screenshots welcome. Bonus points for dramatic “before/after”.</li>
-            <li>Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”</li>
+            <li>
+              Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”
+            </li>
           </ul>
         </div>
       </div>
@@ -454,8 +347,8 @@ export default async function CwsIndexPage() {
               <h2 className="text-xl font-semibold">{latest.title}</h2>
               {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
               <div
-                className="prose prose-invert max-w-none [&_ol]:list-inside [&_ol]:ml-5 [&_ol]:space-y-1 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-5 [&_ul]:space-y-1 [&_li>p]:my-1"
-                dangerouslySetInnerHTML={{ __html: latest.html }}
+                className="prose prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: renderRecapHtml(latest.content) }}
               />
               <div>
                 <Link
@@ -481,7 +374,9 @@ export default async function CwsIndexPage() {
                     >
                       <div className="text-xs text-white/50">{r.date}</div>
                       <div className="font-medium">{r.title}</div>
-                      {r.excerpt && <div className="text-sm text-white/70 mt-1">{r.excerpt}</div>}
+                      {r.excerpt && (
+                        <div className="text-sm text-white/70 mt-1">{r.excerpt}</div>
+                      )}
                     </Link>
                   ))}
                 </div>
