@@ -5,15 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import rehypeRaw from "rehype-raw";
+import remarkGfmOrig from "remark-gfm";
+import remarkBreaksOrig from "remark-breaks";
+import rehypeRawOrig from "rehype-raw";
 import type { PluggableList } from "unified";
 
 /* Safely cast plugins to avoid vfile/Pluggable typing clashes */
-const remarkGfm = remarkGfmOrig as unknown as any;
-const remarkBreaks = remarkBreaksOrig as unknown as any;
-const rehypeRaw = rehypeRawOrig as unknown as any;
+const remarkGfm: any = remarkGfmOrig as any;
+const remarkBreaks: any = remarkBreaksOrig as any;
+const rehypeRaw: any = rehypeRawOrig as any;
+
 const REMARKS: PluggableList = [remarkGfm, remarkBreaks];
 const REHYPES: PluggableList = [rehypeRaw];
 
@@ -414,17 +415,13 @@ export default function ClientUI(props: {
            <div className="rounded-lg border border-white/10 p-3 bg-black/20">
   <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
   <div className="prose prose-invert max-w-none">
-    <ReactMarkdown
-      // cast to any to dodge the vfile type mismatch in some lockfile combos
-      remarkPlugins={[remarkGfm as any, remarkBreaks as any]}
-      rehypePlugins={[rehypeRaw as any]}
-      // optional: ensure paragraphs have a little space
-      components={{
-        p: ({node, ...props}) => <p className="mb-3" {...props} />,
-      }}
-    >
-      {markdown || ""}
-    </ReactMarkdown>
+   <ReactMarkdown
+  remarkPlugins={REMARKS as any}
+  rehypePlugins={REHYPES as any}
+>
+  {markdown || ""}
+</ReactMarkdown>
+
   </div>
 </div>
 
