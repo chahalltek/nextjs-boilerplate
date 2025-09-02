@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 import ReactMarkdown from "react-markdown";
-import remarkGfmOrig from "remark-gfm";
-import remarkBreaksOrig from "remark-breaks";
-import rehypeRawOrig from "rehype-raw";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import rehypeRaw from "rehype-raw";
 import type { PluggableList } from "unified";
 
 /* Safely cast plugins to avoid vfile/Pluggable typing clashes */
@@ -382,9 +382,14 @@ export default function ClientUI(props: {
             >
               Link
             </button>
-            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>
-              ¶ Break
-            </button>
+           <button
+  type="button"
+  className={toolbarBtn}
+  onClick={() => insert("  \n")}   // two spaces + newline => <br/> in Markdown
+>
+  ¶ Break
+</button>
+
             <button
               type="button"
               className={toolbarBtn}
@@ -406,14 +411,23 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
             </label>
-            <div className="rounded-lg border border-white/10 p-3 bg-black/20">
-              <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={REMARKS} rehypePlugins={REHYPES}>
-                  {markdown || ""}
-                </ReactMarkdown>
-              </div>
-            </div>
+           <div className="rounded-lg border border-white/10 p-3 bg-black/20">
+  <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
+  <div className="prose prose-invert max-w-none">
+    <ReactMarkdown
+      // cast to any to dodge the vfile type mismatch in some lockfile combos
+      remarkPlugins={[remarkGfm as any, remarkBreaks as any]}
+      rehypePlugins={[rehypeRaw as any]}
+      // optional: ensure paragraphs have a little space
+      components={{
+        p: ({node, ...props}) => <p className="mb-3" {...props} />,
+      }}
+    >
+      {markdown || ""}
+    </ReactMarkdown>
+  </div>
+</div>
+
           </div>
 
           <div className="flex gap-2">
