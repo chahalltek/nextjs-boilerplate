@@ -38,23 +38,161 @@ type Recap = {
 };
 
 // --- Minimal, admin-style Markdown -> HTML renderer --------------------
+// --- Minimal, admin-style Markdown -> HTML renderer (with inline formatting) ---
+function esc(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function inlineMd(s: string) {
+  // escape first, then apply inline markdown
+  let x = esc(s);
+
+  // inline code: `code`
+  x = x.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // links: [text](https://url)
+  x = x.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, `<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>`);
+
+  // bold: **text** or __text__
+  x = x.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  x = x.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+
+  // italics: *text* or _text_  (avoid **)
+  x = x.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");
+  x = x.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+
+  return x;
+}
+
 function renderRecapHtml(md: string): string {
-  // normalize line endings & spaces
   const lines = md.replace(/\r/g, "").replace(/\u00A0/g, " ").split("\n");
 
   const out: string[] = [];
   let i = 0;
 
+  const state: { currentList: "ol-num" | "ol-alpha" | "ul" | null } = { currentList: null };
   const closeList = () => {
-    if (state.currentList) {
-      out.push(state.currentList === "ol-num"
-        ? "</ol>"
-        : state.currentList === "ol-alpha"
-        ? "</ol>"
-        : "</ul>");
-      state.currentList = null;
-    }
+    if (!state.currentList) return;
+    out.push(state.currentList === "ul" ? "</ul>" : "</ol>");
+    state.currentList = null;
   };
+
+  const isH1 = (s: string) => /^#\s+/.test(s);
+  const isH2 = (s: string) => /^##\s+/.test(s);
+  const isH3 = (s: string) => /^###\s+/.test(s);
+
+  const isNum = (s: string) => /^\s*\d+\.\s+/.test(s);
+  const isAlpha = (s: string) => /^\s*[a-z]\.\s*$/i.test(s) || /^\s*[a-z]\.\s+/.test(s);
+  const isBullet = (s: string) => /^\s*[-*+]\s+/.test(s);
+
+  const pullItem = (startIndex: number, type: "num" | "alpha" | "bullet") => {
+    const items: string[] = [];
+    let j = startIndex;
+
+    const first = lines[j];
+    let text = first;
+    if (type === "num") text = text.replace(/^\s*\d+\.\s+/, "");
+    else if (type === "alpha") text = text.replace(/^\s*[a-z]\.\s*/i, "");
+    else text = text.replace(/^\s*[-*+]\s+/, "");
+    items.push(text);
+    j++;
+
+    // collect continuation lines (soft wraps) until next item/heading/blank-blank
+    while (j < lines.length) {
+      const l = lines[j];
+      if (isNum(l) || isBullet(l) || isAlpha(l) || isH1(l) || isH2(l) || isH3(l)) break;
+      if (l.trim() === "" && j + 1 < lines.length && lines[j + 1].trim() === "") break;
+      items.push(l);
+      j++;
+    }
+
+    // paragraphs inside the item
+    const html = items
+      .join("\n")
+      .replace(/[ \t]+$/gm, "")
+      .split(/\n{2,}/)
+      .map((p) => `<p>${inlineMd(p.replace(/\n/g, " ").trim())}</p>`)
+      .join("");
+
+    return { html, next: j };
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (isH1(line)) {
+      closeList();
+      out.push(`<h1 class="text-xl font-semibold mb-2">${inlineMd(line.replace(/^#\s+/, ""))}</h1>`);
+      i++; continue;
+    }
+    if (isH2(line)) {
+      closeList();
+      out.push(`<h2 class="text-lg font-semibold mt-4 mb-2">${inlineMd(line.replace(/^##\s+/, ""))}</h2>`);
+      i++; continue;
+    }
+    if (isH3(line)) {
+      closeList();
+      out.push(`<h3 class="font-semibold mt-3 mb-1">${inlineMd(line.replace(/^###\s+/, ""))}</h3>`);
+      i++; continue;
+    }
+
+    if (isAlpha(line)) {
+      if (state.currentList !== "ol-alpha") {
+        closeList();
+        out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
+        state.currentList = "ol-alpha";
+      }
+      const { html, next } = pullItem(i, "alpha");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    if (isNum(line)) {
+      if (state.currentList !== "ol-num") {
+        closeList();
+        out.push('<ol class="list-inside ml-5 space-y-1">');
+        state.currentList = "ol-num";
+      }
+      const { html, next } = pullItem(i, "num");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    if (isBullet(line)) {
+      if (state.currentList !== "ul") {
+        closeList();
+        out.push('<ul class="list-disc list-inside ml-5 space-y-1">');
+        state.currentList = "ul";
+      }
+      const { html, next } = pullItem(i, "bullet");
+      out.push(`<li>${html}</li>`);
+      i = next; continue;
+    }
+
+    if (line.trim() === "") {
+      closeList();
+      if (out.length && out[out.length - 1] !== "<br/>") out.push("<br/>");
+      i++; continue;
+    }
+
+    // plain paragraph with soft-wrap collapsing + inline formatting
+    closeList();
+    const paras: string[] = [line];
+    let j = i + 1;
+    while (j < lines.length) {
+      const l = lines[j];
+      if (l.trim() === "") break;
+      if (isNum(l) || isBullet(l) || isAlpha(l) || isH1(l) || isH2(l) || isH3(l)) break;
+      paras.push(l);
+      j++;
+    }
+    out.push(`<p class="opacity-80">${inlineMd(paras.join("\n").replace(/\n/g, " ").trim())}</p>`);
+    i = j;
+  }
+
+  closeList();
+  return out.join("\n");
+}
 
   const state: { currentList: "ol-num" | "ol-alpha" | "ul" | null } = {
     currentList: null,
