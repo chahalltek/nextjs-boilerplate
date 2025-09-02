@@ -71,11 +71,11 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Normalize to match admin preview:
- *  - Insert a blank line before "1. " / "-" so Markdown makes real lists.
- *  - Convert lettered items (a., b., …) into <ol type="a"> with <li> that contain
- *    proper <p> and <br /> so internal breaks are preserved.
- *  - Preserve whitespace; don't over-collapse.
+ * Make the public page render like the admin preview:
+ * - Insert a blank line before "1. "/bullets so Markdown makes real lists
+ * - Convert lettered items (a., b., …) — even when the marker is on its own line —
+ *   into a single <ol type="a"> block, preserving inner line breaks
+ * - Normalize CRLF / NBSP
  */
 function normalizeMarkdown(md) {
   const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
@@ -84,46 +84,52 @@ function normalizeMarkdown(md) {
   let i = 0;
   let prevBlank = true;
 
-  // Helper: turn raw text into paragraphs with <br />
-  const htmlParagraphize = (text) =>
+  // helper: convert text into paragraphs with <br/> for single newlines
+  const paragraphize = (text) =>
     text
-      .split(/\n{2,}/) // paragraphs
-      .map((para) => `<p>${para.replace(/\n/g, "<br />").trim()}</p>`)
+      .split(/\n{2,}/) // paragraphs by blank lines
+      .map((p) => `<p>${p.replace(/\n/g, "<br />").trim()}</p>`)
       .join("");
+
+  // matches "a." optionally followed by text on the same line
+  const letterLine = (s) => /^\s*([a-z])\.(?:\s+(.*))?$/i.exec(s);
 
   while (i < lines.length) {
     const line = lines[i];
 
-    // Lettered list block with optional indentation: "   a. Item…"
-    if (/^\s*[a-z]\.\s+/.test(line)) {
+    // ----- Lettered list block (supports "a." on its own line) -----
+    if (letterLine(line)) {
       if (!prevBlank) out.push("");
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
 
-      // Collect contiguous a./b./c. items; each may wrap across lines
-      while (i < lines.length && /^\s*[a-z]\.\s+/.test(lines[i])) {
-        let itemLines = [];
+      // gather contiguous lettered items
+      while (i < lines.length && letterLine(lines[i])) {
         // start item
-        itemLines.push(lines[i].replace(/^\s*[a-z]\.\s+/, ""));
+        const start = letterLine(lines[i]);
+        let itemParts = [];
+        const firstText = (start && start[2]) ? start[2] : "";
+        if (firstText) itemParts.push(firstText);
         i++;
-        // continuation lines until next lettered item or a hard break (empty line followed by empty line)
-        while (i < lines.length && !/^\s*[a-z]\.\s+/.test(lines[i])) {
-          // keep lines verbatim to preserve user-inserted breaks
-          itemLines.push(lines[i]);
-          // stop item if we see two consecutive blanks (keeps paragraph boundary)
-          if (lines[i].trim() === "" && i + 1 < lines.length && lines[i + 1].trim() === "") {
-            // still part of the item; we'll paragraphize later
-          }
-          // break out only when a non-lettered heading/numbered list starts and we've had at least one non-empty line
-          if (itemLines.length > 1 && (/^\s*\d+\.\s+/.test(lines[i + 1] || "") || /^\s*[-*+]\s+/.test(lines[i + 1] || ""))) {
-            break;
-          }
+
+        // continuation lines until next lettered marker (allow blanks as paragraph gaps)
+        while (i < lines.length && !letterLine(lines[i])) {
+          // stop the item if a new list (numbered/bulleted) begins and we've captured something
+          if (
+            itemParts.length > 0 &&
+            (/^\s*\d+\.\s+/.test(lines[i]) || /^\s*[-*+]\s+/.test(lines[i]))
+          ) break;
+
+          itemParts.push(lines[i]);
+          // if next non-blank is a letter marker, end this item (keep blank line separation inside item)
+          let k = i + 1;
+          while (k < lines.length && lines[k].trim() === "") k++;
+          if (k < lines.length && letterLine(lines[k])) { i = k; break; }
+
           i++;
-          if (i >= lines.length) break;
-          if (/^\s*[a-z]\.\s+/.test(lines[i])) break;
         }
 
-        const itemRaw = itemLines.join("\n").replace(/[ \t]+$/gm, "");
-        out.push(`<li>${htmlParagraphize(itemRaw)}</li>`);
+        const rawItem = itemParts.join("\n").replace(/[ \t]+$/gm, "");
+        out.push(`<li>${paragraphize(rawItem)}</li>`);
       }
 
       out.push("</ol>", "");
@@ -131,7 +137,7 @@ function normalizeMarkdown(md) {
       continue;
     }
 
-    // Ensure a blank line before standard list items so Markdown parses them
+    // ----- Standard Markdown lists: ensure a blank line before -----
     const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
     if (isStdItem && !prevBlank) out.push("");
 
@@ -221,7 +227,7 @@ export default async function CwsIndexPage() {
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]} // allow injected <ol> / <p> / <br />
+                  rehypePlugins={[rehypeRaw]}   // render injected <ol>/<p>/<br>
                   skipHtml={false}
                   components={{
                     ol: ({ node, ...props }) => (
