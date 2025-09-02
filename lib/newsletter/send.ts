@@ -2,7 +2,6 @@
 import type { NewsletterDraft } from "./store";
 import { listSubscribers } from "@/lib/subscribers/store";
 
-/** Tiny Markdown → basic HTML for email */
 function mdToBasicHtml(md: string) {
   return md
     .replace(/\r\n/g, "\n")
@@ -19,17 +18,6 @@ function mdToBasicHtml(md: string) {
     .replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>");
 }
 
-/** Plain-text fallback */
-function mdToText(md: string) {
-  return md
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)")
-    .replace(/[#*_>`]/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/** Normalize + dedupe emails */
 function cleanEmails(input?: string[] | null): string[] {
   if (!input) return [];
   const r = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -41,42 +29,49 @@ function cleanEmails(input?: string[] | null): string[] {
   return [...out];
 }
 
-function chunk<T>(arr: T[], n = 75): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-  return out;
-}
-
-/**
- * Send using Resend with BCC-only delivery.
- * All recipients go in BCC; a single friendly "to" header is used for compliance.
- */
-async function sendWithResend(bccList: string[], subject: string, html: string, text: string) {
-  const key = process.env.RESEND_API_KEY;
-  const FROM = process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
-  const TO_HEADER = process.env.NEWSLETTER_TO || FROM; // friendly To header (not the audience)
-  const LIST_UNSUB = process.env.NEWSLETTER_UNSUB_URL || "";
-  const CHUNK_SIZE = Number(process.env.NEWSLETTER_BCC_CHUNK || 75);
-
-  if (!key) return false;
+async function sendWithResend(
+  to: string[],
+  subject: string,
+  html: string,
+  opts?: { bccMode?: boolean } // true = broadcast (privacy via BCC); false/undefined = normal To:
+) {
+  const KEY = process.env.RESEND_API_KEY;
+  const FROM =
+    process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
+  if (!KEY) return false;
 
   const { Resend } = await import("resend");
-  const resend = new Resend(key);
+  const resend = new Resend(KEY);
 
-  const headers: Record<string, string> = { Precedence: "bulk" };
-  if (LIST_UNSUB) headers["List-Unsubscribe"] = `<${LIST_UNSUB}>`;
+  const chunk = <T,>(arr: T[], n = 50) =>
+    arr.reduce<T[][]>((a, c, i) => {
+      const k = Math.floor(i / n);
+      (a[k] ||= []).push(c);
+      return a;
+    }, []);
 
-  for (const bcc of chunk(bccList, CHUNK_SIZE)) {
+  for (const batch of chunk(to, 50)) {
     try {
-     await resend.emails.send({
-  from,
-  to: [from],        // a single visible "to"
-  bcc: batch,        // everyone else hidden
-  subject,
-  html,
-});
+      if (opts?.bccMode) {
+        // One visible "to" (your FROM), everyone else hidden
+        await resend.emails.send({
+          from: FROM,
+          to: [FROM],
+          bcc: batch,
+          subject,
+          html,
+        });
+      } else {
+        // Simple test sends go straight to entered recipients
+        await resend.emails.send({
+          from: FROM,
+          to: batch,
+          subject,
+          html,
+        });
+      }
     } catch (e: any) {
-      console.error("Resend send error:", e?.message || e);
+      console.error("Resend error:", e?.message || e);
     }
   }
   return true;
@@ -84,32 +79,38 @@ async function sendWithResend(bccList: string[], subject: string, html: string, 
 
 export async function sendNewsletter(
   draft: NewsletterDraft,
-  opts?: { recipients?: string[] }
+  opts?: { recipients?: string[] } // presence of recipients => this is a TEST send
 ) {
   // If recipients are provided, use ONLY them; otherwise use the subscriber list.
   const override = cleanEmails(opts?.recipients || []);
   const to =
     override.length > 0
       ? override
-      : (await listSubscribers((draft as any)?.audienceTag)).map((s) => s.email).filter(Boolean);
+      : (await listSubscribers(draft as any as string | undefined))
+          .map((s) => s.email)
+          .filter(Boolean);
 
-  const recipients = cleanEmails(to);
-  if (!recipients.length) {
+  if (!to.length) {
     console.log(`[newsletter] No recipients. Subject "${draft.subject}"`);
     return { sent: 0 };
   }
 
-  const subject = draft.subject?.trim() || "Newsletter";
   const html = mdToBasicHtml(draft.markdown);
-  const text = mdToText(draft.markdown);
 
-  const ok = await sendWithResend(recipients, subject, html, text);
+  // When override recipients are present, treat as a test (no BCC).
+  const bccMode = override.length === 0;
+
+  const ok = await sendWithResend(to, draft.subject, html, { bccMode });
   if (!ok) {
     console.log(
-      `[newsletter] No email provider configured. Would send "${subject}" to ${recipients.length} recipient(s).`
+      `[newsletter] No email provider configured. Would send "${draft.subject}" to ${to.length} recipient(s).`
     );
   } else {
-    console.log(`[newsletter] Sent "${subject}" to ${recipients.length} recipient(s) via BCC`);
+    console.log(
+      `[newsletter] Sent "${draft.subject}" to ${to.length} recipient(s)${
+        bccMode ? " (BCC mode)" : " (test)"
+      }`
+    );
   }
-  return { sent: recipients.length };
+  return { sent: to.length };
 }

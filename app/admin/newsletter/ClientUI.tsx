@@ -129,13 +129,12 @@ export default function ClientUI(props: {
     setSendingTest(true);
     try {
       const fd = new FormData();
-      // match server action field name exactly
-      fd.set("id", existing.id);
-      fd.set("subject", subject);
-      fd.set("markdown", markdown);
-      fd.set("testRecipients", testTo); // <-- FIXED: was "to"
-
-      await actionSendTest(fd);
+fd.set("id", existing.id);
+fd.set("subject", subject);
+fd.set("markdown", markdown);
+// was: fd.set("to", testTo);
+fd.set("testRecipients", testTo);
+await actionSendTest(fd);
       setSendTestNote("✅ Test email submitted. Check your inbox.");
     } catch (err: any) {
       setSendTestNote(`❌ Test failed: ${err?.message || "Unknown error"}`);
