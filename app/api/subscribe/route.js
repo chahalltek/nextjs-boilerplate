@@ -1,97 +1,87 @@
-// app/api/subscribe/route.js
-export const runtime = "nodejs";
-
-import { kv } from "@vercel/kv";
 import crypto from "crypto";
-import { NextResponse } from "next/server";
-import { subscribeEmail } from "@/lib/newsletter/store";
 
-// -------- helpers --------
-function isEmail(s) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
+type McError = { title?: string; detail?: string; status?: number };
+
+function bad(message: string, status = 400) {
+  return new Response(JSON.stringify({ ok: false, message }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
-function codeFromEmail(email) {
-  const h = crypto.createHash("sha256").update(String(email).toLowerCase()).digest("base64url");
-  return h.slice(0, 10);
-}
-function toArrayMaybe(value) {
-  if (!value && value !== 0) return [];
-  if (Array.isArray(value)) return value;
-  return String(value).split(","); // supports comma-separated
-}
-function normalizeTag(t) {
-  return String(t || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-_]/g, "")
-    .slice(0, 64);
+function ok(message: string) {
+  return new Response(JSON.stringify({ ok: true, message }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-export async function POST(req) {
+export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) || {};
-    const email = String(body.email || "").trim().toLowerCase();
-    const source = String(body.source || "site").trim();
+    const { email, tag } = (await req.json().catch(() => ({}))) as {
+      email?: string;
+      tag?: string;
+    };
 
-    // tags can come as `tag` (string) or `tags` (array or CSV)
-    const rawTags = [
-      ...toArrayMaybe(body.tags),
-      ...(body.tag ? [body.tag] : []),
-    ];
-    const tags = [...new Set(rawTags.map(normalizeTag).filter(Boolean))];
+    const clean = String(email || "")
+      .trim()
+      .toLowerCase();
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!re.test(clean)) return bad("Invalid email address.", 422);
 
-    if (!isEmail(email)) {
-      return NextResponse.json({ ok: false, error: "Invalid email" }, { status: 400 });
+    const API_KEY = process.env.MAILCHIMP_API_KEY || "";
+    const LIST_ID = process.env.MAILCHIMP_LIST_ID || "";
+    const PREFIX =
+      process.env.MAILCHIMP_SERVER_PREFIX ||
+      (API_KEY.split("-")[1] || "usX"); // derive data center from key if not provided
+    const DOUBLE_OPTIN = /^true$/i.test(process.env.MAILCHIMP_DOUBLE_OPTIN || "");
+
+    // If keys aren’t configured, pretend success (so the UI still works in dev)
+    if (!API_KEY || !LIST_ID || !PREFIX) {
+      console.warn("[subscribe] Missing Mailchimp env; dev no-op subscribe:", clean);
+      return ok("Subscribed (dev).");
     }
 
-    const code = codeFromEmail(email);
-    const now = new Date().toISOString();
+    // Mailchimp "upsert" = PUT to members/{subscriber_hash}
+    const hash = crypto.createHash("md5").update(clean).digest("hex");
+    const url = `https://${PREFIX}.api.mailchimp.com/3.0/lists/${LIST_ID}/members/${hash}`;
 
-    // ---- Mailchimp (or KV fallback) upsert ----
-    const mcResult = await subscribeEmail(email, {
-      tags: tags.length ? tags : undefined,
-      source,
+    const auth = "Basic " + Buffer.from(`anystring:${API_KEY}`).toString("base64");
+
+    const body = {
+      email_address: clean,
+      status_if_new: DOUBLE_OPTIN ? "pending" : "subscribed",
+      status: "subscribed", // if the member already exists, set/keep subscribed
+      tags: [tag || "website"],
+    };
+
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: auth,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      // Next automatically keeps this server-side; no need to cache
     });
 
-    // ---- Persist lightweight record in KV for your own analytics/referrals ----
-    // Preserve createdAt when possible
-    let createdAt = now;
-    try {
-      const prev = await kv.hget(`sub:email:${email}`, "createdAt");
-      if (prev) createdAt = String(prev);
-    } catch {
-      // ignore
+    if (res.ok) {
+      return ok(DOUBLE_OPTIN ? "Check your email to confirm." : "You're subscribed!");
     }
 
-    await kv.hset(`sub:email:${email}`, {
-      email,
-      createdAt,
-      lastSeenAt: now,
-      source,
-    });
-    await kv.sadd("sub:all", email);
+    const err = (await res.json().catch(() => ({}))) as McError;
 
-    for (const t of tags) {
-      await kv.sadd(`sub:tag:${t}`, email);
+    // Common Mailchimp cases to treat as success
+    if (
+      err?.title === "Member Exists" ||
+      err?.title === "Forgotten Email Not Subscribed" /* soft-bounce scenarios */
+    ) {
+      return ok("You're subscribed!");
     }
-    if (source) await kv.sadd(`sub:source:${source}`, email);
 
-    // referral code mapping (idempotent)
-    await kv.set(`ref:email:${email}`, code);
-    await kv.set(`ref:code:${code}`, email);
-
-    return NextResponse.json({
-      ok: true,
-      code,
-      via: mcResult?.ok ? mcResult.via : "kv",
-      // include a hint if Mailchimp failed but KV succeeded
-      mailchimp: mcResult?.ok ? "ok" : "skipped-or-failed",
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Server error" },
-      { status: 500 }
-    );
+    console.error("[subscribe] Mailchimp error:", err);
+    return bad(err?.detail || "Subscription failed.", res.status || 500);
+  } catch (e: any) {
+    console.error("[subscribe] Fatal:", e?.message || e);
+    return bad("Subscription failed.", 500);
   }
 }

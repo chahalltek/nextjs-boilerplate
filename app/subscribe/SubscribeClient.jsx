@@ -1,4 +1,3 @@
-// app/subscribe/SubscribeClient.jsx
 "use client";
 
 import { useState } from "react";
@@ -14,12 +13,23 @@ export default function SubscribeClient() {
     setBusy(true);
 
     try {
-      // No server dependency required. Drop your real endpoint here later.
-      await new Promise((r) => setTimeout(r, 400));
-      setMsg("✅ Thanks! You’re on the list.");
+      const res = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, tag: "website" }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.message || "Subscription failed");
+      }
+
+      setMsg("✅ Thanks! Please check your email to confirm (if required).");
       setEmail("");
-    } catch {
-      setMsg("❌ Something went wrong. Please try again.");
+    } catch (err) {
+      setMsg(
+        "❌ Something went wrong subscribing that email. If it continues, email us: hello@heyskolsister.com"
+      );
     } finally {
       setBusy(false);
     }
