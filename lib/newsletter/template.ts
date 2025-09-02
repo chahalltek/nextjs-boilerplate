@@ -4,7 +4,7 @@ import type { NewsletterDraft } from "@/lib/newsletter/store";
 /** Optional override for the email logo */
 const LOGO_URL =
   process.env.NEWSLETTER_LOGO_URL || "https://heyskolsister.com/logo.png";
-const LOGO_HEIGHT = Number(process.env.NEWSLETTER_LOGO_HEIGHT || 200); 
+const LOGO_HEIGHT = Number(process.env.NEWSLETTER_LOGO_HEIGHT || 96); 
 const SITE = "https://heyskolsister.com";
 
 const NAV = [
@@ -60,10 +60,15 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
 
         <!-- Header -->
         <div class="header">
-          <!-- Logo (may fail to load in some clients; text brand below is always visible) -->
           <a href="${SITE}" target="_blank" rel="noopener">
-            <img class="logo" src="${LOGO_URL}" alt="Hey Skol Sister" />
-          </a>
+  <img
+    class="logo"
+    src="${LOGO_URL}"
+    alt="Hey Skol Sister"
+    height="${LOGO_HEIGHT}"
+    style="height:${LOGO_HEIGHT}px;width:auto;display:block;margin:0 auto;"
+  />
+</a>
 
           <!-- Strong textual brand (big, bold, white) -->
           <div style="margin-top:8px;">
