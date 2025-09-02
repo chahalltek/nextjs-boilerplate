@@ -258,7 +258,11 @@ export default async function NewsletterAdmin({
   async function actionSendTest(formData: FormData) {
     "use server";
     const { sendNewsletter } = await import("@/lib/newsletter/send");
-
+qs.set("test", res.ok ? "1" : "0");
+qs.set("testDelivered", String(res.delivered));
+qs.set("testFailed", String(res.failed));
+if (res.id) qs.set("testId", res.id);
+if (res.errors.length) qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
     const id = String(formData.get("id") || "");
     const subject = String(formData.get("subject") || "");
     const markdown = String(formData.get("markdown") || "");
