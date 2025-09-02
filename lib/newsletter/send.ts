@@ -1,189 +1,206 @@
-import { Resend } from "resend";
-import type { NewsletterDraft } from "@/lib/newsletter/store";
+// lib/newsletter/send.ts
+import type { NewsletterDraft } from "./store";
+import { listSubscribers } from "@/lib/subscribers/store";
 
-// ---------- Config ----------
-const BASE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") || "https://heyskolsister.com";
-const LOGO_URL = `${BASE_URL}/email/logo.png`; // place image at /public/email/logo.png
-const LINKS = [
-  { href: `${BASE_URL}/stats`, label: "Player Projections" },
-  { href: `${BASE_URL}/start-sit`, label: "Sit/Start" },
-  { href: `${BASE_URL}/blog`, label: "Blog" },
-  { href: `${BASE_URL}/roster`, label: "Lineup Lab" },
-];
+/** Minimal Markdown → HTML for email. Preserves blank lines and lists. */
+function mdToBasicHtml(md: string) {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = md.replace(/\r/g, "").split("\n");
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const FROM = process.env.NEWSLETTER_FROM || ""; // e.g. "Hey Skol Sister <news@yourdomain.com>"
+  // very small inline markup: **bold**, _italics_, links [t](u)
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/_(.+?)_/g, "<em>$1</em>")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
 
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+  const out: string[] = [];
+  let inUl = false;
+  const closeUl = () => {
+    if (inUl) {
+      out.push("</ul>");
+      inUl = false;
+    }
+  };
 
-// ---------- Tiny Markdown -> HTML (email-safe) ----------
-function mdToHtml(md: string): string {
-  // basic email-safe conversion
-  let html = md.trim();
+  for (const raw of lines) {
+    const l = raw.trimEnd();
 
-  // escape < and > (but keep minimal link syntax later)
-  html = html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    if (/^#\s+/.test(l)) { closeUl(); out.push(`<h1>${inline(l.replace(/^#\s+/, ""))}</h1>`); continue; }
+    if (/^##\s+/.test(l)) { closeUl(); out.push(`<h2>${inline(l.replace(/^##\s+/, ""))}</h2>`); continue; }
+    if (/^###\s+/.test(l)) { closeUl(); out.push(`<h3>${inline(l.replace(/^###\s+/, ""))}</h3>`); continue; }
 
-  // bold, italics
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/(?:^|[^*])\*(?!\s)(.+?)(?<!\s)\*(?!\*)/g, (m, p1) => m.startsWith("*") ? `<em>${p1}</em>` : m);
+    if (/^[-*]\s+/.test(l)) {
+      if (!inUl) { out.push('<ul style="margin:0 0 1em 1.25em; padding:0;">'); inUl = true; }
+      out.push(`<li>${inline(l.replace(/^[-*]\s+/, ""))}</li>`);
+      continue;
+    }
 
-  // headings
-  html = html.replace(/^###\s+(.*)$/gm, '<h3 style="margin:1rem 0 .25rem;font-size:18px;">$1</h3>');
-  html = html.replace(/^##\s+(.*)$/gm, '<h2 style="margin:1.25rem 0 .5rem;font-size:20px;">$1</h2>');
-  html = html.replace(/^#\s+(.*)$/gm, '<h1 style="margin:1.5rem 0 .75rem;font-size:24px;">$1</h1>');
+    if (!l.trim()) { closeUl(); out.push("<br/>"); continue; }
 
-  // links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" style="color:#6d28d9;text-decoration:none;">$1</a>');
-
-  // unordered list
-  // make list blocks
-  html = html.replace(/(?:^|\n)(- .*(?:\n- .*)*)/g, (block) => {
-    const items = block
-      .trim()
-      .split("\n")
-      .map((l) => l.replace(/^- /, "").trim())
-      .map((txt) => `<li style="margin:6px 0;">${txt}</li>`)
-      .join("");
-    return `\n<ul style="padding-left:1.25rem;margin:0.5rem 0;">${items}</ul>`;
-  });
-
-  // paragraphs + hard line breaks
-  html = html
-    .split(/\n{2,}/) // paragraph chunks
-    .map((para) => {
-      if (/^<(h1|h2|h3|ul)/.test(para.trim())) return para; // don't wrap blocks
-      const withBr = para.replace(/\n/g, "<br/>");
-      return `<p style="margin:0.5rem 0;line-height:1.6;">${withBr}</p>`;
-    })
-    .join("");
-
-  return html;
+    closeUl();
+    out.push(`<p>${inline(l)}</p>`);
+  }
+  closeUl();
+  return out.join("\n");
 }
 
-function htmlShell(subject: string, innerHtml: string): string {
-  const nav =
-    LINKS.map(
-      (l) =>
-        `<a href="${l.href}" style="color:#6d28d9;text-decoration:none;margin:0 8px;">${l.label}</a>`
-    ).join('&nbsp;&nbsp;•&nbsp;&nbsp;');
-
+/** Optional chrome for every email (logo + nav). Call with already-rendered body HTML. */
+function wrapEmailHtml(bodyHtml: string, subject: string) {
+  const logoUrl = "https://heyskolsister.com/brand/logo-email.png"; // put a small (<=100KB) hosted logo
   return `<!doctype html>
 <html>
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <meta name="x-apple-disable-message-reformatting" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${escapeHtml(subject)}</title>
-  </head>
-  <body style="margin:0;padding:0;background:#0f0d18;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f0d18;">
-      <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#111827;border-radius:14px;overflow:hidden;border:1px solid #1f2937;">
-            <tr>
-              <td align="center" style="padding:24px 24px 8px;">
-                <img src="${LOGO_URL}" width="140" alt="Hey Skol Sister" style="display:block;border:0;outline:none;text-decoration:none;" />
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:4px 24px 16px;color:#d1d5db;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;">
-                ${nav}
-              </td>
-            </tr>
-            <tr>
-              <td style="background:#0b0a13;height:1px;line-height:1px;font-size:0;"></td>
-            </tr>
-            <tr>
-              <td style="padding:20px 24px;color:#e5e7eb;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;">
-                ${innerHtml}
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:12px 24px 22px;color:#9ca3af;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;">
-                Sent by Hey Skol Sister • <a href="${BASE_URL}" style="color:#9ca3af;text-decoration:none;">heyskolsister.com</a>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
+<head>
+  <meta charSet="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>${subject}</title>
+</head>
+<body style="margin:0; background:#0f0d18; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif; color:#fff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f0d18; padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px; width:100%; background:#15122a; border-radius:16px; overflow:hidden;">
+          <tr>
+            <td style="padding:20px 24px; text-align:center; background:#1b1736;">
+              <a href="https://heyskolsister.com" style="text-decoration:none;">
+                <img alt="Hey Skol Sister" src="${logoUrl}" width="160" style="display:inline-block; height:auto; border:0; outline:none; text-decoration:none;" />
+              </a>
+              <div style="margin-top:12px;">
+                <a href="https://heyskolsister.com/stats" style="color:#f2c14e; text-decoration:none; margin:0 10px;">Player Projections</a>
+                <a href="https://heyskolsister.com/start-sit" style="color:#f2c14e; text-decoration:none; margin:0 10px;">Sit/Start</a>
+                <a href="https://heyskolsister.com/blog" style="color:#f2c14e; text-decoration:none; margin:0 10px;">Blog</a>
+                <a href="https://heyskolsister.com/roster" style="color:#f2c14e; text-decoration:none; margin:0 10px;">Lineup Lab</a>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              ${bodyHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px; font-size:12px; color:#cfcce6; background:#1b1736;">
+              You’re receiving this because you subscribed to Hey Skol Sister.
+              <br/>Don’t want these? Unsubscribe from your profile or reply and we’ll remove you.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
 </html>`;
 }
 
-function escapeHtml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function cleanEmails(input?: string[] | null): string[] {
+  if (!input) return [];
+  const r = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+  const out = new Set<string>();
+  for (const raw of input) {
+    const e = String(raw || "").toLowerCase().replace(/[<>,"']/g, "").trim();
+    if (r.test(e)) out.add(e);
+  }
+  return [...out];
 }
 
-function mdToText(md: string): string {
-  return md
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 ($2)")
-    .replace(/^###\s+/gm, "")
-    .replace(/^##\s+/gm, "")
-    .replace(/^#\s+/gm, "")
-    .replace(/^\s*-\s+/gm, "• ")
-    .trim();
+type SendResult = { ok: boolean; delivered: number; failed: number; errors: string[] };
+
+async function sendWithResend(
+  recipients: string[],
+  subject: string,
+  html: string,
+  opts?: { bccMode?: boolean } // true for bulk sends; false for tests
+): Promise<SendResult> {
+  const key = process.env.RESEND_API_KEY || "";
+  const fromAddr = process.env.NEWSLETTER_FROM || "Skol Sisters <news@heyskolsister.com>";
+
+  if (!key) {
+    return { ok: false, delivered: 0, failed: recipients.length, errors: ["RESEND_API_KEY is missing"] };
+  }
+
+  const { Resend } = await import("resend");
+  const resend = new Resend(key);
+
+  const chunk = <T,>(arr: T[], n = 50) =>
+    arr.reduce<T[][]>((a, c, i) => {
+      const k = Math.floor(i / n);
+      (a[k] ||= []).push(c);
+      return a;
+    }, []);
+
+  const batches = chunk(recipients, 50);
+  let delivered = 0;
+  const errors: string[] = [];
+
+  for (const batch of batches) {
+    try {
+      if (opts?.bccMode) {
+        // bulk: one visible "To" (sender) + everyone in BCC (hidden)
+        await resend.emails.send({
+          from: fromAddr,
+          to: [fromAddr],
+          bcc: batch,
+          subject,
+          html,
+        });
+        delivered += batch.length;
+      } else {
+        // tests: send directly to each batch "To" so deliverability is clearer
+        await resend.emails.send({
+          from: fromAddr,
+          to: batch,
+          subject,
+          html,
+        });
+        delivered += batch.length;
+      }
+    } catch (e: any) {
+      errors.push(e?.message || String(e));
+    }
+  }
+
+  return {
+    ok: delivered > 0 && errors.length === 0,
+    delivered,
+    failed: recipients.length - delivered,
+    errors,
+  };
 }
 
-// ---------- Public API ----------
 export async function sendNewsletter(
   draft: NewsletterDraft,
-  opts?: { recipients?: string[] } // if provided => test mode
-): Promise<{ sent: number }> {
-  if (!resend) throw new Error("RESEND_API_KEY not set.");
-  if (!FROM) throw new Error("NEWSLETTER_FROM not set.");
+  opts?: { recipients?: string[] }
+): Promise<SendResult> {
+  // If recipients are provided, use ONLY them (test mode). Otherwise, use subscriber list.
+  const override = cleanEmails(opts?.recipients || []);
+  const to =
+    override.length > 0
+      ? override
+      : (await listSubscribers((draft as any as string | undefined)))
+          .map((s) => s.email)
+          .filter(Boolean);
 
-  const subject = draft.subject || "Your weekly Hey Skol Sister rundown!";
-  const bodyHtml = mdToHtml(draft.markdown || "");
-  const html = htmlShell(subject, bodyHtml);
-  const text = mdToText(draft.markdown || "");
-
-  // TEST SEND: send directly to the provided list
-  if (opts?.recipients?.length) {
-    const unique = Array.from(new Set(opts.recipients));
-    await resend.emails.send({
-      from: FROM,
-      to: unique,
-      subject,
-      html,
-      text,
-    });
-    return { sent: unique.length };
+  if (!to.length) {
+    console.log(`[newsletter] No recipients. Subject "${draft.subject}"`);
+    return { ok: false, delivered: 0, failed: 0, errors: ["No recipients"] };
   }
 
-  // PRODUCTION SEND:
-  // Replace this with your audience fetch. For now we no-op to be safe.
-  // Example:
-  // const allRecipients = await listAudienceEmails(draft.audienceTag);
-  const allRecipients: string[] = []; // <- fill from your store
+  const body = mdToBasicHtml(draft.markdown || "");
+  const html = wrapEmailHtml(body, draft.subject || "Hey Skol Sister");
 
-  if (allRecipients.length === 0) {
-    // Safety: do not send to zero (prevents accidental blast)
-    return { sent: 0 };
+  const result = await sendWithResend(
+    to,
+    draft.subject || "Hey Skol Sister",
+    html,
+    { bccMode: override.length === 0 } // bulk=bcc; tests=direct
+  );
+
+  if (!result.ok) {
+    console.error("[newsletter] send failed", result);
+  } else {
+    console.log(`[newsletter] Sent "${draft.subject}" to ${result.delivered}/${to.length} recipient(s)`);
   }
 
-  // Use visible "to" and put the rest in BCC batches
-  const [first, ...rest] = allRecipients;
-  const chunk = (arr: string[], n: number) =>
-    arr.reduce<string[][]>((acc, x) => {
-      const last = acc[acc.length - 1];
-      if (!last || last.length === n) acc.push([x]);
-      else last.push(x);
-      return acc;
-    }, []);
-  const batches = chunk(rest, 900); // Resend supports large bcc arrays
-
-  // Send first email with visible "to"
-  await resend.emails.send({ from: FROM, to: [first], bcc: batches.shift(), subject, html, text });
-
-  // Send remaining batches as BCC-only (visible "to" uses FROM address)
-  for (const b of batches) {
-    await resend.emails.send({ from: FROM, to: [FROM], bcc: b, subject, html, text });
-  }
-
-  return { sent: allRecipients.length };
+  return result;
 }

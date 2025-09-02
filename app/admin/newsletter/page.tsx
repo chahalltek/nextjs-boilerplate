@@ -254,50 +254,66 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
   }
 
-  // NOTE: return a result object (no redirect) so the client call doesn't 404.
-  async function actionSendTest(formData: FormData): Promise<{ ok: boolean; message?: string }> {
+  // Accepts both `testRecipients` and legacy `to` to avoid client mismatch.
+  async function actionSendTest(formData: FormData) {
     "use server";
-    try {
-      const { sendNewsletter } = await import("@/lib/newsletter/send");
-      const id = String(formData.get("id") || "");
-      const subject = String(formData.get("subject") || "");
-      const markdown = String(formData.get("markdown") || "");
-      const toRaw = String(formData.get("testRecipients") || "");
-      const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
+    const { sendNewsletter } = await import("@/lib/newsletter/send");
 
-      const base = id ? await getDraft(id) : null;
-      const draft: NewsletterDraft =
-        base
-          ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
-          : {
-              id: genId(),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              subject: subject || "Newsletter Test",
-              markdown,
-              picks: [],
-              status: "draft",
-              scheduledAt: null,
-              audienceTag: undefined,
-            };
+    const id = String(formData.get("id") || "");
+    const subject = String(formData.get("subject") || "");
+    const markdown = String(formData.get("markdown") || "");
 
-      if (recipients.length === 0) {
-        return { ok: false, message: "No recipients provided." };
-      }
+    const toRaw =
+      String(formData.get("testRecipients") || "") ||
+      String(formData.get("to") || ""); // legacy name from older ClientUI
 
-      const res = await sendNewsletter(draft, { recipients }); // test mode
-      return { ok: true, message: `Test sent to ${res.sent} recipient(s).` };
-    } catch (e: any) {
-      console.error("Send test failed:", e);
-      return { ok: false, message: e?.message || "Send failed." };
+    const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
+
+    const base = id ? await getDraft(id) : null;
+    const draft: NewsletterDraft =
+      base
+        ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
+        : {
+            id: genId(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            subject: subject || "Newsletter Test",
+            markdown,
+            picks: [],
+            status: "draft",
+            scheduledAt: null,
+            audienceTag: undefined,
+          };
+
+    const qs = new URLSearchParams();
+    qs.set("nonce", String(Date.now()));
+    if (!recipients.length) {
+      qs.set("test", "0");
+      qs.set("testMsg", "No recipients provided.");
+      return redirect(`/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}&${qs}`);
     }
+
+    try {
+      const res: any = await sendNewsletter(draft, { recipients });
+      qs.set("test", res?.ok === false ? "0" : "1");
+      if (typeof res?.delivered === "number") qs.set("testDelivered", String(res.delivered));
+      if (typeof res?.failed === "number") qs.set("testFailed", String(res.failed));
+      if (Array.isArray(res?.errors) && res.errors.length)
+        qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
+    } catch (e: any) {
+      qs.set("test", "0");
+      qs.set("testMsg", e?.message || "Unknown error");
+    }
+
+    return redirect(`/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}&${qs}`);
   }
 
   async function actionDelete(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
     await deleteDraft(id);
-    // No redirect; ClientUI updates optimistically.
+    // Force a fresh RSC payload so the list stays correct (no ghost items)
+    redirect(`/admin/newsletter?nonce=${Date.now()}`);
   }
 
   /* ---------- Legacy preview HTML (ClientUI renders Markdown properly) ---------- */
@@ -331,25 +347,58 @@ export default async function NewsletterAdmin({
     };
   });
 
+  // Flash banner values from query string
+  const flash = {
+    compiled: searchParams?.compiled === "1",
+    saved: searchParams?.saved === "1",
+    scheduled: searchParams?.scheduled === "1",
+    sent: searchParams?.sent === "1",
+    test: typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
+    testDelivered: Number(searchParams?.testDelivered || 0),
+    testFailed: Number(searchParams?.testFailed || 0),
+    testMsg: String(searchParams?.testMsg || ""),
+  };
+
   return (
-    <ClientUI
-      existing={{
-        id: existing?.id || "",
-        title: existing?.title || "Weekly Newsletter",
-        subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
-        markdown: existing?.markdown || "",
-        audienceTag: (existing as any)?.audienceTag,
-        previewHtml,
-      }}
-      drafts={prettyDrafts}
-      allSources={ALL_SOURCES}
-      neverVerbatim={NEVER_VERBATIM}
-      actionCompile={actionCompile}
-      actionSave={actionSave}
-      actionSchedule={actionSchedule}
-      actionSendNow={actionSendNow}
-      actionSendTest={actionSendTest}
-      actionDelete={actionDelete}
-    />
+    <main className="container max-w-6xl py-8 space-y-4">
+      {(flash.compiled || flash.saved || flash.scheduled || flash.sent || typeof flash.test !== "undefined") && (
+        <div
+          className={`rounded-lg px-3 py-2 border ${
+            flash.test === "0"
+              ? "border-red-500/30 bg-red-500/10 text-red-300"
+              : "border-green-500/30 bg-green-500/10 text-green-300"
+          }`}
+        >
+          {flash.compiled && "Draft compiled successfully. "}
+          {flash.saved && "Draft saved. "}
+          {flash.scheduled && "Scheduled. "}
+          {flash.sent && "Sent. "}
+          {typeof flash.test !== "undefined" &&
+            (flash.test === "1"
+              ? `Test sent: ${flash.testDelivered} delivered, ${flash.testFailed} failed.`
+              : `Test failed${flash.testMsg ? ` — ${flash.testMsg}` : ""}.`)}
+        </div>
+      )}
+
+      <ClientUI
+        existing={{
+          id: existing?.id || "",
+          title: existing?.title || "Weekly Newsletter",
+          subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
+          markdown: existing?.markdown || "",
+          audienceTag: (existing as any)?.audienceTag,
+          previewHtml,
+        }}
+        drafts={prettyDrafts}
+        allSources={ALL_SOURCES}
+        neverVerbatim={NEVER_VERBATIM}
+        actionCompile={actionCompile}
+        actionSave={actionSave}
+        actionSchedule={actionSchedule}
+        actionSendNow={actionSendNow}
+        actionSendTest={actionSendTest}
+        actionDelete={actionDelete}
+      />
+    </main>
   );
 }
