@@ -71,11 +71,11 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Make the public page render like the admin preview:
- * - Insert a blank line before "1. "/bullets so Markdown makes real lists
- * - Convert lettered items (a., b., …) — even when the marker is on its own line —
- *   into a single <ol type="a"> block, preserving inner line breaks
- * - Normalize CRLF / NBSP
+ * Match admin preview behavior:
+ *  - Insert a blank line before "1. " / "-" / "*" / "+" so Markdown makes lists
+ *  - Convert lettered blocks (a., b., …) into <ol type="a"> with <li> and keep
+ *    the writer's line breaks via <p> and <br />
+ *  - Works whether the marker is "a. text…" OR "a." on a line by itself
  */
 function normalizeMarkdown(md) {
   const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
@@ -84,51 +84,52 @@ function normalizeMarkdown(md) {
   let i = 0;
   let prevBlank = true;
 
-  // helper: convert text into paragraphs with <br/> for single newlines
+  const isLetterMarker = (s) => /^\s*[a-z]\.\s*(.*)?$/i.test(s);
+
   const paragraphize = (text) =>
     text
-      .split(/\n{2,}/) // paragraphs by blank lines
+      .replace(/[ \t]+$/gm, "")
+      .split(/\n{2,}/)                     // paragraphs
       .map((p) => `<p>${p.replace(/\n/g, "<br />").trim()}</p>`)
       .join("");
-
-  // matches "a." optionally followed by text on the same line
-  const letterLine = (s) => /^\s*([a-z])\.(?:\s+(.*))?$/i.exec(s);
 
   while (i < lines.length) {
     const line = lines[i];
 
-    // ----- Lettered list block (supports "a." on its own line) -----
-    if (letterLine(line)) {
+    // Lettered list block
+    if (isLetterMarker(line)) {
       if (!prevBlank) out.push("");
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
 
-      // gather contiguous lettered items
-      while (i < lines.length && letterLine(lines[i])) {
-        // start item
-        const start = letterLine(lines[i]);
-        let itemParts = [];
-        const firstText = (start && start[2]) ? start[2] : "";
-        if (firstText) itemParts.push(firstText);
+      while (i < lines.length && isLetterMarker(lines[i])) {
+        // Get the text after the marker on the same line (if any)
+        const m = lines[i].match(/^\s*[a-z]\.\s*(.*)?$/i);
+        let itemLines = [];
+        if (m && m[1]) itemLines.push(m[1]); // inline text after "a."
+
         i++;
 
-        // continuation lines until next lettered marker (allow blanks as paragraph gaps)
-        while (i < lines.length && !letterLine(lines[i])) {
-          // stop the item if a new list (numbered/bulleted) begins and we've captured something
+        // Accumulate continuation lines (including blanks) until next letter marker
+        while (i < lines.length && !isLetterMarker(lines[i])) {
+          // If we hit a brand-new numbered/bulleted list and we already grabbed content,
+          // stop the current item (keeps semantics sane)
           if (
-            itemParts.length > 0 &&
+            itemLines.length > 0 &&
             (/^\s*\d+\.\s+/.test(lines[i]) || /^\s*[-*+]\s+/.test(lines[i]))
           ) break;
 
-          itemParts.push(lines[i]);
-          // if next non-blank is a letter marker, end this item (keep blank line separation inside item)
+          itemLines.push(lines[i]);
+          // If the next non-blank starts a new lettered item, break out cleanly
           let k = i + 1;
           while (k < lines.length && lines[k].trim() === "") k++;
-          if (k < lines.length && letterLine(lines[k])) { i = k; break; }
-
+          if (k < lines.length && isLetterMarker(lines[k])) {
+            i = k;
+            break;
+          }
           i++;
         }
 
-        const rawItem = itemParts.join("\n").replace(/[ \t]+$/gm, "");
+        const rawItem = itemLines.join("\n");
         out.push(`<li>${paragraphize(rawItem)}</li>`);
       }
 
@@ -137,7 +138,7 @@ function normalizeMarkdown(md) {
       continue;
     }
 
-    // ----- Standard Markdown lists: ensure a blank line before -----
+    // Ensure Markdown recognizes normal numeric/bullet lists
     const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
     if (isStdItem && !prevBlank) out.push("");
 
@@ -157,126 +158,4 @@ function RssBadge() {
       className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm border border-white/20 text-white hover:bg-white/10"
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-        <path d="M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1 0 0 1 1-1C13.956 5 21 12.044 21 21a1 1 0 1 1-2 0C19 13.82 12.18 7 4 7a1 1 0 0 1-1-1Z" />
-      </svg>
-      RSS
-    </Link>
-  );
-}
-
-function CwsExplainer() {
-  return (
-    <section className="card p-6 mb-8">
-      <h2 className="text-xl font-bold mb-3">What is “Weekly Recap” (aka CWS)?</h2>
-      <p className="text-white/80">
-        CWS stands for <em>Coulda, Woulda, Shoulda</em> — the spiritual cousin of Survivor confessionals and the official diary of fantasy football regret.
-      </p>
-      <div className="mt-5 space-y-6 text-white/80">
-        <div>
-          <p className="font-semibold">How to play along</p>
-          <div className="h-2" />
-          <ul className="list-disc pl-5 mt-3 space-y-1">
-            <li><strong>Step 1:</strong> Set your lineup with confidence. (What could go wrong?)</li>
-            <li><strong>Step 2:</strong> Watch your bench casually drop 38. (We’ve all been there.)</li>
-            <li><strong>Step 3:</strong> Post your recap: what happened, your bold takes, and the <em>one tiny decision</em> that changed everything.</li>
-            <li><strong>Step 4:</strong> React to others with empathy, stats, memes, and kicker therapy.</li>
-          </ul>
-        </div>
-        <div>
-          <p className="font-semibold">House rules</p>
-          <div className="h-2" />
-          <ul className="list-disc pl-5 mt-3 space-y-1">
-            <li>Be kind. We’re here to laugh, learn, and commiserate — not blindside each other.</li>
-            <li>Screenshots welcome. Bonus points for dramatic “before/after”.</li>
-            <li>Ties are broken by the best GIF, the spiciest stat, or the most creative “shoulda.”</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export default async function CwsIndexPage() {
-  const recaps = await fetchPublishedRecaps();
-  const [latest, ...older] = recaps;
-
-  return (
-    <div className="space-y-10">
-      <div className="space-y-2">
-        <p className="text-center text-sm text-white/60">NFL schedule this week</p>
-        <NflScheduleTicker />
-      </div>
-
-      <div className="max-w-5xl mx-auto py-10 space-y-10">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Weekly Recap</h1>
-          <RssBadge />
-        </div>
-
-        {!latest ? (
-          <>
-            <div className="text-white/70">No recaps yet. Check back soon!</div>
-            <CwsExplainer />
-          </>
-        ) : (
-          <>
-            <article className="card p-5 space-y-3">
-              <div className="text-sm text-white/60">{latest.date}</div>
-              <h2 className="text-xl font-semibold">{latest.title}</h2>
-              {latest.excerpt && <p className="text-white/80">{latest.excerpt}</p>}
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]}   // render injected <ol>/<p>/<br>
-                  skipHtml={false}
-                  components={{
-                    ol: ({ node, ...props }) => (
-                      <ol className="list-inside ml-5 space-y-1" {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul className="list-disc list-inside ml-5 space-y-1" {...props} />
-                    ),
-                    li: ({ node, ...props }) => (
-                      <li className="[&>p]:my-1" {...props} />
-                    ),
-                  }}
-                >
-                  {latest.content}
-                </ReactMarkdown>
-              </div>
-              <div>
-                <Link
-                  href={`/cws/${encodeURIComponent(latest.slug)}`}
-                  className="inline-flex items-center rounded-xl px-3 py-1.5 text-sm font-semibold border border-white/20 text-white hover:bg-white/10"
-                >
-                  Open comments & reactions →
-                </Link>
-              </div>
-            </article>
-
-            <CwsExplainer />
-
-            {older.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Previous Weeks</h3>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {older.map((r) => (
-                    <Link
-                      key={r.slug}
-                      href={`/cws/${encodeURIComponent(r.slug)}`}
-                      className="card p-4 block hover:bg-white/5"
-                    >
-                      <div className="text-xs text-white/50">{r.date}</div>
-                      <div className="font-medium">{r.title}</div>
-                      {r.excerpt && <div className="text-sm text-white/70 mt-1">{r.excerpt}</div>}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+        <path d="M6 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4-7a1 1 0 0 1 1-1c6.075 0 11 4.925 11 11a1 1 0 1 1-2 0 9 9 0 0 0-9-9 1 1 0 0 1-1-1Zm0-5a1 1
