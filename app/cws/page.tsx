@@ -215,7 +215,7 @@ function CwsExplainer() {
   );
 }
 
-export default async function CwsIndexPage(): Promise<JSX.Element> {
+export default async function CwsIndexPage() {
   const recaps = await fetchPublishedRecaps();
   const [latest, ...older] = recaps;
 
