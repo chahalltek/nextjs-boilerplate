@@ -71,10 +71,10 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Normalize author text so the public page renders like the admin preview:
+ * Normalize text so the public page matches the admin preview:
  * - Insert a blank line before numeric/bullet items so Markdown creates lists
- * - Convert lettered items (a., b., …) — with optional indentation and wrapped
- *   continuation lines — into a single <ol type="a"> block with proper <li>s
+ * - Convert lettered items (a., b., …), with optional indentation and wrapped lines,
+ *   into a single <ol type="a">…</ol> block
  * - Normalize CRLF and NBSP
  */
 function normalizeMarkdown(md) {
@@ -87,47 +87,35 @@ function normalizeMarkdown(md) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // LETTERED LIST BLOCK (e.g., "  a. First item…")
+    // Lettered list block with optional indentation: "   a. Item…"
     if (/^\s*[a-z]\.\s+/.test(line)) {
-      if (!prevBlank) out.push(""); // separate from prior paragraph
+      if (!prevBlank) out.push(""); // separate from previous paragraph
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
 
-      // Collect contiguous lettered items. Each item may span multiple physical lines
-      // until the next lettered marker is found.
+      // Collect contiguous lettered items; each item may wrap across lines
       while (i < lines.length && /^\s*[a-z]\.\s+/.test(lines[i])) {
-        // Start a new item
         let item = lines[i].replace(/^\s*[a-z]\.\s+/, "").trim();
         i++;
-
-        // Pull in continuation lines that belong to this item (until next lettered marker).
-        while (
-          i < lines.length &&
-          !/^\s*[a-z]\.\s+/.test(lines[i]) // next item would start here
-        ) {
+        while (i < lines.length && !/^\s*[a-z]\.\s+/.test(lines[i])) {
           const cont = lines[i];
-          // Stop early if there's a hard section break (two blanks before a non-lettered)
-          // but generally keep single/blank lines as spaces inside the <li>.
-          if (cont.trim() === "" && (i + 1 < lines.length) && /^\s*$/.test(lines[i + 1])) {
-            // collapse double-blank into a single paragraph separator
+          if (cont.trim() === "" && i + 1 < lines.length && /^\s*$/.test(lines[i + 1])) {
             item += "\n\n";
             i += 2;
             continue;
           }
-          item += (cont.trim() ? " " + cont.trim() : "");
+          item += cont.trim() ? " " + cont.trim() : "";
           i++;
         }
-
-        // Collapse multiple spaces and normalize paragraph gaps inside the item
         item = item.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
         out.push(`<li>${item}</li>`);
       }
 
       out.push("</ol>", "");
       prevBlank = true;
-      continue; // already advanced i
+      continue;
     }
 
-    // STANDARD LIST ITEMS ("1. ", "- ", "* ", "+ ") — ensure a blank line before
+    // Ensure a blank line before numeric/bullet list items so Markdown parses them
     const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
     if (isStdItem && !prevBlank) out.push("");
 
@@ -217,7 +205,20 @@ export default async function CwsIndexPage() {
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]} // required to render injected <ol type="a">
+                  rehypePlugins={[rehypeRaw]}     // allow injected <ol>
+                  skipHtml={false}                 // <- ensure raw HTML is NOT skipped
+                  components={{
+                    // nice spacing for any lists (including the injected <ol>)
+                    ol: ({ node, ...props }) => (
+                      <ol className="list-inside ml-5 space-y-1" {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul className="list-disc list-inside ml-5 space-y-1" {...props} />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li className="[&>p]:my-1" {...props} />
+                    ),
+                  }}
                 >
                   {latest.content}
                 </ReactMarkdown>
