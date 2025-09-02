@@ -379,12 +379,17 @@ export default function ClientUI(props: {
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
-                  remarkPlugins={REMARKS as any}
-                  rehypePlugins={REHYPES as any}
-                  linkTarget="_blank"
-                >
-                  {previewMd}
-                </ReactMarkdown>
+  remarkPlugins={REMARKS as any}
+  rehypePlugins={REHYPES as any}
+  components={{
+    a: (props: any) => (
+      <a {...props} target="_blank" rel="noopener noreferrer" />
+    ),
+  }}
+>
+  {previewMd}
+</ReactMarkdown>
+
               </div>
             </div>
           </div>
