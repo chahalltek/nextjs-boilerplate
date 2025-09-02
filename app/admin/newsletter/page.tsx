@@ -351,30 +351,28 @@ export default async function NewsletterAdmin({
         </div>
       )}
 
-      <ClientUI
-        key={refreshKey}
-        flash={flash} // inline confirmations near buttons
-        existing={{
-          id: existing?.id || "",
-          title: existing?.title || "Weekly Newsletter",
-          // NEW default subject:
-          subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
-          markdown: existing?.markdown || "",
-          audienceTag: (existing as any)?.audienceTag,
-          previewHtml,
-          // also pass raw markdown so ClientUI can use a real renderer
-          previewMd: existing?.markdown || "",
-        }}
-        drafts={prettyDrafts}
-        allSources={ALL_SOURCES}
-        neverVerbatim={NEVER_VERBATIM}
-        actionCompile={actionCompile}
-        actionSave={actionSave}
-        actionSchedule={actionSchedule}
-        actionSendNow={actionSendNow}
-        actionSendTest={actionSendTest}
-        actionDelete={actionDelete}
-      />
+      return (
+  <ClientUI
+    existing={{
+      id: existing?.id || "",
+      title: existing?.title || "Weekly Newsletter",
+      subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
+      markdown: existing?.markdown || "",
+      audienceTag: (existing as any)?.audienceTag,
+      previewHtml,
+    }}
+    drafts={prettyDrafts}
+    allSources={ALL_SOURCES}
+    neverVerbatim={NEVER_VERBATIM}
+    actionCompile={actionCompile}
+    actionSave={actionSave}
+    actionSchedule={actionSchedule}
+    actionSendNow={actionSendNow}
+    actionSendTest={actionSendTest}
+    actionDelete={actionDelete}
+  />
+);
+
     </main>
   );
 }
