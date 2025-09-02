@@ -1,23 +1,18 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
-
 import ReactMarkdown from "react-markdown";
-// Import with aliases to avoid vfile typing clashes & name shadowing
+
+// plugin typing shim to avoid vfile version clashes during build
 import remarkGfmOrig from "remark-gfm";
 import remarkBreaksOrig from "remark-breaks";
 import rehypeRawOrig from "rehype-raw";
-import type { PluggableList } from "unified";
-
-// Safe casts so we don’t trip on mismatched vfile versions in CI
 const remarkGfm: any = remarkGfmOrig as any;
 const remarkBreaks: any = remarkBreaksOrig as any;
 const rehypeRaw: any = rehypeRawOrig as any;
-const REMARKS: PluggableList = [remarkGfm, remarkBreaks];
-const REHYPES: PluggableList = [rehypeRaw];
 
 /* ---------- types ---------- */
 type DraftListItem = {
@@ -29,6 +24,8 @@ type DraftListItem = {
   audienceTag?: string;
 };
 
+type SendTestResult = { ok: boolean; message?: string };
+
 /* ---------- component ---------- */
 export default function ClientUI(props: {
   existing: {
@@ -37,7 +34,7 @@ export default function ClientUI(props: {
     subject: string;
     markdown: string;
     audienceTag?: string;
-    previewHtml: string; // kept for backward compatibility (not used now)
+    previewHtml: string; // unused now, but keep prop to avoid breaking page.tsx
   };
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
@@ -46,12 +43,14 @@ export default function ClientUI(props: {
   actionSave: (fd: FormData) => Promise<void>;
   actionSchedule: (fd: FormData) => Promise<void>;
   actionSendNow: (fd: FormData) => Promise<void>;
-  actionSendTest: (fd: FormData) => Promise<void>;
+  /** Server action returns {ok,message} (no redirect!) */
+  actionSendTest: (fd: FormData) => Promise<SendTestResult>;
+  /** Deletes on server; we also optimistically remove from local list */
   actionDelete: (fd: FormData) => Promise<void>;
 }) {
   const {
     existing,
-    drafts: draftsFromServer,
+    drafts: draftsProp,
     allSources,
     neverVerbatim,
     actionCompile,
@@ -64,36 +63,52 @@ export default function ClientUI(props: {
 
   /* ---------- editor state ---------- */
   const [title, setTitle] = useState(existing.title);
-  const [subject, setSubject] = useState(
-    existing.subject || "Your weekly Hey Skol Sister rundown!"
-  );
+  const [subject, setSubject] = useState(existing.subject);
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
 
-  // local copy so we can optimistically update deletes
-  const [drafts, setDrafts] = useState<DraftListItem[]>(draftsFromServer);
-  useEffect(() => setDrafts(draftsFromServer), [draftsFromServer]);
+  /* local drafts list so Delete doesn't blank everything */
+  const [drafts, setDrafts] = useState<DraftListItem[]>(draftsProp);
+  useEffect(() => setDrafts(draftsProp), [draftsProp]);
 
-  /* ---------- inline confirmations ---------- */
-  const [compileNote, setCompileNote] = useState<string>("");
-  const [saveNote, setSaveNote] = useState<string>("");
-  const [sendTestNote, setSendTestNote] = useState<string>("");
-  const [isPending, startTransition] = useTransition();
+  /* test email state */
+  const [testTo, setTestTo] = useState("");
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<SendTestResult | null>(null);
 
-  /* ---------- sync when a different draft loads ---------- */
+  /* small inline flash message (compile / save) pulled from ?compiled=1&saved=1 */
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    const msgs = [
+      q.get("compiled") ? "✅ Compiled!" : "",
+      q.get("saved") ? "✅ Saved." : "",
+      q.get("scheduled") ? "✅ Scheduled." : "",
+      q.get("sent") ? "✅ Sent." : "",
+    ].filter(Boolean);
+    if (msgs.length) {
+      setFlash(msgs.join(" "));
+      // clear from URL so it doesn’t persist on refresh
+      q.delete("compiled"); q.delete("saved"); q.delete("scheduled"); q.delete("sent");
+      const u = new URL(window.location.href);
+      u.search = q.toString();
+      window.history.replaceState({}, "", u.toString());
+      const t = setTimeout(() => setFlash(null), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [existing.id]);
+
+  /* sync when a different draft loads */
   useEffect(() => {
     setTitle(existing.title);
-    setSubject(existing.subject || "Your weekly Hey Skol Sister rundown!");
+    setSubject(existing.subject);
     setMarkdown(existing.markdown);
     setAudienceTag(existing.audienceTag || "");
-    setSaveNote("");
-    setCompileNote("");
-    setSendTestNote("");
   }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
 
   /* ---------- markdown toolbar ---------- */
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
   function insert(before: string, after = "", placeholder = "") {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -107,41 +122,46 @@ export default function ClientUI(props: {
       ta.selectionStart = ta.selectionEnd = newPos;
     });
   }
-
   const toolbarBtn =
     "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
 
-  /* ---------- PREVIEW (ReactMarkdown) ---------- */
-  const previewMd = useMemo(() => {
-    // normalize CRLF and NBSP; this helps consistent breaks
-    return (markdown || "")
-      .replace(/\u00A0/g, " ")
-      .replace(/\r\n/g, "\n");
-  }, [markdown]);
-
   /* ---------- send test (client handler -> server action) ---------- */
-  const [testTo, setTestTo] = useState("");
-  const [sendingTest, setSendingTest] = useState(false);
-
   async function onSendTest(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSendTestNote("");
     setSendingTest(true);
+    setTestResult(null);
     try {
       const fd = new FormData();
-fd.set("id", existing.id);
-fd.set("subject", subject);
-fd.set("markdown", markdown);
-// was: fd.set("to", testTo);
-fd.set("testRecipients", testTo);
-await actionSendTest(fd);
-      setSendTestNote("✅ Test email submitted. Check your inbox.");
+      fd.set("id", existing.id);
+      fd.set("subject", subject);
+      fd.set("markdown", markdown);
+      // IMPORTANT: server action expects "testRecipients"
+      fd.set("testRecipients", testTo);
+      const res = await actionSendTest(fd); // returns {ok,message}
+      setTestResult(res ?? { ok: true, message: "✅ Test queued." });
     } catch (err: any) {
-      setSendTestNote(`❌ Test failed: ${err?.message || "Unknown error"}`);
+      setTestResult({ ok: false, message: `❌ Send failed: ${err?.message || "Unknown error"}` });
     } finally {
       setSendingTest(false);
     }
   }
+
+  /* ---------- delete (optimistic) ---------- */
+  async function onDelete(id: string) {
+    const fd = new FormData();
+    fd.set("id", id);
+    // optimistic UI
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try {
+      await actionDelete(fd);
+    } catch {
+      // rollback on error
+      setDrafts(draftsProp);
+    }
+  }
+
+  /* ---------- preview content ---------- */
+  const previewMd = useMemo(() => markdown || "", [markdown]);
 
   /* ---------- UI ---------- */
   return (
@@ -155,16 +175,9 @@ await actionSendTest(fd);
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">1) Choose content</h2>
-          {compileNote && (
-            <span className="text-sm text-emerald-300">{compileNote}</span>
-          )}
+          {flash && <span className="text-sm text-emerald-300">{flash}</span>}
         </div>
-
-        <form
-          action={actionCompile}
-          className="grid gap-3"
-          onSubmit={() => setCompileNote("Compiling… (this page will refresh)")}
-        >
+        <form action={actionCompile} className="grid gap-3">
           {/* ranges */}
           <fieldset className="grid gap-2">
             <span className="text-sm text-white/80">Quick range</span>
@@ -272,16 +285,8 @@ await actionSendTest(fd);
 
       {/* 2) Edit draft */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">2) Edit draft</h2>
-          {saveNote && <span className="text-sm text-emerald-300">{saveNote}</span>}
-        </div>
-
-        <form
-          action={actionSave}
-          className="grid gap-3"
-          onSubmit={() => setSaveNote("Saving…")}
-        >
+        <h2 className="text-lg font-semibold">2) Edit draft</h2>
+        <form action={actionSave} className="grid gap-3">
           <input type="hidden" name="id" value={existing.id} />
 
           <label className="grid gap-1 text-sm">
@@ -332,27 +337,10 @@ await actionSendTest(fd);
             >
               Link
             </button>
-            <button
-              type="button"
-              title="Soft line break"
-              className={toolbarBtn}
-              onClick={() => insert("<br />\n", "")} // <-- explicit break, works in preview & email
-            >
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n", "")}>
               ¶ Break
             </button>
-            <button
-              type="button"
-              title="New paragraph"
-              className={toolbarBtn}
-              onClick={() => insert("\n\n", "")}
-            >
-              Para
-            </button>
-            <button
-              type="button"
-              className={toolbarBtn}
-              onClick={() => insert("\n\n---\n\n", "")}
-            >
+            <button type="button" className={toolbarBtn} onClick={() => insert("\n\n---\n\n")}>
               HR
             </button>
           </div>
@@ -368,27 +356,13 @@ await actionSendTest(fd);
                 onChange={(e) => setMarkdown(e.target.value)}
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
-              <p className="text-[11px] text-white/50 mt-1">
-                Tips: a blank line creates a paragraph. Use <code>¶ Break</code> for a line break
-                inside a paragraph, or <code>HR</code> for a divider.
-              </p>
             </label>
-
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown
-  remarkPlugins={REMARKS as any}
-  rehypePlugins={REHYPES as any}
-  components={{
-    a: (props: any) => (
-      <a {...props} target="_blank" rel="noopener noreferrer" />
-    ),
-  }}
->
-  {previewMd}
-</ReactMarkdown>
-
+              <div className="prose prose-invert max-w-none [&_p]:mb-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw]}>
+                  {previewMd}
+                </ReactMarkdown>
               </div>
             </div>
           </div>
@@ -412,20 +386,12 @@ await actionSendTest(fd);
 
       {/* 2.5) Send a test */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Send a test</h2>
-          {sendTestNote && (
-            <span className="text-sm {sendTestNote.startsWith('✅') ? 'text-emerald-300' : 'text-red-300'}">
-              {sendTestNote}
-            </span>
-          )}
-        </div>
-
+        <h2 className="text-lg font-semibold">Send a test</h2>
         <form onSubmit={onSendTest} className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1 text-sm min-w-[260px] flex-1">
             <span className="text-white/80">Recipient(s)</span>
             <input
-              name="testRecipients" // name for UX only; we still manually build the FormData
+              name="to"
               placeholder="you@example.com, other@site.com"
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
@@ -439,6 +405,11 @@ await actionSendTest(fd);
             {sendingTest ? "Sending…" : "Send test"}
           </button>
         </form>
+        {testResult && (
+          <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+            {testResult.message}
+          </p>
+        )}
       </section>
 
       {/* 3) Schedule / Send */}
@@ -499,30 +470,12 @@ await actionSendTest(fd);
                   >
                     Edit
                   </a>
-
-                  {/* Optimistic delete: remove from list immediately, then submit form */}
-                  <form
-                    action={actionDelete}
-                    onSubmit={(e) => {
-                      // nothing here; we trigger submit programmatically below
-                    }}
+                  <button
+                    onClick={() => onDelete(d.id)}
+                    className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10"
                   >
-                    <input type="hidden" name="id" value={d.id} />
-                    <button
-                      type="button"
-                      onClick={(ev) => {
-                        const ok = confirm("Delete this draft?");
-                        if (!ok) return;
-                        // Optimistically remove from local list
-                        setDrafts((prev) => prev.filter((x) => x.id !== d.id));
-                        // Submit the form to actually delete on server
-                        (ev.currentTarget.parentElement as HTMLFormElement).requestSubmit();
-                      }}
-                      className="rounded border border-red-400/30 text-red-200 px-2 py-1 text-xs hover:bg-red-400/10"
-                    >
-                      Delete
-                    </button>
-                  </form>
+                    Delete
+                  </button>
                 </div>
               </li>
             ))}

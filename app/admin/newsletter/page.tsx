@@ -18,9 +18,9 @@ import ClientUI from "./ClientUI";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const genId = () => Math.random().toString(36).slice(2, 10);
-
-// ----- Sources shown in the UI ------------------------------------------------
+/* ----------------------------------------------------------------------------
+ * Sources in the UI
+ * --------------------------------------------------------------------------*/
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
@@ -31,7 +31,11 @@ const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
 ];
 const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderboard"];
 
-// ----- Date helpers -----------------------------------------------------------
+const genId = () => Math.random().toString(36).slice(2, 10);
+
+/* ----------------------------------------------------------------------------
+ * Date helpers
+ * --------------------------------------------------------------------------*/
 function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   if (dateFrom || dateTo) return { dateFrom, dateTo };
   const now = new Date();
@@ -51,7 +55,9 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   return { dateFrom: undefined, dateTo: undefined };
 }
 
-// ----- Content fallbacks (guards if compiler omits a section) -----------------
+/* ----------------------------------------------------------------------------
+ * Content fallbacks (guards if compiler omits a section)
+ * --------------------------------------------------------------------------*/
 const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
 function toTime(dateStr?: string) {
   if (!dateStr) return 0;
@@ -61,9 +67,6 @@ function toTime(dateStr?: string) {
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
   return 0;
 }
-
-type Post = { slug: string; title: string; date: string; content: string; excerpt?: string };
-type Recap = { slug: string; title: string; date: string; content: string; excerpt?: string };
 
 async function pullMarkdownFromDir(
   dir: string,
@@ -125,26 +128,20 @@ async function fallbackBlog(dateFrom?: string, dateTo?: string) {
   return `\n\n## From the Blog\n\n${items}\n`;
 }
 
-// ----- Page -------------------------------------------------------------------
+/* ----------------------------------------------------------------------------
+ * Page
+ * --------------------------------------------------------------------------*/
 export default async function NewsletterAdmin({
   searchParams,
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
-  const flash = {
-    compiled: searchParams?.compiled === "1",
-    saved: searchParams?.saved === "1",
-    test: searchParams?.test === "1",
-  };
 
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
-  // Used to force a fresh mount of ClientUI when lists change
-  const refreshKey = drafts.map((d) => `${d.id}:${d.updatedAt || ""}`).join("|");
-
-  // ---------- Server actions ----------
+  /* ---------- Server actions ---------- */
   async function actionCompile(formData: FormData) {
     "use server";
     const { compileNewsletter } = await import("@/lib/newsletter/compile");
@@ -174,7 +171,7 @@ export default async function NewsletterAdmin({
     const globalDateTo = String(formData.get("dateTo") || "") || undefined;
     const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
-    // Compile via main pipeline
+    // Compile via pipeline
     let { subject, markdown } = await compileNewsletter(picks, {
       dateFrom,
       dateTo,
@@ -182,22 +179,24 @@ export default async function NewsletterAdmin({
       perSource,
     });
 
-    // --- Guards: if a selected section didn't come back, inject a sensible fallback
+    // Guards: inject fallbacks if selected but missing
     const wantsRecap = picks.some((p) => p.key === "weeklyRecap");
     const wantsBlog = picks.some((p) => p.key === "blog");
     const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
     const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
-
     if (wantsRecap && !hasRecap) {
-      try { markdown += await fallbackWeeklyRecap(dateFrom, dateTo); } catch {}
+      try {
+        markdown += await fallbackWeeklyRecap(dateFrom, dateTo);
+      } catch {}
     }
     if (wantsBlog && !hasBlog) {
-      try { markdown += await fallbackBlog(dateFrom, dateTo); } catch {}
+      try {
+        markdown += await fallbackBlog(dateFrom, dateTo);
+      } catch {}
     }
-    // --------------------------------------------------------------------------
 
     const draft = await saveDraft({
-      subject: subject || "Weekly Newsletter",
+      subject: subject || "Your weekly Hey Skol Sister rundown!",
       markdown: markdown || "",
       picks,
       status: "draft",
@@ -206,7 +205,6 @@ export default async function NewsletterAdmin({
       title: "Weekly Newsletter",
     });
 
-    // Inline + banner feedback; nonce busts any soft-cache
     redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1&nonce=${Date.now()}`);
   }
 
@@ -228,7 +226,7 @@ export default async function NewsletterAdmin({
     await saveDraft({
       ...base,
       title: String(formData.get("title") || "Weekly Newsletter"),
-      subject: String(formData.get("subject") || ""),
+      subject: String(formData.get("subject") || "Your weekly Hey Skol Sister rundown!"),
       markdown: String(formData.get("markdown") || ""),
       audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
     });
@@ -242,7 +240,7 @@ export default async function NewsletterAdmin({
     const d = await getDraft(id);
     if (!d) return;
     await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&nonce=${Date.now()}`);
+    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
   }
 
   async function actionSendNow(formData: FormData) {
@@ -253,10 +251,11 @@ export default async function NewsletterAdmin({
     if (!d) return;
     await sendNewsletter(d);
     await markStatus(id, "sent");
-    redirect(`/admin/newsletter?nonce=${Date.now()}`);
+    redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
   }
 
-  async function actionSendTest(formData: FormData) {
+  // NOTE: return a result object (no redirect) so the client call doesn't 404.
+  async function actionSendTest(formData: FormData): Promise<{ ok: boolean; message?: string }> {
     "use server";
     try {
       const { sendNewsletter } = await import("@/lib/newsletter/send");
@@ -264,10 +263,7 @@ export default async function NewsletterAdmin({
       const subject = String(formData.get("subject") || "");
       const markdown = String(formData.get("markdown") || "");
       const toRaw = String(formData.get("testRecipients") || "");
-      const recipients = toRaw
-        .split(/[,\s;]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
 
       const base = id ? await getDraft(id) : null;
       const draft: NewsletterDraft =
@@ -285,30 +281,26 @@ export default async function NewsletterAdmin({
               audienceTag: undefined,
             };
 
-      if (recipients.length > 0) {
-        await sendNewsletter(draft, { recipients }); // BCC-only in send.ts
-      } else {
-        console.warn("Send test skipped: no recipients provided.");
+      if (recipients.length === 0) {
+        return { ok: false, message: "No recipients provided." };
       }
-    } catch (e) {
-      console.error("Send test failed:", e);
-    }
 
-    const idParam = String(formData.get("id") || "");
-    redirect(
-      `/admin/newsletter${idParam ? `?id=${encodeURIComponent(idParam)}` : ""}&test=1&nonce=${Date.now()}`
-    );
+      const res = await sendNewsletter(draft, { recipients }); // test mode
+      return { ok: true, message: `Test sent to ${res.sent} recipient(s).` };
+    } catch (e: any) {
+      console.error("Send test failed:", e);
+      return { ok: false, message: e?.message || "Send failed." };
+    }
   }
 
   async function actionDelete(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
     await deleteDraft(id);
-    // Force a fresh RSC payload so the list never shows ghost items
-    redirect(`/admin/newsletter?nonce=${Date.now()}`);
+    // No redirect; ClientUI updates optimistically.
   }
 
-  // ---------- Editor preview (ClientUI renders Markdown; we still provide HTML for legacy) ----------
+  /* ---------- Legacy preview HTML (ClientUI renders Markdown properly) ---------- */
   const previewHtml = (existing?.markdown || "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -323,7 +315,6 @@ export default async function NewsletterAdmin({
     .join("\n")
     .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
 
-  // Display status mapping without changing storage enum
   const prettyDrafts = drafts.map((d) => {
     let display = "draft";
     if (d.status === "sent") display = "sent";
@@ -341,38 +332,24 @@ export default async function NewsletterAdmin({
   });
 
   return (
-    <main className="container max-w-6xl py-8 space-y-4">
-      {/* Top banner still there for completeness */}
-      {(flash.compiled || flash.saved || flash.test) && (
-        <div className="rounded-lg border border-green-500/30 bg-green-500/10 text-green-300 px-3 py-2">
-          {flash.compiled && "Draft compiled successfully."}
-          {flash.saved && " Draft saved."}
-          {flash.test && " Test sent (BCC) to the specified addresses."}
-        </div>
-      )}
-
-      return (
-  <ClientUI
-    existing={{
-      id: existing?.id || "",
-      title: existing?.title || "Weekly Newsletter",
-      subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
-      markdown: existing?.markdown || "",
-      audienceTag: (existing as any)?.audienceTag,
-      previewHtml,
-    }}
-    drafts={prettyDrafts}
-    allSources={ALL_SOURCES}
-    neverVerbatim={NEVER_VERBATIM}
-    actionCompile={actionCompile}
-    actionSave={actionSave}
-    actionSchedule={actionSchedule}
-    actionSendNow={actionSendNow}
-    actionSendTest={actionSendTest}
-    actionDelete={actionDelete}
-  />
-);
-
-    </main>
+    <ClientUI
+      existing={{
+        id: existing?.id || "",
+        title: existing?.title || "Weekly Newsletter",
+        subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
+        markdown: existing?.markdown || "",
+        audienceTag: (existing as any)?.audienceTag,
+        previewHtml,
+      }}
+      drafts={prettyDrafts}
+      allSources={ALL_SOURCES}
+      neverVerbatim={NEVER_VERBATIM}
+      actionCompile={actionCompile}
+      actionSave={actionSave}
+      actionSchedule={actionSchedule}
+      actionSendNow={actionSendNow}
+      actionSendTest={actionSendTest}
+      actionDelete={actionDelete}
+    />
   );
 }
