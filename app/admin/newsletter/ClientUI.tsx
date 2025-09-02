@@ -4,6 +4,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import rehypeRaw from "rehype-raw";
 
 /* ---------- types ---------- */
 type DraftListItem = {
@@ -17,15 +21,23 @@ type DraftListItem = {
 
 type SendTestResult = { ok: boolean; message?: string };
 
+type Flash = {
+  compiled?: boolean;
+  saved?: boolean;
+  test?: boolean;
+};
+
 /* ---------- component ---------- */
 export default function ClientUI(props: {
+  flash?: Flash; // NEW: for inline confirmations after redirects
   existing: {
     id: string;
     title: string;
     subject: string;
     markdown: string;
     audienceTag?: string;
-    previewHtml: string;
+    previewHtml?: string; // legacy (unused now, kept for backwards-compat)
+    previewMd?: string;   // optional raw md from server if you want
   };
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
@@ -39,6 +51,7 @@ export default function ClientUI(props: {
   actionDelete: (fd: FormData) => Promise<void>;
 }) {
   const {
+    flash,
     existing,
     drafts,
     allSources,
@@ -57,6 +70,25 @@ export default function ClientUI(props: {
   const [markdown, setMarkdown] = useState(existing.markdown);
   const [audienceTag, setAudienceTag] = useState(existing.audienceTag || "");
 
+  /* inline confirmations near buttons */
+  const [showCompiled, setShowCompiled] = useState(!!flash?.compiled);
+  const [showSaved, setShowSaved] = useState(!!flash?.saved);
+  const [showTestSent, setShowTestSent] = useState(!!flash?.test);
+
+  useEffect(() => {
+    if (flash?.compiled) setShowCompiled(true);
+    if (flash?.saved) setShowSaved(true);
+    if (flash?.test) setShowTestSent(true);
+    if (flash?.compiled || flash?.saved || flash?.test) {
+      const t = setTimeout(() => {
+        setShowCompiled(false);
+        setShowSaved(false);
+        setShowTestSent(false);
+      }, 4000);
+      return () => clearTimeout(t);
+    }
+  }, [flash?.compiled, flash?.saved, flash?.test]);
+
   /* test email state */
   const [testTo, setTestTo] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
@@ -69,21 +101,6 @@ export default function ClientUI(props: {
     setMarkdown(existing.markdown);
     setAudienceTag(existing.audienceTag || "");
   }, [existing.id, existing.title, existing.subject, existing.markdown, existing.audienceTag]);
-
-  /* ---------- preview (very basic markdown-ish rendering) ---------- */
-  const previewHtml = (markdown || "")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((l) => {
-      if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
-      if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
-      if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
-      if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-      if (!l.trim()) return "<br/>";
-      return `<p class="opacity-80">${l}</p>`;
-    })
-    .join("\n")
-    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
 
   /* ---------- markdown toolbar ---------- */
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -114,10 +131,13 @@ export default function ClientUI(props: {
       fd.set("id", existing.id);
       fd.set("subject", subject);
       fd.set("markdown", markdown);
-      fd.set("to", testTo);
+      // IMPORTANT: field name expected by server action
+      fd.set("testRecipients", testTo);
 
       await actionSendTest(fd); // server action returns void
-      setTestResult({ ok: true, message: "✅ Test email sent." });
+      setTestResult({ ok: true, message: "✅ Test email sent (BCC)." });
+      setShowTestSent(true);
+      setTimeout(() => setShowTestSent(false), 4000);
     } catch (err: any) {
       setTestResult({ ok: false, message: `❌ Send failed: ${err?.message || "Unknown error"}` });
     } finally {
@@ -233,12 +253,15 @@ export default function ClientUI(props: {
             />
           </label>
 
-          <button
-            type="submit"
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit"
-          >
-            Compile with AI
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 w-fit"
+            >
+              Compile with AI
+            </button>
+            {showCompiled && <span className="text-green-400 text-sm">Compiled ✓</span>}
+          </div>
         </form>
       </section>
 
@@ -320,16 +343,19 @@ export default function ClientUI(props: {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono text-xs"
               />
             </label>
+
+            {/* Real Markdown preview */}
             <div className="rounded-lg border border-white/10 p-3 bg-black/20">
               <div className="text-xs uppercase tracking-wide text-white/60 mb-2">Preview</div>
-              <div
-                className="prose prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
+              <div className="prose prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw]}>
+                  {markdown || existing.previewMd || ""}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Audience tag (optional)</span>
               <input
@@ -342,6 +368,7 @@ export default function ClientUI(props: {
             <button className="self-end rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
               Save Draft
             </button>
+            {showSaved && <span className="text-green-400 text-sm self-end">Saved ✓</span>}
           </div>
         </form>
       </section>
@@ -353,19 +380,22 @@ export default function ClientUI(props: {
           <label className="grid gap-1 text-sm min-w-[260px] flex-1">
             <span className="text-white/80">Recipient(s)</span>
             <input
-              name="to"
+              name="testRecipients" // IMPORTANT: matches server action
               placeholder="you@example.com, other@site.com"
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
             />
           </label>
-          <button
-            disabled={sendingTest}
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
-          >
-            {sendingTest ? "Sending…" : "Send test"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={sendingTest}
+              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-60"
+            >
+              {sendingTest ? "Sending…" : "Send test"}
+            </button>
+            {showTestSent && <span className="text-green-400 text-sm">Sent ✓</span>}
+          </div>
         </form>
         {testResult && (
           <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>

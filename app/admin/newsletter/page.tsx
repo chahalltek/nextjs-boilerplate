@@ -51,18 +51,8 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   return { dateFrom: undefined, dateTo: undefined };
 }
 
-// ----- CWS fallback fetch (guards against empty Weekly Recap in compile) ------
-const CWS_DIR = "content/recaps";
+// ----- Content fallbacks (guards if compiler omits a section) -----------------
 const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
-
-type Recap = {
-  slug: string;
-  title: string;
-  date: string;
-  content: string;
-  excerpt?: string;
-};
-
 function toTime(dateStr?: string) {
   if (!dateStr) return 0;
   const d = new Date(dateStr);
@@ -72,11 +62,17 @@ function toTime(dateStr?: string) {
   return 0;
 }
 
-async function pullCwsWithinRange(dateFrom?: string, dateTo?: string, limit = 1): Promise<Recap[]> {
-  const items = await listDir(CWS_DIR).catch(() => []);
-  const files = items.filter((it: any) => it.type === "file" && /\.mdx?$/i.test(it.name));
+type Post = { slug: string; title: string; date: string; content: string; excerpt?: string };
+type Recap = { slug: string; title: string; date: string; content: string; excerpt?: string };
 
-  const recaps: Recap[] = [];
+async function pullMarkdownFromDir(
+  dir: string,
+  { dateFrom, dateTo, limit = 3 }: { dateFrom?: string; dateTo?: string; limit?: number } = {}
+) {
+  const items = await listDir(dir).catch(() => []);
+  const files = items.filter((it: any) => it.type === "file" && /\.mdx?$/i.test(it.name));
+  const out: { slug: string; title: string; date: string; content: string; excerpt?: string }[] = [];
+
   for (const f of files) {
     const file = await getFile(f.path).catch(() => null);
     if (!file?.contentBase64) continue;
@@ -92,23 +88,41 @@ async function pullCwsWithinRange(dateFrom?: string, dateTo?: string, limit = 1)
     const scheduledInFuture = publishAt && Date.now() < publishAt.getTime();
     if (draft || !visible || scheduledInFuture) continue;
 
-    // Optional date filtering
     const dt = toTime(fm.date || "");
     const fromOK = dateFrom ? dt >= toTime(dateFrom) : true;
     const toOK = dateTo ? dt <= toTime(dateTo) : true;
     if (!fromOK || !toOK) continue;
 
-    recaps.push({
+    out.push({
       slug: f.name.replace(/\.(md|mdx)$/i, ""),
       title: fm.title || f.name.replace(/\.(md|mdx)$/i, ""),
       date: fm.date || "",
       excerpt: fm.excerpt || "",
-      content: parsed.content || "",
+      content: (parsed.content || "").trim(),
     });
   }
 
-  recaps.sort((a, b) => toTime(b.date) - toTime(a.date));
-  return recaps.slice(0, Math.max(1, limit));
+  out.sort((a, b) => toTime(b.date) - toTime(a.date));
+  return out.slice(0, Math.max(1, limit));
+}
+
+async function fallbackWeeklyRecap(dateFrom?: string, dateTo?: string) {
+  const recaps = await pullMarkdownFromDir("content/recaps", { dateFrom, dateTo, limit: 1 });
+  if (!recaps.length) return "";
+  const r = recaps[0];
+  return `\n\n## Weekly Recap\n\n**${r.title}** (${r.date})\n\n${r.content}\n`;
+}
+
+async function fallbackBlog(dateFrom?: string, dateTo?: string) {
+  const posts = await pullMarkdownFromDir("content/posts", { dateFrom, dateTo, limit: 3 });
+  if (!posts.length) return "";
+  const items = posts
+    .map((p) => {
+      const firstPara = (p.excerpt || p.content).split(/\n\s*\n/)[0]?.trim() || "";
+      return `- **${p.title}** (${p.date}) — ${firstPara}`;
+    })
+    .join("\n");
+  return `\n\n## From the Blog\n\n${items}\n`;
 }
 
 // ----- Page -------------------------------------------------------------------
@@ -118,9 +132,17 @@ export default async function NewsletterAdmin({
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
-  const compiledFlash = searchParams?.compiled === "1";
+  const flash = {
+    compiled: searchParams?.compiled === "1",
+    saved: searchParams?.saved === "1",
+    test: searchParams?.test === "1",
+  };
+
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
+
+  // Used to force a fresh mount of ClientUI when lists change
+  const refreshKey = drafts.map((d) => `${d.id}:${d.updatedAt || ""}`).join("|");
 
   // ---------- Server actions ----------
   async function actionCompile(formData: FormData) {
@@ -160,22 +182,17 @@ export default async function NewsletterAdmin({
       perSource,
     });
 
-    // --- Guard: ensure Weekly Recap made it in if requested -------------------
-    const wantsCws = picks.some((p) => p.key === "weeklyRecap");
-    const hasCwsAlready = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
-    if (wantsCws && !hasCwsAlready) {
-      try {
-        const cws = await pullCwsWithinRange(dateFrom, dateTo, 1);
-        if (cws.length) {
-          const block =
-            `\n\n## Weekly Recap\n\n` +
-            `**${cws[0].title}** (${cws[0].date})\n\n` +
-            `${cws[0].content.trim()}\n`;
-          markdown = (markdown || "").trim() + block;
-        }
-      } catch (e) {
-        console.error("CWS fallback failed:", e);
-      }
+    // --- Guards: if a selected section didn't come back, inject a sensible fallback
+    const wantsRecap = picks.some((p) => p.key === "weeklyRecap");
+    const wantsBlog = picks.some((p) => p.key === "blog");
+    const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
+    const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
+
+    if (wantsRecap && !hasRecap) {
+      try { markdown += await fallbackWeeklyRecap(dateFrom, dateTo); } catch {}
+    }
+    if (wantsBlog && !hasBlog) {
+      try { markdown += await fallbackBlog(dateFrom, dateTo); } catch {}
     }
     // --------------------------------------------------------------------------
 
@@ -189,8 +206,8 @@ export default async function NewsletterAdmin({
       title: "Weekly Newsletter",
     });
 
-    // Show a small confirmation banner on return
-    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1`);
+    // Inline + banner feedback; nonce busts any soft-cache
+    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1&nonce=${Date.now()}`);
   }
 
   async function actionSave(formData: FormData) {
@@ -215,7 +232,7 @@ export default async function NewsletterAdmin({
       markdown: String(formData.get("markdown") || ""),
       audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
     });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
+    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&saved=1&nonce=${Date.now()}`);
   }
 
   async function actionSchedule(formData: FormData) {
@@ -225,7 +242,7 @@ export default async function NewsletterAdmin({
     const d = await getDraft(id);
     if (!d) return;
     await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}`);
+    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&nonce=${Date.now()}`);
   }
 
   async function actionSendNow(formData: FormData) {
@@ -234,9 +251,9 @@ export default async function NewsletterAdmin({
     const id = String(formData.get("id") || "");
     const d = await getDraft(id);
     if (!d) return;
-    await sendNewsletter(d); // uses BCC + chunking under the hood
+    await sendNewsletter(d);
     await markStatus(id, "sent");
-    redirect(`/admin/newsletter`);
+    redirect(`/admin/newsletter?nonce=${Date.now()}`);
   }
 
   async function actionSendTest(formData: FormData) {
@@ -248,7 +265,7 @@ export default async function NewsletterAdmin({
       const markdown = String(formData.get("markdown") || "");
       const toRaw = String(formData.get("testRecipients") || "");
       const recipients = toRaw
-        .split(/[,\s;]+/) // commas, spaces, semicolons
+        .split(/[,\s;]+/)
         .map((s) => s.trim())
         .filter(Boolean);
 
@@ -269,8 +286,7 @@ export default async function NewsletterAdmin({
             };
 
       if (recipients.length > 0) {
-        // SAFE: sendNewsletter(draft, { recipients }) sends ONLY to these addresses (via BCC)
-        await sendNewsletter(draft, { recipients });
+        await sendNewsletter(draft, { recipients }); // BCC-only in send.ts
       } else {
         console.warn("Send test skipped: no recipients provided.");
       }
@@ -279,17 +295,20 @@ export default async function NewsletterAdmin({
     }
 
     const idParam = String(formData.get("id") || "");
-    redirect(`/admin/newsletter${idParam ? `?id=${encodeURIComponent(idParam)}` : ""}`);
+    redirect(
+      `/admin/newsletter${idParam ? `?id=${encodeURIComponent(idParam)}` : ""}&test=1&nonce=${Date.now()}`
+    );
   }
 
   async function actionDelete(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
     await deleteDraft(id);
-    redirect(`/admin/newsletter`);
+    // Force a fresh RSC payload so the list never shows ghost items
+    redirect(`/admin/newsletter?nonce=${Date.now()}`);
   }
 
-  // ---------- Preview HTML for the editor preview ----------
+  // ---------- Editor preview (ClientUI renders Markdown; we still provide HTML for legacy) ----------
   const previewHtml = (existing?.markdown || "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -323,20 +342,28 @@ export default async function NewsletterAdmin({
 
   return (
     <main className="container max-w-6xl py-8 space-y-4">
-      {compiledFlash && (
+      {/* Top banner still there for completeness */}
+      {(flash.compiled || flash.saved || flash.test) && (
         <div className="rounded-lg border border-green-500/30 bg-green-500/10 text-green-300 px-3 py-2">
-          Draft compiled successfully. You can edit and send below.
+          {flash.compiled && "Draft compiled successfully."}
+          {flash.saved && " Draft saved."}
+          {flash.test && " Test sent (BCC) to the specified addresses."}
         </div>
       )}
 
       <ClientUI
+        key={refreshKey}
+        flash={flash} // inline confirmations near buttons
         existing={{
           id: existing?.id || "",
           title: existing?.title || "Weekly Newsletter",
-          subject: existing?.subject || "Your weekly Skol Sisters rundown",
+          // NEW default subject:
+          subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
           markdown: existing?.markdown || "",
           audienceTag: (existing as any)?.audienceTag,
           previewHtml,
+          // also pass raw markdown so ClientUI can use a real renderer
+          previewMd: existing?.markdown || "",
         }}
         drafts={prettyDrafts}
         allSources={ALL_SOURCES}
