@@ -68,15 +68,13 @@ async function sendWithResend(bccList: string[], subject: string, html: string, 
 
   for (const bcc of chunk(bccList, CHUNK_SIZE)) {
     try {
-      await resend.emails.send({
-        from: FROM,
-        to: TO_HEADER, // single visible recipient (alias)
-        bcc,           // everyone else hidden
-        subject,
-        html,
-        text,
-        headers,
-      });
+     await resend.emails.send({
+  from,
+  to: [from],        // a single visible "to"
+  bcc: batch,        // everyone else hidden
+  subject,
+  html,
+});
     } catch (e: any) {
       console.error("Resend send error:", e?.message || e);
     }
