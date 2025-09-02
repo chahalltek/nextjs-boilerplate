@@ -71,11 +71,11 @@ async function fetchPublishedRecaps() {
 }
 
 /**
- * Normalize text so the public page matches the admin preview:
- * - Insert a blank line before numeric/bullet items so Markdown creates lists
- * - Convert lettered items (a., b., …), with optional indentation and wrapped lines,
- *   into a single <ol type="a">…</ol> block
- * - Normalize CRLF and NBSP
+ * Normalize to match admin preview:
+ *  - Insert a blank line before "1. " / "-" so Markdown makes real lists.
+ *  - Convert lettered items (a., b., …) into <ol type="a"> with <li> that contain
+ *    proper <p> and <br /> so internal breaks are preserved.
+ *  - Preserve whitespace; don't over-collapse.
  */
 function normalizeMarkdown(md) {
   const src = md.replace(/\r/g, "").replace(/\u00A0/g, " ");
@@ -84,30 +84,46 @@ function normalizeMarkdown(md) {
   let i = 0;
   let prevBlank = true;
 
+  // Helper: turn raw text into paragraphs with <br />
+  const htmlParagraphize = (text) =>
+    text
+      .split(/\n{2,}/) // paragraphs
+      .map((para) => `<p>${para.replace(/\n/g, "<br />").trim()}</p>`)
+      .join("");
+
   while (i < lines.length) {
     const line = lines[i];
 
     // Lettered list block with optional indentation: "   a. Item…"
     if (/^\s*[a-z]\.\s+/.test(line)) {
-      if (!prevBlank) out.push(""); // separate from previous paragraph
+      if (!prevBlank) out.push("");
       out.push('<ol type="a" class="[list-style-type:lower-alpha] list-inside ml-5 space-y-1">');
 
-      // Collect contiguous lettered items; each item may wrap across lines
+      // Collect contiguous a./b./c. items; each may wrap across lines
       while (i < lines.length && /^\s*[a-z]\.\s+/.test(lines[i])) {
-        let item = lines[i].replace(/^\s*[a-z]\.\s+/, "").trim();
+        let itemLines = [];
+        // start item
+        itemLines.push(lines[i].replace(/^\s*[a-z]\.\s+/, ""));
         i++;
+        // continuation lines until next lettered item or a hard break (empty line followed by empty line)
         while (i < lines.length && !/^\s*[a-z]\.\s+/.test(lines[i])) {
-          const cont = lines[i];
-          if (cont.trim() === "" && i + 1 < lines.length && /^\s*$/.test(lines[i + 1])) {
-            item += "\n\n";
-            i += 2;
-            continue;
+          // keep lines verbatim to preserve user-inserted breaks
+          itemLines.push(lines[i]);
+          // stop item if we see two consecutive blanks (keeps paragraph boundary)
+          if (lines[i].trim() === "" && i + 1 < lines.length && lines[i + 1].trim() === "") {
+            // still part of the item; we'll paragraphize later
           }
-          item += cont.trim() ? " " + cont.trim() : "";
+          // break out only when a non-lettered heading/numbered list starts and we've had at least one non-empty line
+          if (itemLines.length > 1 && (/^\s*\d+\.\s+/.test(lines[i + 1] || "") || /^\s*[-*+]\s+/.test(lines[i + 1] || ""))) {
+            break;
+          }
           i++;
+          if (i >= lines.length) break;
+          if (/^\s*[a-z]\.\s+/.test(lines[i])) break;
         }
-        item = item.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-        out.push(`<li>${item}</li>`);
+
+        const itemRaw = itemLines.join("\n").replace(/[ \t]+$/gm, "");
+        out.push(`<li>${htmlParagraphize(itemRaw)}</li>`);
       }
 
       out.push("</ol>", "");
@@ -115,7 +131,7 @@ function normalizeMarkdown(md) {
       continue;
     }
 
-    // Ensure a blank line before numeric/bullet list items so Markdown parses them
+    // Ensure a blank line before standard list items so Markdown parses them
     const isStdItem = /^\s*\d+\.\s+/.test(line) || /^\s*[-*+]\s+/.test(line);
     if (isStdItem && !prevBlank) out.push("");
 
@@ -205,10 +221,9 @@ export default async function CwsIndexPage() {
               <div className="prose prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeRaw]}     // allow injected <ol>
-                  skipHtml={false}                 // <- ensure raw HTML is NOT skipped
+                  rehypePlugins={[rehypeRaw]} // allow injected <ol> / <p> / <br />
+                  skipHtml={false}
                   components={{
-                    // nice spacing for any lists (including the injected <ol>)
                     ol: ({ node, ...props }) => (
                       <ol className="list-inside ml-5 space-y-1" {...props} />
                     ),
