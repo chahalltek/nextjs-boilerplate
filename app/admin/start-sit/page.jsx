@@ -9,7 +9,6 @@ export const dynamic = "force-dynamic";
 
 /** Resolve a dependable absolute base for client-side fetches */
 function getBase() {
-  // Prefer your public URL if set; otherwise use the current origin.
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     try {
       const u = new URL(process.env.NEXT_PUBLIC_SITE_URL);
@@ -32,16 +31,15 @@ export default function StartSitAdminPage() {
 
     const base = getBase();
 
-    // Prefer the protected admin endpoint. Your admin cookie will pass automatically.
-    // We also send both `markdown` and `body` to be compatible with either handler shape.
-    const payload = { key, title, markdown: body, body };
+    // API expects { week, title, body }
+    const payload = { week: key, title, body };
 
     try {
-      const res = await fetch(`${base}/api/admin/start-sit`, {
+      const res = await fetch(`${base}/api/admin/startsit/thread`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        credentials: "include", // ensure cookies (admin session) are sent
+        credentials: "include", // send the admin cookie
         body: JSON.stringify(payload),
       });
 
@@ -50,16 +48,15 @@ export default function StartSitAdminPage() {
         throw new Error(`${res.status} ${txt || res.statusText}`);
       }
 
-      // If your route returns { slug }, use it; otherwise show a success note.
-      let slug = "";
+      let id = "";
       try {
         const json = await res.json();
-        slug = json?.slug || "";
+        id = json?.id || "";
       } catch {}
 
       setStatus(
-        slug
-          ? `✅ Published. View at /start-sit/${slug}`
+        id
+          ? `✅ Published (id: ${id}). Revalidate /start-sit to refresh the page.`
           : "✅ Published. You can revalidate /start-sit if needed."
       );
     } catch (err) {
@@ -72,15 +69,11 @@ export default function StartSitAdminPage() {
     try {
       setStatus("Revalidating /start-sit…");
       const base = getBase();
-
-      // If you later add a real revalidate endpoint, swap it in here.
-      // This ping is harmless and keeps a consistent UX.
       await fetch(`${base}/api/search-index?noop=1`, {
         method: "POST",
         cache: "no-store",
         credentials: "include",
       });
-
       setStatus("✅ Revalidated (or queued).");
     } catch {
       setStatus("⚠️ Revalidate call failed. Use Super Admin → Revalidate path: /start-sit");
@@ -93,7 +86,7 @@ export default function StartSitAdminPage() {
         <h1 className="text-3xl font-bold">Start / Sit — Admin</h1>
         <p className="text-white/70">
           Publish this week’s Start/Sit thread. This posts to{" "}
-          <code>/api/admin/start-sit</code> (protected by the admin cookie).
+          <code>/api/admin/startsit/thread</code> (protected by the admin cookie).
         </p>
       </header>
 
