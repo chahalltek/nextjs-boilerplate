@@ -55,7 +55,7 @@ async function actionWarmCaches() {
 }
 
 // --- UI ----------------------------------------------------------------
-// Removed Analytics from this list so we can place it in its own section below.
+// Keep Analytics/Email-Audience out of this list so they can live in the section below.
 const cards = [
   { href: "/admin/posts", title: "Blog", desc: "Write posts and upload images. Commits to content/posts/…", emoji: "📝" },
   { href: "/admin/cws", title: "Weekly Recap", desc: "Post your ‘Coulda, Woulda, Shoulda’ recap.", emoji: "⏪" },
@@ -120,9 +120,9 @@ export default function AdminHome() {
         </p>
       </section>
 
-      {/* Analytics (new standalone section placed between Maintenance and Content Tools) */}
+      {/* Analytics & Email/Audience (placed between Maintenance and Content Tools) */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Analytics</h2>
+        <h2 className="text-lg font-semibold mb-3">Analytics & Email</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             href="/admin/analytics"
@@ -132,6 +132,17 @@ export default function AdminHome() {
             <div className="text-lg font-semibold">Analytics</div>
             <p className="text-sm text-white/70 mt-1">
               Visitors, pageviews, bounce rate and avg visit.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/email-audience"
+            className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition"
+          >
+            <div className="text-2xl mb-2">📬</div>
+            <div className="text-lg font-semibold">Email & Audience</div>
+            <p className="text-sm text-white/70 mt-1">
+              Resend sends + Mailchimp subscribers at a glance.
             </p>
           </Link>
         </div>
