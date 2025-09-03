@@ -1,10 +1,13 @@
 // app/api/admin/analytics/route.ts
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function parseJsonOrWrap(text: string) {
+type PlausibleAggResponse = {
+  results?: Record<string, { value?: number } | number>;
+};
+
+function jsonOrText(text: string) {
   try {
     return JSON.parse(text);
   } catch {
@@ -12,58 +15,40 @@ function parseJsonOrWrap(text: string) {
   }
 }
 
-function getSiteId(): string | null {
-  const envSite =
-    process.env.PLAUSIBLE_SITE_ID ||
-    process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ||
-    "";
-
-  if (envSite) return envSite.trim();
-
-  const base = process.env.NEXT_PUBLIC_SITE_URL;
-  if (!base) return null;
-
-  try {
-    return new URL(base).host;
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const period =
-    url.searchParams.get("period") || "30d";
+    url.searchParams.get("period") ?? "30d";
   const metrics =
-    url.searchParams.get("metrics") ||
+    url.searchParams.get("metrics") ??
     "visitors,pageviews,bounce_rate,visit_duration";
 
-  const API_BASE =
-    (process.env.PLAUSIBLE_API_BASE || "https://plausible.io").replace(/\/+$/, "");
-  const API_KEY = process.env.PLAUSIBLE_API_KEY || "";
-  const SITE_ID = getSiteId();
+  const API_BASE = (process.env.PLAUSIBLE_API_BASE ?? "https://plausible.io").replace(/\/+$/, "");
+  const API_KEY = process.env.PLAUSIBLE_API_KEY;
+
+  const SITE_ID =
+    process.env.PLAUSIBLE_SITE_ID ??
+    process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ??
+    (process.env.NEXT_PUBLIC_SITE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname
+      : "");
 
   if (!API_KEY) {
     return NextResponse.json(
-      { error: "Missing env: PLAUSIBLE_API_KEY" },
+      { ok: false, error: "PLAUSIBLE_API_KEY not set" },
       { status: 500 }
     );
   }
   if (!SITE_ID) {
     return NextResponse.json(
-      {
-        error:
-          "Missing site id. Set PLAUSIBLE_SITE_ID or NEXT_PUBLIC_PLAUSIBLE_DOMAIN, or provide NEXT_PUBLIC_SITE_URL so we can derive the host.",
-      },
+      { ok: false, error: "PLAUSIBLE_SITE_ID not set" },
       { status: 500 }
     );
   }
 
-  const endpoint =
-    `${API_BASE}/api/v1/stats/aggregate` +
-    `?site_id=${encodeURIComponent(SITE_ID)}` +
-    `&period=${encodeURIComponent(period)}` +
-    `&metrics=${encodeURIComponent(metrics)}`;
+  const endpoint = `${API_BASE}/api/v1/stats/aggregate?site_id=${encodeURIComponent(
+    SITE_ID
+  )}&period=${encodeURIComponent(period)}&metrics=${encodeURIComponent(metrics)}`;
 
   try {
     const res = await fetch(endpoint, {
@@ -74,22 +59,27 @@ export async function GET(req: Request) {
     const text = await res.text();
 
     if (!res.ok) {
-      // Pass through Plausible status so the UI can display it
       return NextResponse.json(
-        {
-          error: "plausible_error",
-          status: res.status,
-          detail: parseJsonOrWrap(text),
-        },
-        { status: res.status }
+        { ok: false, error: "plausible_error", status: res.status, detail: jsonOrText(text) },
+        { status: 502 }
       );
     }
 
-    // Plausible returns `{ results: { ... } }`
-    return NextResponse.json(parseJsonOrWrap(text), { status: 200 });
+    const data = jsonOrText(text) as PlausibleAggResponse;
+
+    // Flatten { value } objects into plain numbers
+    const flat: Record<string, number> = {};
+    if (data?.results && typeof data.results === "object") {
+      for (const [k, v] of Object.entries(data.results)) {
+        if (typeof v === "number") flat[k] = v;
+        else if (v && typeof (v as any).value === "number") flat[k] = (v as any).value;
+      }
+    }
+
+    return NextResponse.json({ ok: true, results: flat }, { status: 200 });
   } catch (e: any) {
     return NextResponse.json(
-      { error: "proxy_failed", message: e?.message || String(e) },
+      { ok: false, error: "proxy_failed", message: e?.message || String(e) },
       { status: 502 }
     );
   }
