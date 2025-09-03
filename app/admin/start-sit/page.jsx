@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 /** Prefer your public URL if set; otherwise use the current origin. */
 function getBase() {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
-    try { return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch {}
+    try {
+      return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin;
+    } catch {}
   }
   if (typeof window !== "undefined") return window.location.origin;
   return "";
@@ -19,30 +21,54 @@ function getBase() {
 /* Tiny Markdown → HTML used in the newsletter; duplicated here client-side */
 function mdToHtml(md) {
   if (!md) return "";
-  md = md.replace(/\r\n/g, "\n");
-  md = md.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  // normalize + escape
+  md = String(md).replace(/\r\n/g, "\n");
+  md = md.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  // helper: inline replacements (bold, italic, links)
+  const applyInline = (s) =>
+    s
+      // **bold**
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      // _italic_  (avoid underscores inside_words_)
+      .replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>")
+      // [text](https?://url)
+      .replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>'
+      );
+
+  // headings
   md = md
-    .replace(/^###\s+(.*)$/gm, "<h3>$1</h3>")
-    .replace(/^##\s+(.*)$/gm, "<h2>$1</h2>")
-    .replace(/^#\s+(.*)$/gm, "<h1>$1</h1>");
+    .replace(/^###\s+(.*)$/gm, (_m, t) => `<h3>${applyInline(t)}</h3>`)
+    .replace(/^##\s+(.*)$/gm, (_m, t) => `<h2>${applyInline(t)}</h2>`)
+    .replace(/^#\s+(.*)$/gm, (_m, t) => `<h1>${applyInline(t)}</h1>`);
+
+  // horizontal rule
   md = md.replace(/^\s*---+\s*$/gm, "<hr />");
+
+  // bullet lists
   md = md.replace(/^(?:-\s+.*(?:\n|$))+?/gm, (block) => {
-    const items = block.trim().split(/\n/)
-      .map(line => line.replace(/^-+\s+/, "").trim())
-      .map(txt => `<li>${txt
-        .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
-        .replace(/_(.+?)_/g,"<em>$1</em>")
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}</li>`)
+    const items = block
+      .trim()
+      .split(/\n/)
+      .map((line) => line.replace(/^-+\s+/, "").trim())
+      .map((txt) => `<li>${applyInline(txt)}</li>`)
       .join("");
     return `<ul>${items}</ul>`;
   });
+
+  // paragraphs (keep single newlines as <br>)
   md = md
     .split(/\n{2,}/)
-    .map(chunk => /^<(h\d|ul|hr)/i.test(chunk.trim())
-      ? chunk
-      : `<p>${chunk.split("\n").join("<br />")}</p>`
+    .map((chunk) =>
+      /^<(h\d|ul|hr)/i.test(chunk.trim())
+        ? chunk
+        : `<p>${applyInline(chunk).split("\n").join("<br />")}</p>`
     )
     .join("\n");
+
   return md;
 }
 
@@ -50,12 +76,12 @@ function Toolbar({ apply }) {
   return (
     <div className="flex flex-wrap gap-2 text-sm">
       {[
-        ["B", (s) => `**${s||"bold"}**`],
-        ["I", (s) => `_${s||"italic"}_`],
-        ["H2", (s) => `## ${s||"Heading"}`],
-        ["H3", (s) => `### ${s||"Heading"}`],
-        ["• List", (s) => s ? s.split("\n").map(l=>`- ${l}`).join("\n") : "- item\n- item"],
-        ["Link", (s) => `[${s||"text"}](https://example.com)`],
+        ["B", (s) => `**${s || "bold"}**`],
+        ["I", (s) => `_${s || "italic"}_`],
+        ["H2", (s) => `## ${s || "Heading"}`],
+        ["H3", (s) => `### ${s || "Heading"}`],
+        ["• List", (s) => (s ? s.split("\n").map((l) => `- ${l}`).join("\n") : "- item\n- item")],
+        ["Link", (s) => `[${s || "text"}](https://example.com)`],
         ["HR", () => `\n---\n`],
       ].map(([label, fn]) => (
         <button
@@ -73,12 +99,12 @@ function Toolbar({ apply }) {
 }
 
 export default function StartSitAdminPage() {
-  const [drafts, setDrafts]   = useState([]);
+  const [drafts, setDrafts] = useState([]);
   const [activeId, setActive] = useState("");
-  const [key, setKey]         = useState("");     // week key e.g. 2025-wk01
-  const [title, setTitle]     = useState("");
-  const [body, setBody]       = useState("");
-  const [status, setStatus]   = useState(null);
+  const [key, setKey] = useState(""); // week key e.g. 2025-wk01
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState(null);
   const editorRef = useRef(null);
   const base = useMemo(getBase, []);
 
@@ -86,7 +112,10 @@ export default function StartSitAdminPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include", cache: "no-store" });
+        const res = await fetch(`${base}/api/admin/startsit/drafts`, {
+          credentials: "include",
+          cache: "no-store",
+        });
         const json = await res.json();
         setDrafts(json?.items || []);
         if (json?.items?.[0]) selectDraft(json.items[0].id);
@@ -99,7 +128,10 @@ export default function StartSitAdminPage() {
 
   async function selectDraft(id) {
     try {
-      const res = await fetch(`${base}/api/admin/startsit/draft/${id}`, { credentials: "include", cache: "no-store" });
+      const res = await fetch(`${base}/api/admin/startsit/draft/${id}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       const d = await res.json();
       setActive(d.id);
       setKey(d.key || d.week || "");
@@ -123,7 +155,10 @@ export default function StartSitAdminPage() {
       const json = await res.json();
       setActive(json.id);
       setStatus("✅ Draft saved");
-      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      // refresh list
+      const list = await (
+        await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })
+      ).json();
       setDrafts(list.items || []);
     } catch (e) {
       console.error(e);
@@ -142,8 +177,12 @@ export default function StartSitAdminPage() {
       });
       setStatus("🗑️ Deleted");
       setActive("");
-      setKey(""); setTitle(""); setBody("");
-      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      setKey("");
+      setTitle("");
+      setBody("");
+      const list = await (
+        await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })
+      ).json();
       setDrafts(list.items || []);
     } catch (e) {
       console.error(e);
@@ -152,7 +191,10 @@ export default function StartSitAdminPage() {
   }
 
   async function publishDraft() {
-    if (!activeId) { setStatus("⚠️ Save the draft first."); return; }
+    if (!activeId) {
+      setStatus("⚠️ Save the draft first.");
+      return;
+    }
     setStatus("Publishing…");
     try {
       const res = await fetch(`${base}/api/admin/startsit/publish`, {
@@ -174,8 +216,8 @@ export default function StartSitAdminPage() {
     const ta = editorRef.current;
     if (!ta) return;
     const start = ta.selectionStart;
-    const end   = ta.selectionEnd;
-    const sel   = ta.value.slice(start, end);
+    const end = ta.selectionEnd;
+    const sel = ta.value.slice(start, end);
     const insert = fn(sel);
     ta.setRangeText(insert, start, end, "end");
     setBody(ta.value);
@@ -188,9 +230,7 @@ export default function StartSitAdminPage() {
     <main className="container max-w-6xl py-8 space-y-6">
       <header>
         <h1 className="text-3xl font-bold">Start / Sit — Admin</h1>
-        <p className="text-white/70">
-          Editor with live preview, drafts, and one-click publish.
-        </p>
+        <p className="text-white/70">Editor with live preview, drafts, and one-click publish.</p>
       </header>
 
       {/* Drafts list + actions */}
@@ -200,7 +240,12 @@ export default function StartSitAdminPage() {
             <button
               type="button"
               className="rounded border border-white/20 px-3 py-2 hover:bg-white/10"
-              onClick={() => { setActive(""); setKey(""); setTitle(""); setBody(""); }}
+              onClick={() => {
+                setActive("");
+                setKey("");
+                setTitle("");
+                setBody("");
+              }}
             >
               New draft
             </button>
@@ -238,7 +283,7 @@ export default function StartSitAdminPage() {
               onChange={(e) => selectDraft(e.target.value)}
             >
               <option value="">— select —</option>
-              {drafts.map(d => (
+              {drafts.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.title || d.key || d.id}
                 </option>
@@ -282,18 +327,7 @@ export default function StartSitAdminPage() {
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold mb-3">Preview</h2>
-
-          {/* NEW: spacing-safe preview container */}
-          <div
-            className="
-              max-w-none text-white/90
-              [&>p]:mb-4
-              [&>h1]:mb-4 [&>h2]:mb-3 [&>h3]:mb-2
-              [&>ul]:ml-5 [&>ul>li]:list-disc [&>ul>li]:mb-1
-              [&>a]:underline
-            "
-            dangerouslySetInnerHTML={preview}
-          />
+          <article className="prose prose-invert max-w-none" dangerouslySetInnerHTML={preview} />
         </div>
       </section>
 
