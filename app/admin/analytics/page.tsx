@@ -8,47 +8,35 @@ export const revalidate = 0;
 
 type PlausibleAgg = { results?: Record<string, number> };
 
-/** Always return a valid absolute origin */
-function getBaseUrl(): string {
-  // 1) Strongest signal: explicit env
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+function getBaseUrl() {
+  // 1) Explicit site URL (recommended)
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
   if (fromEnv) return fromEnv;
 
-  // 2) Vercel automatic domain
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
+  // 2) Vercel-provided host
+  const vercel = process.env.VERCEL_URL?.replace(/\/+$/, "");
+  if (vercel) return `https://${vercel}`;
 
-  // 3) Request headers (works on server-rendered pages)
-  try {
-    const h = headers();
-    const proto = (h.get("x-forwarded-proto") || "https").replace(/[^a-z]+/gi, "");
-    const host =
-      h.get("x-forwarded-host") ||
-      h.get("host") ||
-      "localhost:3000";
-    return `${proto}://${host}`;
-  } catch {
-    // 4) Last resort for local/dev tools
-    return "http://localhost:3000";
-  }
-}
-
-/** Build an absolute URL safely */
-function makeUrl(path: string): string {
-  // already absolute?
-  if (/^https?:\/\//i.test(path)) return path;
-  return new URL(path, getBaseUrl()).toString();
+  // 3) Request headers (works behind proxies)
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") || "https";
+  const host =
+    h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
 }
 
 async function fetchJSON<T = any>(path: string): Promise<T> {
-  const url = makeUrl(path);
+  const base = getBaseUrl();
+  const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+
   const res = await fetch(url, {
     cache: "no-store",
     headers: {
-      Authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
-      Accept: "application/json",
+      authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
+      accept: "application/json",
     },
   });
+
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(`${url} ${res.status}${txt ? ` — ${txt}` : ""}`);
@@ -56,12 +44,10 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
   return res.json();
 }
 
-// Return a safe aggregate object (avoids TS issues if results is missing)
-function toAgg(x: PlausibleAgg | null): Record<string, number> {
-  if (x && typeof x === "object" && x.results && typeof x.results === "object") {
-    return x.results as Record<string, number>;
-  }
-  return {};
+function hasResults(
+  v: unknown
+): v is PlausibleAgg & { results: Record<string, number> } {
+  return !!v && typeof (v as any).results === "object" && (v as any).results !== null;
 }
 
 export default async function AdminAnalytics() {
@@ -98,14 +84,17 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  const agg = toAgg(plausible);
-  const fmt = (n: number | undefined) => (typeof n === "number" ? n.toLocaleString() : "—");
+  const agg: Record<string, number> = hasResults(plausible) ? plausible.results : {};
+  const fmt = (n: number | undefined) =>
+    typeof n === "number" ? n.toLocaleString() : "—";
 
   return (
     <main className="container max-w-5xl py-8 space-y-8">
       <header className="space-y-1">
         <h1 className="text-3xl font-bold">Admin Analytics</h1>
-        <p className="text-white/70">Traffic, audience and delivery summaries (server-side).</p>
+        <p className="text-white/70">
+          Traffic, audience and delivery summaries (server-side).
+        </p>
       </header>
 
       {/* Site Analytics */}
@@ -119,13 +108,19 @@ export default async function AdminAnalytics() {
             <Stat label="Pageviews" value={fmt(agg.pageviews)} />
             <Stat
               label="Bounce rate"
-              value={typeof agg.bounce_rate === "number" ? `${agg.bounce_rate.toFixed(1)}%` : "—"}
+              value={
+                typeof agg.bounce_rate === "number"
+                  ? `${agg.bounce_rate.toFixed(1)}%`
+                  : "—"
+              }
             />
             <Stat
               label="Avg visit"
               value={
                 typeof agg.visit_duration === "number"
-                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(agg.visit_duration % 60)}s`
+                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(
+                      agg.visit_duration % 60
+                    )}s`
                   : "—"
               }
             />
@@ -144,9 +139,15 @@ export default async function AdminAnalytics() {
             <p className="text-sm text-red-300">{mcErr}</p>
           ) : (
             <div className="text-sm text-white/80 grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>Total contacts: <strong>{fmt(mailchimp?.contacts)}</strong></div>
-              <div>Subscribed: <strong>{fmt(mailchimp?.subscribed)}</strong></div>
-              <div>Unsubscribed: <strong>{fmt(mailchimp?.unsubscribed)}</strong></div>
+              <div>
+                Total contacts: <strong>{fmt(mailchimp?.total_subscribers)}</strong>
+              </div>
+              <div>
+                Unsubscribed: <strong>{fmt(mailchimp?.unsubscribes)}</strong>
+              </div>
+              <div>
+                30-day growth: <strong>{fmt(mailchimp?.growth_30d)}</strong>
+              </div>
             </div>
           )}
         </div>
@@ -172,8 +173,7 @@ export default async function AdminAnalytics() {
       </div>
 
       <p className="text-xs text-white/50">
-        Ensure <code>ADMIN_API_KEY</code> matches your middleware, and set{" "}
-        <code>NEXT_PUBLIC_SITE_URL</code> (e.g. <code>https://heyskolsister.com</code>) in Vercel.
+        Make sure <code>NEXT_PUBLIC_SITE_URL</code> (or <code>VERCEL_URL</code>) and <code>ADMIN_API_KEY</code> are set in the active environment (Preview/Production) and redeploy after changes.
       </p>
     </main>
   );
