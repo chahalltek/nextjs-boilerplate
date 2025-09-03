@@ -1,182 +1,300 @@
 // app/admin/start-sit/page.jsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Resolve a dependable absolute base for client-side fetches */
+/** Prefer your public URL if set; otherwise use the current origin. */
 function getBase() {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
-    try {
-      const u = new URL(process.env.NEXT_PUBLIC_SITE_URL);
-      return u.origin;
-    } catch {}
+    try { return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch {}
   }
   if (typeof window !== "undefined") return window.location.origin;
-  return ""; // fallback to relative
+  return "";
+}
+
+/* Tiny Markdown → HTML used in the newsletter; duplicated here client-side */
+function mdToHtml(md) {
+  if (!md) return "";
+  md = md.replace(/\r\n/g, "\n");
+  md = md.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  md = md
+    .replace(/^###\s+(.*)$/gm, "<h3>$1</h3>")
+    .replace(/^##\s+(.*)$/gm, "<h2>$1</h2>")
+    .replace(/^#\s+(.*)$/gm, "<h1>$1</h1>");
+  md = md.replace(/^\s*---+\s*$/gm, "<hr />");
+  md = md.replace(/^(?:-\s+.*(?:\n|$))+?/gm, (block) => {
+    const items = block.trim().split(/\n/)
+      .map(line => line.replace(/^-+\s+/, "").trim())
+      .map(txt => `<li>${txt.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}</li>`)
+      .join("");
+    return `<ul>${items}</ul>`;
+  });
+  md = md
+    .split(/\n{2,}/)
+    .map(chunk => /^<(h\d|ul|hr)/i.test(chunk.trim())
+      ? chunk
+      : `<p>${chunk.split("\n").join("<br />")}</p>`
+    )
+    .join("\n");
+  return md;
+}
+
+function Toolbar({ apply }) {
+  return (
+    <div className="flex flex-wrap gap-2 text-sm">
+      {[
+        ["B", (s) => `**${s||"bold"}**`],
+        ["I", (s) => `_${s||"italic"}_`],
+        ["H2", (s) => `## ${s||"Heading"}`],
+        ["H3", (s) => `### ${s||"Heading"}`],
+        ["• List", (s) => s ? s.split("\n").map(l=>`- ${l}`).join("\n") : "- item\n- item"],
+        ["Link", (s) => `[${s||"text"}](https://example.com)`],
+        ["HR", () => `\n---\n`],
+      ].map(([label, fn]) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => apply(fn)}
+          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+          title={label}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function StartSitAdminPage() {
-  const [key, setKey] = useState("");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [status, setStatus] = useState(null);
+  const [drafts, setDrafts]   = useState([]);
+  const [activeId, setActive] = useState("");
+  const [key, setKey]         = useState("");     // week key e.g. 2025-wk01
+  const [title, setTitle]     = useState("");
+  const [body, setBody]       = useState("");
+  const [status, setStatus]   = useState(null);
+  const editorRef = useRef(null);
+  const base = useMemo(getBase, []);
 
-  async function submit(e) {
-    e.preventDefault();
-    setStatus("Saving…");
-
-    const base = getBase();
-
-    // API expects { week, title, body }
-    const payload = { week: key, title, body };
-
-    try {
-      const res = await fetch(`${base}/api/admin/startsit/thread`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        credentials: "include", // send the admin cookie
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`${res.status} ${txt || res.statusText}`);
-      }
-
-      let id = "";
+  // Load drafts on mount
+  useEffect(() => {
+    (async () => {
       try {
+        const res = await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include", cache: "no-store" });
         const json = await res.json();
-        id = json?.id || "";
-      } catch {}
+        setDrafts(json?.items || []);
+        // auto-select most recent
+        if (json?.items?.[0]) selectDraft(json.items[0].id);
+      } catch (e) {
+        console.error(e);
+        setStatus("⚠️ Failed to load drafts");
+      }
+    })();
+  }, [base]);
 
-      setStatus(
-        id
-          ? `✅ Published (id: ${id}). Revalidate /start-sit to refresh the page.`
-          : "✅ Published. You can revalidate /start-sit if needed."
-      );
-    } catch (err) {
-      console.error(err);
-      setStatus("❌ Error: " + (err?.message || "Request failed"));
+  async function selectDraft(id) {
+    try {
+      const res = await fetch(`${base}/api/admin/startsit/draft/${id}`, { credentials: "include", cache: "no-store" });
+      const d = await res.json();
+      setActive(d.id);
+      setKey(d.key || d.week || "");
+      setTitle(d.title || "");
+      setBody(d.markdown ?? d.body ?? "");
+    } catch (e) {
+      console.error(e);
+      setStatus("⚠️ Failed to load draft");
     }
   }
 
-  async function revalidateStartSit() {
+  async function saveDraft() {
+    setStatus("Saving draft…");
     try {
-      setStatus("Revalidating /start-sit…");
-      const base = getBase();
-      await fetch(`${base}/api/search-index?noop=1`, {
+      const res = await fetch(`${base}/api/admin/startsit/drafts`, {
         method: "POST",
-        cache: "no-store",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeId || undefined, key, title, markdown: body }),
+      });
+      const json = await res.json();
+      setActive(json.id);
+      setStatus("✅ Draft saved");
+      // refresh list
+      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      setDrafts(list.items || []);
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Save failed");
+    }
+  }
+
+  async function deleteDraft(id) {
+    if (!id) return;
+    if (!confirm("Delete this draft?")) return;
+    setStatus("Deleting…");
+    try {
+      await fetch(`${base}/api/admin/startsit/draft/${id}`, {
+        method: "DELETE",
         credentials: "include",
       });
-      setStatus("✅ Revalidated (or queued).");
-    } catch {
-      setStatus("⚠️ Revalidate call failed. Use Super Admin → Revalidate path: /start-sit");
+      setStatus("🗑️ Deleted");
+      setActive("");
+      setKey(""); setTitle(""); setBody("");
+      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      setDrafts(list.items || []);
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Delete failed");
     }
   }
 
+  async function publishDraft() {
+    if (!activeId) { setStatus("⚠️ Save the draft first."); return; }
+    setStatus("Publishing…");
+    try {
+      const res = await fetch(`${base}/api/admin/startsit/publish`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setStatus("✅ Published. Revalidate /start-sit to refresh the page.");
+    } catch (e) {
+      console.error(e);
+      setStatus("❌ Publish failed");
+    }
+  }
+
+  // Simple toolbar apply
+  function applyFormat(fn) {
+    const ta = editorRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end   = ta.selectionEnd;
+    const sel   = ta.value.slice(start, end);
+    const insert = fn(sel);
+    ta.setRangeText(insert, start, end, "end");
+    setBody(ta.value);
+    ta.focus();
+  }
+
+  const preview = useMemo(() => ({ __html: mdToHtml(body) }), [body]);
+
   return (
-    <main className="container max-w-4xl py-10 space-y-8">
+    <main className="container max-w-6xl py-8 space-y-6">
       <header>
         <h1 className="text-3xl font-bold">Start / Sit — Admin</h1>
         <p className="text-white/70">
-          Publish this week’s Start/Sit thread. This posts to{" "}
-          <code>/api/admin/startsit/thread</code> (protected by the admin cookie).
+          Editor with live preview, drafts, and one-click publish.
         </p>
       </header>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
-        <form onSubmit={submit} className="grid gap-4">
+      {/* Drafts list + actions */}
+      <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded border border-white/20 px-3 py-2 hover:bg-white/10"
+              onClick={() => { setActive(""); setKey(""); setTitle(""); setBody(""); }}
+            >
+              New draft
+            </button>
+            <button
+              type="button"
+              className="rounded border border-white/20 px-3 py-2 hover:bg-white/10"
+              onClick={saveDraft}
+            >
+              Save draft
+            </button>
+            <button
+              type="button"
+              className="rounded border border-white/20 px-3 py-2 hover:bg-white/10"
+              onClick={publishDraft}
+              title="Copies this draft to ss:thread:{id} and sets ss:current"
+            >
+              Publish
+            </button>
+            {activeId && (
+              <button
+                type="button"
+                className="rounded border border-red-400/50 text-red-300 px-3 py-2 hover:bg-red-400/10"
+                onClick={() => deleteDraft(activeId)}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-white/60">Drafts:</span>
+            <select
+              className="rounded border border-white/20 bg-transparent px-2 py-1"
+              value={activeId}
+              onChange={(e) => selectDraft(e.target.value)}
+            >
+              <option value="">— select —</option>
+              {drafts.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.title || d.key || d.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {/* Editor + Preview */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-3">
           <div className="grid gap-2">
-            <label className="text-sm text-white/80">Key (slug / unique id)</label>
+            <label className="text-sm text-white/80">Key (slug / unique id, e.g. 2025-wk01)</label>
             <input
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder="e.g. 2025-wk01"
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-              required
             />
-            <p className="text-xs text-white/50">
-              Used as an identifier (like <code>2025-wk01</code>). Avoid spaces.
-            </p>
           </div>
-
           <div className="grid gap-2">
             <label className="text-sm text-white/80">Title</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Week 1 Start/Sit Thread"
               className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-              required
             />
           </div>
 
-          <div className="grid gap-2">
-            <label className="text-sm text-white/80">Body (Markdown)</label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={10}
-              placeholder={`## How to use
-- Post your toughest start/sit calls below.
-- We’ll reply with tiers and confidence.
-- Be nice. No spoilers!
+          <Toolbar apply={applyFormat} />
 
-## Notes
-- Key injuries and weather will be updated here.
-`}
-              className="rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono"
-            />
-          </div>
+          <textarea
+            ref={editorRef}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={18}
+            className="w-full rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono"
+            placeholder={`## Kickoff notes\n- Use the toolbar to format quickly\n- Bold, italics, lists, links, rules`}
+          />
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="submit"
-              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-            >
-              Publish Start/Sit Thread
-            </button>
-            <Link
-              href="/start-sit"
-              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-              target="_blank"
-            >
-              View Start/Sit Page →
-            </Link>
-            <button
-              type="button"
-              onClick={revalidateStartSit}
-              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-              title="If your app has a revalidate endpoint, this is a convenience. Otherwise use Super Admin → Revalidate."
-            >
-              Revalidate /start-sit
-            </button>
-          </div>
-
-          {status && <div className="text-sm text-white/70">{status}</div>}
-        </form>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <h2 className="text-lg font-semibold mb-3">Preview</h2>
+          <article
+            className="prose prose-invert max-w-none"
+            dangerouslySetInnerHTML={preview}
+          />
+        </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
-        <h2 className="text-lg font-semibold mb-2">Tips</h2>
-        <ul className="list-disc pl-5 text-sm text-white/80 space-y-1">
-          <li>
-            Use a consistent <strong>Key</strong> format like <code>YYYY-wkNN</code>.
-          </li>
-          <li>
-            Keep the <strong>Title</strong> concise (e.g., “Week 3 Start/Sit Thread”).
-          </li>
-          <li>
-            After posting, revalidate <code>/start-sit</code> from here or Super Admin.
-          </li>
-        </ul>
-      </section>
+      {/* Footer */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-white/70">{status}</div>
+        <Link href="/start-sit" target="_blank" className="underline">
+          View /start-sit →
+        </Link>
+      </div>
     </main>
   );
 }
