@@ -1,9 +1,31 @@
 // app/admin/page.jsx
 import Link from "next/link";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Resolve a reliable absolute origin for server-side fetches
+function getBaseUrl() {
+  const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
+  if (env) return env;
+
+  const vercel = process.env.VERCEL_URL?.replace(/\/+$/, "");
+  if (vercel) return `https://${vercel}`;
+
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") || "http";
+  const host = h.get("x-forwarded-host") || h.get("host");
+  if (host) return `${proto}://${host}`;
+
+  // final fallback (local dev)
+  return "http://localhost:3000";
+}
+
+function join(base, path) {
+  return new URL(path, base).toString();
+}
 
 // --- Server Actions ----------------------------------------------------
 async function actionRevalidate(formData) {
@@ -28,10 +50,9 @@ async function actionRevalidate(formData) {
 async function actionRebuildSearchIndex() {
   "use server";
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ""}/api/search-index?rebuild=1`, {
-      method: "POST",
-      cache: "no-store",
-    });
+    const base = getBaseUrl();
+    const url = join(base, "/api/search-index?rebuild=1");
+    const res = await fetch(url, { method: "POST", cache: "no-store" });
     if (!res.ok) console.error("Rebuild search index failed", await res.text());
   } catch (e) {
     console.error("Rebuild search index error:", e);
@@ -41,13 +62,19 @@ async function actionRebuildSearchIndex() {
 async function actionWarmCaches() {
   "use server";
   try {
-    const base = process.env.NEXT_PUBLIC_SITE_URL || "";
+    const base = getBaseUrl();
     const endpoints = [
-      "/", "/episodes", "/blog",
-      "/podcast.xml", "/rss.xml", "/blog/rss.xml", "/cws/rss.xml", "/holdem-foldem/rss.xml",
+      "/",
+      "/episodes",
+      "/blog",
+      "/podcast.xml",
+      "/rss.xml",
+      "/blog/rss.xml",
+      "/cws/rss.xml",
+      "/holdem-foldem/rss.xml",
     ];
     await Promise.allSettled(
-      endpoints.map((p) => fetch(`${base}${p}`, { cache: "no-store" }))
+      endpoints.map((p) => fetch(join(base, p), { cache: "no-store" }))
     );
   } catch (e) {
     console.error("Warm caches error:", e);
