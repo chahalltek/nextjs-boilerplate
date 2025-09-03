@@ -6,24 +6,43 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type PlausibleAgg = {
-  results?: Record<string, number>;
-};
+type PlausibleAgg = { results?: Record<string, number> };
 
-function getBaseUrl() {
-  const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-  if (env) return env;
+/** Always return a valid absolute origin */
+function getBaseUrl(): string {
+  // 1) Strongest signal: explicit env
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
 
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host =
-    h.get("x-forwarded-host") || h.get("host") || process.env.VERCEL_URL || "localhost:3000";
-  return `${proto}://${host}`;
+  // 2) Vercel automatic domain
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
+
+  // 3) Request headers (works on server-rendered pages)
+  try {
+    const h = headers();
+    const proto = (h.get("x-forwarded-proto") || "https").replace(/[^a-z]+/gi, "");
+    const host =
+      h.get("x-forwarded-host") ||
+      h.get("host") ||
+      "localhost:3000";
+    return `${proto}://${host}`;
+  } catch {
+    // 4) Last resort for local/dev tools
+    return "http://localhost:3000";
+  }
+}
+
+/** Build an absolute URL safely */
+function makeUrl(path: string): string {
+  // already absolute?
+  if (/^https?:\/\//i.test(path)) return path;
+  return new URL(path, getBaseUrl()).toString();
 }
 
 async function fetchJSON<T = any>(path: string): Promise<T> {
-  const base = getBaseUrl();
-  const res = await fetch(`${base}${path}`, {
+  const url = makeUrl(path);
+  const res = await fetch(url, {
     cache: "no-store",
     headers: {
       Authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
@@ -32,12 +51,12 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`${base}${path} ${res.status}${txt ? ` — ${txt}` : ""}`);
+    throw new Error(`${url} ${res.status}${txt ? ` — ${txt}` : ""}`);
   }
   return res.json();
 }
 
-// Return a safe aggregate object (avoids TS narrowing on a mutable let)
+// Return a safe aggregate object (avoids TS issues if results is missing)
 function toAgg(x: PlausibleAgg | null): Record<string, number> {
   if (x && typeof x === "object" && x.results && typeof x.results === "object") {
     return x.results as Record<string, number>;
@@ -125,15 +144,9 @@ export default async function AdminAnalytics() {
             <p className="text-sm text-red-300">{mcErr}</p>
           ) : (
             <div className="text-sm text-white/80 grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                Total contacts: <strong>{fmt(mailchimp?.contacts)}</strong>
-              </div>
-              <div>
-                Subscribed: <strong>{fmt(mailchimp?.subscribed)}</strong>
-              </div>
-              <div>
-                Unsubscribed: <strong>{fmt(mailchimp?.unsubscribed)}</strong>
-              </div>
+              <div>Total contacts: <strong>{fmt(mailchimp?.contacts)}</strong></div>
+              <div>Subscribed: <strong>{fmt(mailchimp?.subscribed)}</strong></div>
+              <div>Unsubscribed: <strong>{fmt(mailchimp?.unsubscribed)}</strong></div>
             </div>
           )}
         </div>
@@ -145,32 +158,22 @@ export default async function AdminAnalytics() {
             <p className="text-sm text-red-300">{resendErr}</p>
           ) : (
             <div className="text-sm text-white/80 grid grid-cols-1 sm:grid-cols-4 gap-2">
-              <div>
-                Sent: <strong>{fmt(resend?.sent)}</strong>
-              </div>
-              <div>
-                Delivered: <strong>{fmt(resend?.delivered)}</strong>
-              </div>
-              <div>
-                Opened: <strong>{fmt(resend?.opened)}</strong>
-              </div>
-              <div>
-                Bounced: <strong>{fmt(resend?.bounced)}</strong>
-              </div>
+              <div>Sent: <strong>{fmt(resend?.sent)}</strong></div>
+              <div>Delivered: <strong>{fmt(resend?.delivered)}</strong></div>
+              <div>Opened: <strong>{fmt(resend?.opened)}</strong></div>
+              <div>Bounced: <strong>{fmt(resend?.bounced)}</strong></div>
             </div>
           )}
         </div>
       </section>
 
       <div className="text-sm">
-        <Link href="/admin" className="underline">
-          ← Back to Admin
-        </Link>
+        <Link href="/admin" className="underline">← Back to Admin</Link>
       </div>
 
       <p className="text-xs text-white/50">
-        Make sure <code>ADMIN_API_KEY</code> is set (and matches your middleware), and{" "}
-        <code>NEXT_PUBLIC_SITE_URL</code> is configured in production.
+        Ensure <code>ADMIN_API_KEY</code> matches your middleware, and set{" "}
+        <code>NEXT_PUBLIC_SITE_URL</code> (e.g. <code>https://heyskolsister.com</code>) in Vercel.
       </p>
     </main>
   );
