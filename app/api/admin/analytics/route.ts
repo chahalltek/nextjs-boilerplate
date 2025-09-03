@@ -26,12 +26,12 @@ export async function GET(req: Request) {
   const API_BASE = (process.env.PLAUSIBLE_API_BASE ?? "https://plausible.io").replace(/\/+$/, "");
   const API_KEY = process.env.PLAUSIBLE_API_KEY;
 
-  const SITE_ID =
-    process.env.PLAUSIBLE_SITE_ID ??
-    process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ??
-    (process.env.NEXT_PUBLIC_SITE_URL
-      ? new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname
-      : "");
+  const rawSite =
+  process.env.PLAUSIBLE_SITE_ID ||
+  process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ||
+  (process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname : "");
+
+const SITE_ID = rawSite.split(",")[0].trim(); // use the primary domain only
 
   if (!API_KEY) {
     return NextResponse.json(
