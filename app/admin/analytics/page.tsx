@@ -18,7 +18,8 @@ function getBaseUrl() {
   // Fall back to request headers (Vercel / proxies)
   const h = headers();
   const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
+  const host =
+    h.get("x-forwarded-host") || h.get("host") || process.env.VERCEL_URL || "localhost:3000";
   return `${proto}://${host}`;
 }
 
@@ -27,8 +28,8 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
   const res = await fetch(`${base}${path}`, {
     cache: "no-store",
     headers: {
-      authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
-      accept: "application/json",
+      Authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
+      Accept: "application/json",
     },
   });
   if (!res.ok) {
@@ -74,7 +75,7 @@ export default async function AdminAnalytics() {
   ]);
 
   const agg: Record<string, number> =
-  (plausible?.results as Record<string, number> | undefined) ?? {};
+    (plausible?.results as Record<string, number> | undefined) ?? {};
   const fmt = (n: number | undefined) =>
     typeof n === "number" ? n.toLocaleString() : "—";
 
@@ -94,14 +95,23 @@ export default async function AdminAnalytics() {
           <p className="text-sm text-red-300">{plausibleErr}</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Visitors" value={fmt(agg.visitors as number)} />
-            <Stat label="Pageviews" value={fmt(agg.pageviews as number)} />
-            <Stat label="Bounce rate" value={typeof agg.bounce_rate === "number" ? `${agg.bounce_rate.toFixed(1)}%` : "—"} />
+            <Stat label="Visitors" value={fmt(agg.visitors)} />
+            <Stat label="Pageviews" value={fmt(agg.pageviews)} />
+            <Stat
+              label="Bounce rate"
+              value={
+                typeof agg.bounce_rate === "number"
+                  ? `${agg.bounce_rate.toFixed(1)}%`
+                  : "—"
+              }
+            />
             <Stat
               label="Avg visit"
               value={
                 typeof agg.visit_duration === "number"
-                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(agg.visit_duration % 60)}s`
+                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(
+                      agg.visit_duration % 60
+                    )}s`
                   : "—"
               }
             />
@@ -120,9 +130,15 @@ export default async function AdminAnalytics() {
             <p className="text-sm text-red-300">{mcErr}</p>
           ) : (
             <div className="text-sm text-white/80 grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>Total contacts: <strong>{fmt(mailchimp?.contacts)}</strong></div>
-              <div>Subscribed: <strong>{fmt(mailchimp?.subscribed)}</strong></div>
-              <div>Unsubscribed: <strong>{fmt(mailchimp?.unsubscribed)}</strong></div>
+              <div>
+                Total contacts: <strong>{fmt(mailchimp?.contacts)}</strong>
+              </div>
+              <div>
+                Subscribed: <strong>{fmt(mailchimp?.subscribed)}</strong>
+              </div>
+              <div>
+                Unsubscribed: <strong>{fmt(mailchimp?.unsubscribed)}</strong>
+              </div>
             </div>
           )}
         </div>
@@ -134,17 +150,27 @@ export default async function AdminAnalytics() {
             <p className="text-sm text-red-300">{resendErr}</p>
           ) : (
             <div className="text-sm text-white/80 grid grid-cols-1 sm:grid-cols-4 gap-2">
-              <div>Sent: <strong>{fmt(resend?.sent)}</strong></div>
-              <div>Delivered: <strong>{fmt(resend?.delivered)}</strong></div>
-              <div>Opened: <strong>{fmt(resend?.opened)}</strong></div>
-              <div>Bounced: <strong>{fmt(resend?.bounced)}</strong></div>
+              <div>
+                Sent: <strong>{fmt(resend?.sent)}</strong>
+              </div>
+              <div>
+                Delivered: <strong>{fmt(resend?.delivered)}</strong>
+              </div>
+              <div>
+                Opened: <strong>{fmt(resend?.opened)}</strong>
+              </div>
+              <div>
+                Bounced: <strong>{fmt(resend?.bounced)}</strong>
+              </div>
             </div>
           )}
         </div>
       </section>
 
       <div className="text-sm">
-        <Link href="/admin" className="underline">← Back to Admin</Link>
+        <Link href="/admin" className="underline">
+          ← Back to Admin
+        </Link>
       </div>
 
       <p className="text-xs text-white/50">
