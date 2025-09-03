@@ -1,3 +1,4 @@
+// app/admin/start-sit/page.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,39 +10,65 @@ export const dynamic = "force-dynamic";
 // Prefer your public URL if set; otherwise use current origin
 function getBase() {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
-    try { return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch {}
+    try {
+      return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin;
+    } catch {}
   }
   if (typeof window !== "undefined") return window.location.origin;
   return "";
 }
 
-// Tiny MD -> HTML (same as server)
+/** Tiny MD -> HTML (kept in sync with the public page)
+ *  - respects whitespace-only "blank" lines
+ *  - preserves single newlines inside a paragraph as <br />
+ */
 function mdToHtml(md) {
   if (!md) return "";
-  md = md.replace(/\r\n/g, "\n");
+  md = String(md).replace(/\r\n/g, "\n");
+
+  // Escape
   md = md.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  // Headings
   md = md
     .replace(/^###\s+(.*)$/gm, "<h3>$1</h3>")
     .replace(/^##\s+(.*)$/gm, "<h2>$1</h2>")
     .replace(/^#\s+(.*)$/gm, "<h1>$1</h1>");
+
+  // Horizontal rule
   md = md.replace(/^\s*---+\s*$/gm, "<hr />");
-  md = md.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-         .replace(/_(.+?)_/g, "<em>$1</em>")
-         .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, `<a href="$2" target="_blank" rel="noopener">$1</a>`);
+
+  // Inline
+  md = md
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/_(.+?)_/g, "<em>$1</em>")
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      `<a href="$2" target="_blank" rel="noopener">$1</a>`
+    );
+
+  // Simple bullet lists
   md = md.replace(/^(?:-\s+.*(?:\n|$))+?/gm, (block) => {
-    const items = block.trim().split(/\n/)
+    const items = block
+      .trim()
+      .split(/\n/)
       .map((line) => line.replace(/^-+\s+/, "").trim())
       .map((txt) => `<li>${txt}</li>`)
       .join("");
     return `<ul>${items}</ul>`;
   });
-  md = md
-    .split(/\n{2,}/)
-    .map((chunk) =>
-      /^<(h\d|ul|hr)/i.test(chunk.trim()) ? chunk : `<p>${chunk.split("\n").join("<br />")}</p>`
-    )
+
+  // Paragraphs: split on blank lines (allow whitespace on the blank line)
+  return md
+    .split(/\n\s*\n+/)
+    .map((chunk) => {
+      const t = chunk.trim();
+      // Leave block tags (headings/ul/hr) alone
+      if (/^<(?:h\d|ul|hr)\b/i.test(t)) return t;
+      // Otherwise, it's a paragraph: preserve single newlines with <br />
+      return `<p>${t.split("\n").join("<br />")}</p>`;
+    })
     .join("\n");
-  return md;
 }
 
 function Toolbar({ apply }) {
@@ -77,8 +104,8 @@ export default function StartSitAdminPage() {
   const [key, setKey] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [status, setStatus] = useState("");      // message text
-  const [busy, setBusy] = useState(false);       // disable while busy
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
   const editorRef = useRef(null);
   const base = useMemo(getBase, []);
   const preview = useMemo(() => ({ __html: mdToHtml(body) }), [body]);
@@ -87,11 +114,14 @@ export default function StartSitAdminPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include", cache: "no-store" });
+        const res = await fetch(`${base}/api/admin/startsit/drafts`, {
+          credentials: "include",
+          cache: "no-store",
+        });
         const json = await res.json();
         setDrafts(json?.items || []);
         if (json?.items?.[0]) selectDraft(json.items[0].id);
-      } catch (e) {
+      } catch {
         setStatus("⚠️ Failed to load drafts");
       }
     })();
@@ -100,7 +130,10 @@ export default function StartSitAdminPage() {
   async function selectDraft(id) {
     setBusy(true);
     try {
-      const res = await fetch(`${base}/api/admin/startsit/draft/${id}`, { credentials: "include", cache: "no-store" });
+      const res = await fetch(`${base}/api/admin/startsit/draft/${id}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       const d = await res.json();
       setActive(d.id);
       setKey(d.key || d.week || "");
@@ -127,10 +160,12 @@ export default function StartSitAdminPage() {
       const json = await res.json();
       if (!res.ok || !json?.id) throw new Error(json?.error || "save failed");
       setActive(json.id);
-      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      const list = await (
+        await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })
+      ).json();
       setDrafts(list.items || []);
       setStatus("✅ Draft saved");
-    } catch (e) {
+    } catch {
       setStatus("❌ Save failed");
     } finally {
       setBusy(false);
@@ -143,10 +178,18 @@ export default function StartSitAdminPage() {
     setBusy(true);
     setStatus("Deleting…");
     try {
-      await fetch(`${base}/api/admin/startsit/draft/${id}`, { method: "DELETE", credentials: "include" });
-      const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
+      await fetch(`${base}/api/admin/startsit/draft/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const list = await (
+        await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })
+      ).json();
       setDrafts(list.items || []);
-      setActive(""); setKey(""); setTitle(""); setBody("");
+      setActive("");
+      setKey("");
+      setTitle("");
+      setBody("");
       setStatus("🗑️ Deleted");
     } catch {
       setStatus("❌ Delete failed");
@@ -156,7 +199,10 @@ export default function StartSitAdminPage() {
   }
 
   async function publishDraft() {
-    if (!activeId) { setStatus("⚠️ Save the draft first."); return; }
+    if (!activeId) {
+      setStatus("⚠️ Save the draft first.");
+      return;
+    }
     setBusy(true);
     setStatus("Publishing…");
     try {
@@ -179,8 +225,8 @@ export default function StartSitAdminPage() {
     const ta = editorRef.current;
     if (!ta) return;
     const start = ta.selectionStart;
-    const end   = ta.selectionEnd;
-    const sel   = ta.value.slice(start, end);
+    const end = ta.selectionEnd;
+    const sel = ta.value.slice(start, end);
     const insert = fn(sel);
     ta.setRangeText(insert, start, end, "end");
     setBody(ta.value);
@@ -231,7 +277,13 @@ export default function StartSitAdminPage() {
             <button
               type="button"
               className="rounded border border-white/20 px-3 py-2 hover:bg-white/10"
-              onClick={() => { setActive(""); setKey(""); setTitle(""); setBody(""); setStatus("Reset to new draft"); }}
+              onClick={() => {
+                setActive("");
+                setKey("");
+                setTitle("");
+                setBody("");
+                setStatus("Reset to new draft");
+              }}
               disabled={busy}
               title="Clear fields to a blank draft"
             >
@@ -289,16 +341,19 @@ export default function StartSitAdminPage() {
             onChange={(e) => setBody(e.target.value)}
             rows={18}
             className="w-full rounded-lg border border-white/20 bg-transparent px-3 py-2 font-mono"
-            placeholder={`## Kickoff notes\n- Use the toolbar\n\n**Bold player:** note here`}
+            placeholder={`## Kickoff notes\n\nUse the toolbar. Leave a full blank line between paragraphs.\n\n**Bold player:** note here`}
           />
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold mb-3">Preview</h2>
+          {/* Make spacing independent of global CSS / typography plugin */}
           <article
-            className="prose prose-invert max-w-none
-                       prose-p:my-4 prose-p:leading-7
-                       prose-ul:my-4 prose-li:my-1 prose-hr:my-6"
+            className="max-w-none leading-relaxed
+                       [p]:mb-4 last:[p]:mb-0
+                       [ul]:my-4 [li]:list-disc [li]:ml-6
+                       [h1]:mb-4 [h2]:mb-3 [h3]:mb-2
+                       [hr]:my-4"
             dangerouslySetInnerHTML={preview}
           />
           <div className="mt-4 text-right">
