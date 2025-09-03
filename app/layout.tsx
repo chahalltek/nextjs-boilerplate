@@ -5,6 +5,8 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -20,12 +22,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
   const plausibleDomain = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://heyskolsister.com";
 
   const seriesLd = {
     "@context": "https://schema.org",
     "@type": "PodcastSeries",
     name: "Hey Skol Sister",
-    url: process.env.NEXT_PUBLIC_Site_URL || process.env.NEXT_PUBLIC_SITE_URL, // tolerate typo
+    url: siteUrl, // fixed env var casing
     inLanguage: "en",
     publisher: { "@type": "Organization", name: "Hey Skol Sister" },
   };
@@ -51,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {JSON.stringify(seriesLd)}
         </Script>
 
+        {/* Google Analytics (optional) */}
         {gaId && (
           <>
             <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
@@ -63,6 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </>
         )}
 
+        {/* Plausible (optional) */}
         {plausibleDomain && (
           <Script
             data-domain={plausibleDomain}
@@ -70,6 +75,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             strategy="afterInteractive"
           />
         )}
+
+        {/* Vercel Analytics & Speed Insights */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
