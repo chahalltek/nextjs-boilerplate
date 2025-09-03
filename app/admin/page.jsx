@@ -79,6 +79,10 @@ export default function AdminHome() {
           Quick controls for cache revalidation and maintenance. Protected by your admin middleware.
         </p>
       </header>
+      
+<a href="/admin/analytics" className="rounded border border-white/10 px-2 py-1 text-sm hover:bg-white/10">
+  Analytics
+</a>
 
       {/* Revalidation Shortcuts */}
       <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-5">

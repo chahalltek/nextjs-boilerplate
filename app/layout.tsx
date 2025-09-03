@@ -68,13 +68,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
 
         {/* Plausible (optional) */}
-        {plausibleDomain && (
-          <Script
-            data-domain={plausibleDomain}
-            src="https://plausible.io/js/script.js"
-            strategy="afterInteractive"
-          />
-        )}
+       {plausibleDomain && (
+  <>
+    {/* bootstrap queue so you can safely call window.plausible(...) before the script loads */}
+    <Script id="plausible-init" strategy="afterInteractive">{`
+      window.plausible = window.plausible || function() {
+        (window.plausible.q = window.plausible.q || []).push(arguments)
+      }
+    `}</Script>
+
+    {/* enhanced Plausible build: file downloads, hash, outbound links, pageview props, revenue, tagged events */}
+    <Script
+      strategy="afterInteractive"
+      data-domain={plausibleDomain} // e.g. "heyskolsister.com"
+      src="https://plausible.io/js/script.file-downloads.hash.outbound-links.pageview-props.revenue.tagged-events.js"
+    />
+  </>
+)}
 
         {/* Vercel Analytics & Speed Insights */}
         <Analytics />
