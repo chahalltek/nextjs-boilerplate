@@ -55,21 +55,16 @@ async function actionWarmCaches() {
 }
 
 // --- UI ----------------------------------------------------------------
+// Removed Analytics from this list so we can place it in its own section below.
 const cards = [
   { href: "/admin/posts", title: "Blog", desc: "Write posts and upload images. Commits to content/posts/…", emoji: "📝" },
   { href: "/admin/cws", title: "Weekly Recap", desc: "Post your ‘Coulda, Woulda, Shoulda’ recap.", emoji: "⏪" },
   { href: "/admin/holdem-foldem", title: "Hold ’em / Fold ’em", desc: "Stash-or-trash: injuries, usage, matchups.", emoji: "🃏" },
-  // Start/Sit admin
   { href: "/admin/start-sit", title: "Start / Sit", desc: "Post this week’s Start/Sit thread and notes.", emoji: "✅" },
-  // ✅ Newsletter admin (new)
   { href: "/admin/newsletter", title: "Newsletter", desc: "Assemble, edit, schedule & send weekly emails.", emoji: "📧" },
   { href: "/admin/polls", title: "Survivor (Polls)", desc: "Create/manage polls shown on the Survivor page.", emoji: "📊" },
-  // Bracket admin
   { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
-  // ✅ Lineup Lab admin hub
   { href: "/admin/lineup-lab", title: "Lineup Lab", desc: "Rosters, overrides, and recompute controls.", emoji: "🧪" },
-   // ✅ Analytics admin hub
-  { href: "/admin/analytics", title: "Analytics", desc: "Visitors, pageviews, bounce rate and avg visit.", emoji: "" },
 ];
 
 export default function AdminHome() {
@@ -123,6 +118,23 @@ export default function AdminHome() {
         <p className="text-sm text-white/60">
           Tip: set <code>NEXT_PUBLIC_SITE_URL</code> so server actions can self-call absolute URLs in production.
         </p>
+      </section>
+
+      {/* Analytics (new standalone section placed between Maintenance and Content Tools) */}
+      <section>
+        <h2 className="text-lg font-semibold mb-3">Analytics</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link
+            href="/admin/analytics"
+            className="block rounded-xl border border-white/10 bg-white/5 p-5 hover:bg-white/10 transition"
+          >
+            <div className="text-2xl mb-2">📈</div>
+            <div className="text-lg font-semibold">Analytics</div>
+            <p className="text-sm text-white/70 mt-1">
+              Visitors, pageviews, bounce rate and avg visit.
+            </p>
+          </Link>
+        </div>
       </section>
 
       {/* Content tools */}
