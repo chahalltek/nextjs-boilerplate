@@ -9,19 +9,30 @@ export const revalidate = 0;
 type PlausibleAgg = { results?: Record<string, number> };
 
 function getBaseUrl() {
-  // 1) Explicit site URL (recommended)
+  // 1) Explicit (recommended)
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
   if (fromEnv) return fromEnv;
 
-  // 2) Vercel-provided host
+  // 2) Vercel host (preview/prod)
   const vercel = process.env.VERCEL_URL?.replace(/\/+$/, "");
   if (vercel) return `https://${vercel}`;
 
-  // 3) Request headers (proxies)
+  // 3) Proxy headers / dev
   const h = headers();
   const proto = h.get("x-forwarded-proto") || "https";
   const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
   return `${proto}://${host}`;
+}
+
+function getPlausibleSiteId() {
+  // Mirror the logic in the API route so both sides agree on the site_id
+  const envId =
+    process.env.PLAUSIBLE_SITE_ID ||
+    process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ||
+    (process.env.NEXT_PUBLIC_SITE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SITE_URL).hostname
+      : "");
+  return (envId || "").trim();
 }
 
 async function fetchJSON<T = any>(path: string): Promise<T> {
@@ -77,7 +88,7 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  // Robust runtime guard + cast (avoids TS “never” narrowing flake during build)
+  // Robust runtime guard (avoids TS “never” narrow during build)
   const agg: Record<string, number> =
     plausible && typeof (plausible as any).results === "object" && (plausible as any).results
       ? ((plausible as any).results as Record<string, number>)
@@ -85,6 +96,18 @@ export default async function AdminAnalytics() {
 
   const fmt = (n: number | undefined) =>
     typeof n === "number" ? n.toLocaleString() : "—";
+
+  // Debug info presented only when totals look empty OR there was an error
+  const showPlausibleDebug =
+    !!plausibleErr || !agg || ((!agg.visitors || !agg.pageviews) && Object.keys(agg).length === 0);
+  const plausibleDebug = {
+    site_id_expected: getPlausibleSiteId(),
+    api_base: (process.env.PLAUSIBLE_API_BASE || "https://plausible.io").replace(/\/+$/, ""),
+    has_api_key: !!process.env.PLAUSIBLE_API_KEY,
+    script_domain: process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN || "(not set)",
+    site_url: process.env.NEXT_PUBLIC_SITE_URL || "(not set)",
+    vercel_url: process.env.VERCEL_URL || "(not set)",
+  };
 
   return (
     <main className="container max-w-5xl py-8 space-y-8">
@@ -98,6 +121,7 @@ export default async function AdminAnalytics() {
       {/* Site Analytics */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5">
         <h2 className="text-lg font-semibold mb-3">Site Analytics (last 30 days)</h2>
+
         {plausibleErr ? (
           <p className="text-sm text-red-300">{plausibleErr}</p>
         ) : (
@@ -122,6 +146,21 @@ export default async function AdminAnalytics() {
                   : "—"
               }
             />
+          </div>
+        )}
+
+        {showPlausibleDebug && (
+          <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+            <div className="font-medium mb-1">Plausible debug</div>
+            <pre className="whitespace-pre-wrap break-words">
+              {JSON.stringify(plausibleDebug, null, 2)}
+            </pre>
+            <p className="mt-1 opacity-80">
+              If numbers remain zero, confirm the script is present on public pages:
+              <code className="ml-1">
+                {`<script defer data-domain="${plausibleDebug.script_domain}" src="https://plausible.io/js/script.js"></script>`}
+              </code>
+            </p>
           </div>
         )}
       </section>
@@ -171,8 +210,9 @@ export default async function AdminAnalytics() {
       </div>
 
       <p className="text-xs text-white/50">
-        Ensure <code>NEXT_PUBLIC_SITE_URL</code> (or <code>VERCEL_URL</code>) and <code>ADMIN_API_KEY</code> are set for the current environment
-        (Preview/Production) and redeploy after changes.
+        Ensure <code>NEXT_PUBLIC_SITE_URL</code> (or <code>VERCEL_URL</code>) and <code>ADMIN_API_KEY</code> are set for the current environment.
+        If Plausible shows zeros, verify the tracking script is present on public pages and that the
+        configured <code>site_id</code> matches your domain.
       </p>
     </main>
   );
