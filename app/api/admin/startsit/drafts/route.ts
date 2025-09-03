@@ -1,33 +1,40 @@
-// app/api/admin/startsit/draft/[id]/route.ts
-import { kv } from "@vercel/kv";
 import { NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
+import { randomUUID } from "crypto";
 
-export const runtime = "nodejs";
+const DRAFT_KEY = (id: string) => `ss:draft:${id}`;
+const DRAFT_IDX = "ss:draft:index"; // sorted-set score = updatedAt ms
 
-const DRAFT = (id: string) => `ss:draft:${id}`;
+export async function GET() {
+  if (!kv) return NextResponse.json({ ok: false, error: "KV not configured" }, { status: 500 });
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const draft = await kv.get(DRAFT(params.id));
-  if (!draft) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
-  return NextResponse.json(draft);
+  // newest first
+  const ids: string[] = await kv.zrange(DRAFT_IDX, -100, -1, { rev: true });
+  const drafts = await Promise.all(ids.map((id) => kv.get(DRAFT_KEY(id))));
+  return NextResponse.json({
+    ok: true,
+    items: drafts
+      .filter(Boolean)
+      .map((d: any) => ({ id: d.id, key: d.key, title: d.title, updatedAt: d.updatedAt })),
+  });
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const body = await req.json();
-  const existing: any = (await kv.get(DRAFT(params.id))) || {};
-  const next = {
-    ...existing,
-    key: String(body.key ?? existing.key ?? ""),
-    title: String(body.title ?? existing.title ?? ""),
-    markdown: String(body.markdown ?? existing.markdown ?? ""),
-    updatedAt: new Date().toISOString(),
+export async function POST(req: Request) {
+  if (!kv) return NextResponse.json({ ok: false, error: "KV not configured" }, { status: 500 });
+  const { id, key, title, markdown } = await req.json();
+
+  const draftId = id || randomUUID();
+  const now = Date.now();
+  const draft = {
+    id: draftId,
+    key: String(key || "").trim(),
+    title: String(title || "").trim(),
+    markdown: String(markdown || ""),
+    updatedAt: now,
+    createdAt: id ? undefined : now,
   };
-  await kv.set(DRAFT(params.id), next);
-  return NextResponse.json({ ok: true });
-}
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  await kv.del(DRAFT(params.id));
-  await kv.srem("ss:draft:ids", params.id);
-  return NextResponse.json({ ok: true });
+  await kv.set(DRAFT_KEY(draftId), draft);
+  await kv.zadd(DRAFT_IDX, { score: now, member: draftId });
+  return NextResponse.json({ ok: true, id: draftId });
 }
