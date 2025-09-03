@@ -37,9 +37,12 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
   return res.json();
 }
 
-// Narrower check so TS knows `results` exists when we use it
-function hasResults(x: unknown): x is { results: Record<string, number> } {
-  return !!x && typeof x === "object" && typeof (x as any).results === "object" && (x as any).results !== null;
+// Return a safe aggregate object (avoids TS narrowing on a mutable let)
+function toAgg(x: PlausibleAgg | null): Record<string, number> {
+  if (x && typeof x === "object" && x.results && typeof x.results === "object") {
+    return x.results as Record<string, number>;
+  }
+  return {};
 }
 
 export default async function AdminAnalytics() {
@@ -76,7 +79,7 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  const agg: Record<string, number> = hasResults(plausible) ? plausible.results : {};
+  const agg = toAgg(plausible);
   const fmt = (n: number | undefined) => (typeof n === "number" ? n.toLocaleString() : "—");
 
   return (
