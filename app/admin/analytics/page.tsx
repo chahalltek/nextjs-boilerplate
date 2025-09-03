@@ -73,7 +73,8 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  const agg = plausible?.results || {};
+  const agg: Record<string, number> =
+  (plausible?.results as Record<string, number> | undefined) ?? {};
   const fmt = (n: number | undefined) =>
     typeof n === "number" ? n.toLocaleString() : "—";
 
