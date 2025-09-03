@@ -29,7 +29,10 @@ function mdToHtml(md) {
   md = md.replace(/^(?:-\s+.*(?:\n|$))+?/gm, (block) => {
     const items = block.trim().split(/\n/)
       .map(line => line.replace(/^-+\s+/, "").trim())
-      .map(txt => `<li>${txt.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}</li>`)
+      .map(txt => `<li>${txt
+        .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+        .replace(/_(.+?)_/g,"<em>$1</em>")
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}</li>`)
       .join("");
     return `<ul>${items}</ul>`;
   });
@@ -86,7 +89,6 @@ export default function StartSitAdminPage() {
         const res = await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include", cache: "no-store" });
         const json = await res.json();
         setDrafts(json?.items || []);
-        // auto-select most recent
         if (json?.items?.[0]) selectDraft(json.items[0].id);
       } catch (e) {
         console.error(e);
@@ -121,7 +123,6 @@ export default function StartSitAdminPage() {
       const json = await res.json();
       setActive(json.id);
       setStatus("✅ Draft saved");
-      // refresh list
       const list = await (await fetch(`${base}/api/admin/startsit/drafts`, { credentials: "include" })).json();
       setDrafts(list.items || []);
     } catch (e) {
@@ -281,8 +282,16 @@ export default function StartSitAdminPage() {
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold mb-3">Preview</h2>
-          <article
-            className="prose prose-invert max-w-none"
+
+          {/* NEW: spacing-safe preview container */}
+          <div
+            className="
+              max-w-none text-white/90
+              [&>p]:mb-4
+              [&>h1]:mb-4 [&>h2]:mb-3 [&>h3]:mb-2
+              [&>ul]:ml-5 [&>ul>li]:list-disc [&>ul>li]:mb-1
+              [&>a]:underline
+            "
             dangerouslySetInnerHTML={preview}
           />
         </div>
