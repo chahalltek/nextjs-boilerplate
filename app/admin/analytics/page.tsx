@@ -11,11 +11,9 @@ type PlausibleAgg = {
 };
 
 function getBaseUrl() {
-  // Prefer explicit site URL in prod if you’ve set it
   const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
   if (env) return env;
 
-  // Fall back to request headers (Vercel / proxies)
   const h = headers();
   const proto = h.get("x-forwarded-proto") || "https";
   const host =
@@ -39,8 +37,12 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
   return res.json();
 }
 
+// Narrower check so TS knows `results` exists when we use it
+function hasResults(x: unknown): x is { results: Record<string, number> } {
+  return !!x && typeof x === "object" && typeof (x as any).results === "object" && (x as any).results !== null;
+}
+
 export default async function AdminAnalytics() {
-  // Load all three panes; show per-card errors if any fail
   let plausible: PlausibleAgg | null = null;
   let plausibleErr: string | null = null;
 
@@ -74,18 +76,14 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  const agg: Record<string, number> =
-    (plausible?.results as Record<string, number> | undefined) ?? {};
-  const fmt = (n: number | undefined) =>
-    typeof n === "number" ? n.toLocaleString() : "—";
+  const agg: Record<string, number> = hasResults(plausible) ? plausible.results : {};
+  const fmt = (n: number | undefined) => (typeof n === "number" ? n.toLocaleString() : "—");
 
   return (
     <main className="container max-w-5xl py-8 space-y-8">
       <header className="space-y-1">
         <h1 className="text-3xl font-bold">Admin Analytics</h1>
-        <p className="text-white/70">
-          Traffic, audience and delivery summaries (server-side).
-        </p>
+        <p className="text-white/70">Traffic, audience and delivery summaries (server-side).</p>
       </header>
 
       {/* Site Analytics */}
@@ -99,19 +97,13 @@ export default async function AdminAnalytics() {
             <Stat label="Pageviews" value={fmt(agg.pageviews)} />
             <Stat
               label="Bounce rate"
-              value={
-                typeof agg.bounce_rate === "number"
-                  ? `${agg.bounce_rate.toFixed(1)}%`
-                  : "—"
-              }
+              value={typeof agg.bounce_rate === "number" ? `${agg.bounce_rate.toFixed(1)}%` : "—"}
             />
             <Stat
               label="Avg visit"
               value={
                 typeof agg.visit_duration === "number"
-                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(
-                      agg.visit_duration % 60
-                    )}s`
+                  ? `${Math.round(agg.visit_duration / 60)}m ${Math.round(agg.visit_duration % 60)}s`
                   : "—"
               }
             />
@@ -174,8 +166,8 @@ export default async function AdminAnalytics() {
       </div>
 
       <p className="text-xs text-white/50">
-        Make sure <code>ADMIN_API_KEY</code> is set (and matches your middleware),
-        and <code>NEXT_PUBLIC_SITE_URL</code> is configured in production.
+        Make sure <code>ADMIN_API_KEY</code> is set (and matches your middleware), and{" "}
+        <code>NEXT_PUBLIC_SITE_URL</code> is configured in production.
       </p>
     </main>
   );
