@@ -26,24 +26,19 @@ function mdToHtml(md) {
   md = String(md).replace(/\r\n/g, "\n");
   md = md.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
-  // helper: inline replacements (bold, italic, links)
+  // inline helpers
   const applyInline = (s) =>
     s
-      // **bold**
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      // _italic_  (avoid underscores inside_words_)
-      .replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>")
-      // [text](https?://url)
-      .replace(
-        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener">$1</a>'
-      );
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")               // **bold**
+      .replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>")              // _italic_
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,               // [text](url)
+               '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
   // headings
   md = md
     .replace(/^###\s+(.*)$/gm, (_m, t) => `<h3>${applyInline(t)}</h3>`)
     .replace(/^##\s+(.*)$/gm, (_m, t) => `<h2>${applyInline(t)}</h2>`)
-    .replace(/^#\s+(.*)$/gm, (_m, t) => `<h1>${applyInline(t)}</h1>`);
+    .replace(/^#\s+(.*)$/gm,  (_m, t) => `<h1>${applyInline(t)}</h1>`);
 
   // horizontal rule
   md = md.replace(/^\s*---+\s*$/gm, "<hr />");
@@ -59,17 +54,17 @@ function mdToHtml(md) {
     return `<ul>${items}</ul>`;
   });
 
-  // paragraphs (keep single newlines as <br>)
-  md = md
-    .split(/\n{2,}/)
-    .map((chunk) =>
-      /^<(h\d|ul|hr)/i.test(chunk.trim())
-        ? chunk
-        : `<p>${applyInline(chunk).split("\n").join("<br />")}</p>`
-    )
+  // paragraphs
+  // IMPORTANT: split on blank lines *with optional spaces/tabs* so "indented blank" lines count.
+  return md
+    .split(/\n[ \t]*\n/)                                     // 👈 tolerate whitespace-only lines
+    .map((chunk) => {
+      const t = chunk.trim();
+      return /^<(h\d|ul|hr)/i.test(t)
+        ? t
+        : `<p>${applyInline(t).replace(/\n/g, "<br />")}</p>`; // keep single newlines
+    })
     .join("\n");
-
-  return md;
 }
 
 function Toolbar({ apply }) {
