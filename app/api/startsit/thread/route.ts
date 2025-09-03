@@ -1,53 +1,53 @@
-// app/api/startsit/thread/route.ts
+// app/api/admin/startsit/thread/route.ts
 import { NextResponse } from "next/server";
-import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { kv } from "@vercel/kv";
+import { randomUUID } from "crypto";
 
-export const runtime = "nodejs";
+export const runtime = "nodejs";       // ensure Node runtime (KV + crypto)
+export const dynamic = "force-dynamic";
 
-// Create/replace the Start/Sit discussion thread metadata
+type Thread = {
+  id: string;
+  week: string;
+  title: string;
+  body: string;
+  createdAt: string;
+};
+
+const kCurrent = "ss:current";                 // current thread meta
+const kThread = (id: string) => `ss:thread:${id}`; // full thread object
+
 export async function POST(req: Request) {
-  // modest protection for the endpoint
-  const ip = getClientIp(req);
-  const { success, reset, limit } = await rateLimit(`${ip}:ss:thread`, {
-    limit: 3,
-    window: 60,
-  });
-  if (!success) {
-    const retry = Math.max(1, reset - Math.floor(Date.now() / 1000));
+  try {
+    const json = await req.json().catch(() => ({} as any));
+    const week = String(json.week ?? json.key ?? "").trim();
+    const title = String(json.title ?? "").trim();
+    const body = String(json.body ?? json.markdown ?? "");
+
+    if (!week || !title) {
+      return NextResponse.json(
+        { ok: false, error: "Missing required fields: week and title" },
+        { status: 400 }
+      );
+    }
+
+    const id = randomUUID();
+    const thread: Thread = {
+      id,
+      week,
+      title,
+      body,
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(kThread(id), thread);
+    await kv.set(kCurrent, { id, week });
+
+    return NextResponse.json({ ok: true, id });
+  } catch (e: any) {
     return NextResponse.json(
-      { error: "Too many requests. Please try again shortly." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(retry),
-          "X-RateLimit-Limit": String(limit),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Reset": String(reset),
-        },
-      }
+      { ok: false, error: e?.message || "Unexpected error" },
+      { status: 500 }
     );
   }
-
-  const { key, title, content } = await req.json();
-
-  if (!key || !title?.trim()) {
-    return NextResponse.json(
-      { error: "key and title required" },
-      { status: 400 }
-    );
-  }
-
-  const threadId = `ss:${key}`;
-  const thread = {
-    id: threadId,
-    title: title.trim(),
-    content: content || "",
-    createdAt: new Date().toISOString(),
-  };
-
-  await kv.set(`startsit:thread:${threadId}`, thread);
-  await kv.set("startsit:current", threadId);
-
-  return NextResponse.json({ ok: true, threadId });
 }
