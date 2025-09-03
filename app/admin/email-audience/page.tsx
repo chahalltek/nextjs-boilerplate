@@ -1,5 +1,5 @@
 // app/admin/email-audience/page.tsx
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,19 +19,21 @@ type ResendSummary = {
   opened: number;
   clicked: number;
   bounced: number;
-  timeframe: string; // e.g. "24h"
+  timeframe: string;
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
-  // Use relative path + forward the incoming request cookies
-  const cookieHeader = cookies().toString();
+  // Call same-origin API with an internal bearer so middleware lets it through
   const res = await fetch(path, {
     method: "GET",
     cache: "no-store",
-    headers: { cookie: cookieHeader },
+    headers: {
+      authorization: `Bearer ${process.env.ADMIN_API_KEY ?? ""}`,
+    },
   });
   if (!res.ok) {
-    throw new Error(`${path} ${res.status}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.url || path} ${res.status}${text ? ` — ${text}` : ""}`);
   }
   return res.json();
 }
@@ -58,13 +60,10 @@ export default async function EmailAudience() {
     <main className="container max-w-4xl py-10 space-y-6">
       <h1 className="text-3xl font-bold">Email & Audience</h1>
 
-      {/* Mailchimp */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5">
         <h2 className="text-xl font-semibold mb-2">Mailchimp Audience</h2>
         {mcErr ? (
-          <p className="text-red-300">
-            Unable to load Mailchimp: {mcErr}
-          </p>
+          <p className="text-red-300">Unable to load Mailchimp: {mcErr}</p>
         ) : mc ? (
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -73,18 +72,9 @@ export default async function EmailAudience() {
               <div className="text-white/60 text-sm">List ID: {mc.listId}</div>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <div>
-                <div className="text-white/70 text-sm">Members</div>
-                <div className="text-xl font-semibold">{mc.memberCount}</div>
-              </div>
-              <div>
-                <div className="text-white/70 text-sm">Unsubscribed</div>
-                <div className="text-xl font-semibold">{mc.unsubCount}</div>
-              </div>
-              <div>
-                <div className="text-white/70 text-sm">Cleaned</div>
-                <div className="text-xl font-semibold">{mc.cleanedCount}</div>
-              </div>
+              <Stat label="Members" value={mc.memberCount} />
+              <Stat label="Unsubscribed" value={mc.unsubCount} />
+              <Stat label="Cleaned" value={mc.cleanedCount} />
             </div>
             {mc.lastUpdated && (
               <div className="sm:col-span-2 text-white/60 text-sm">
@@ -97,7 +87,6 @@ export default async function EmailAudience() {
         )}
       </section>
 
-      {/* Resend */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5">
         <h2 className="text-xl font-semibold mb-2">Resend (Last 24h)</h2>
         {rsErr ? (
