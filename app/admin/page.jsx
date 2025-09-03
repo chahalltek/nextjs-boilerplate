@@ -68,6 +68,8 @@ const cards = [
   { href: "/admin/survivor", title: "Survivor — Admin", desc: "Seed season, set lock, record weekly boots, rescore.", emoji: "🏝️" },
   // ✅ Lineup Lab admin hub
   { href: "/admin/lineup-lab", title: "Lineup Lab", desc: "Rosters, overrides, and recompute controls.", emoji: "🧪" },
+   // ✅ Analytics admin hub
+  { href: "/admin/analytics", title: "Analytics", desc: "Visitors, pageviews, bounce rate and avg visit.", emoji: "" },
 ];
 
 export default function AdminHome() {
@@ -79,10 +81,6 @@ export default function AdminHome() {
           Quick controls for cache revalidation and maintenance. Protected by your admin middleware.
         </p>
       </header>
-      
-<a href="/admin/analytics" className="rounded border border-white/10 px-2 py-1 text-sm hover:bg-white/10">
-  Analytics
-</a>
 
       {/* Revalidation Shortcuts */}
       <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-5">
