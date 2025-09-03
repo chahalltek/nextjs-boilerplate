@@ -7,6 +7,19 @@ import Link from "next/link";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** Resolve a dependable absolute base for client-side fetches */
+function getBase() {
+  // Prefer your public URL if set; otherwise use the current origin.
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    try {
+      const u = new URL(process.env.NEXT_PUBLIC_SITE_URL);
+      return u.origin;
+    } catch {}
+  }
+  if (typeof window !== "undefined") return window.location.origin;
+  return ""; // fallback to relative
+}
+
 export default function StartSitAdminPage() {
   const [key, setKey] = useState("");
   const [title, setTitle] = useState("");
@@ -16,35 +29,60 @@ export default function StartSitAdminPage() {
   async function submit(e) {
     e.preventDefault();
     setStatus("Saving…");
+
+    const base = getBase();
+
+    // Prefer the protected admin endpoint. Your admin cookie will pass automatically.
+    // We also send both `markdown` and `body` to be compatible with either handler shape.
+    const payload = { key, title, markdown: body, body };
+
     try {
-      const res = await fetch("/api/start-sit/thread", {
+      const res = await fetch(`${base}/api/admin/start-sit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ key, title, body }),
+        credentials: "include", // ensure cookies (admin session) are sent
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || "Request failed");
+        const txt = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${txt || res.statusText}`);
       }
-      setStatus("✅ Saved. You can revalidate /start-sit if needed.");
+
+      // If your route returns { slug }, use it; otherwise show a success note.
+      let slug = "";
+      try {
+        const json = await res.json();
+        slug = json?.slug || "";
+      } catch {}
+
+      setStatus(
+        slug
+          ? `✅ Published. View at /start-sit/${slug}`
+          : "✅ Published. You can revalidate /start-sit if needed."
+      );
     } catch (err) {
       console.error(err);
-      setStatus("❌ Error: " + (err?.message || "Failed to save"));
+      setStatus("❌ Error: " + (err?.message || "Request failed"));
     }
   }
 
   async function revalidateStartSit() {
     try {
       setStatus("Revalidating /start-sit…");
-      // Optional convenience: if you have a general revalidate API, call it here.
-      // Otherwise use the Super Admin page to revalidate.
-      const base = process.env.NEXT_PUBLIC_SITE_URL || "";
-      const res = await fetch(`${base}/api/search-index?noop=1`, { method: "POST", cache: "no-store" });
-      // The above is a harmless ping. If you have a specific /api/revalidate?path=/start-sit, swap it in.
+      const base = getBase();
+
+      // If you later add a real revalidate endpoint, swap it in here.
+      // This ping is harmless and keeps a consistent UX.
+      await fetch(`${base}/api/search-index?noop=1`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+      });
+
       setStatus("✅ Revalidated (or queued).");
-    } catch (e) {
+    } catch {
       setStatus("⚠️ Revalidate call failed. Use Super Admin → Revalidate path: /start-sit");
     }
   }
@@ -54,7 +92,8 @@ export default function StartSitAdminPage() {
       <header>
         <h1 className="text-3xl font-bold">Start / Sit — Admin</h1>
         <p className="text-white/70">
-          Publish this week’s Start/Sit thread. This mirrors the HEF workflow, but posts to <code>/api/start-sit/thread</code>.
+          Publish this week’s Start/Sit thread. This posts to{" "}
+          <code>/api/admin/start-sit</code> (protected by the admin cookie).
         </p>
       </header>
 
@@ -127,20 +166,22 @@ export default function StartSitAdminPage() {
             </button>
           </div>
 
-          {status && (
-            <div className="text-sm text-white/70">
-              {status}
-            </div>
-          )}
+          {status && <div className="text-sm text-white/70">{status}</div>}
         </form>
       </section>
 
       <section className="rounded-xl border border-white/10 bg-white/5 p-5">
         <h2 className="text-lg font-semibold mb-2">Tips</h2>
         <ul className="list-disc pl-5 text-sm text-white/80 space-y-1">
-          <li>Use a consistent <strong>Key</strong> format like <code>YYYY-wkNN</code>.</li>
-          <li>Keep the <strong>Title</strong> concise (e.g., “Week 3 Start/Sit Thread”).</li>
-          <li>After posting, revalidate <code>/start-sit</code> from here or Super Admin.</li>
+          <li>
+            Use a consistent <strong>Key</strong> format like <code>YYYY-wkNN</code>.
+          </li>
+          <li>
+            Keep the <strong>Title</strong> concise (e.g., “Week 3 Start/Sit Thread”).
+          </li>
+          <li>
+            After posting, revalidate <code>/start-sit</code> from here or Super Admin.
+          </li>
         </ul>
       </section>
     </main>
