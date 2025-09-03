@@ -295,7 +295,12 @@ export default function StartSitAdminPage() {
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold mb-3">Preview</h2>
-          <article className="prose prose-invert max-w-none" dangerouslySetInnerHTML={preview} />
+          <article
+            className="prose prose-invert max-w-none
+                       prose-p:my-4 prose-p:leading-7
+                       prose-ul:my-4 prose-li:my-1 prose-hr:my-6"
+            dangerouslySetInnerHTML={preview}
+          />
           <div className="mt-4 text-right">
             <Link href="/start-sit" target="_blank" className="underline">
               View /start-sit →
