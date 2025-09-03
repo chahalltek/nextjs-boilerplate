@@ -1,66 +1,80 @@
 // app/api/analytics/summary/route.ts
 import { NextResponse } from "next/server";
 
-const API = "https://plausible.io/api/v1/stats/aggregate";
-const KEY = process.env.PLAUSIBLE_API_KEY!;
-const SITE_ID = process.env.PLAUSIBLE_SITE_ID || process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// simple in-process cache so brief outages don’t break the UI
-let lastOk: { asOf: number; payload: any } | null = null;
+/** Config (env) */
+const API_BASE = process.env.PLAUSIBLE_API_BASE || "https://plausible.io";
+const API = `${API_BASE.replace(/\/$/, "")}/api/v1/stats/aggregate`;
 
-async function fetchAgg(params: Record<string, string>) {
-  const url = new URL(API);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+// Option A: private API key (recommended)
+const KEY = process.env.PLAUSIBLE_API_KEY || "";
 
-  // minimal exponential backoff on 429/5xx
-  const tries = [0, 500, 1200];
-  let lastErr: any;
+// Option B: public “share” secret (Plausible → Share → Enable shared link)
+const SHARED = process.env.PLAUSIBLE_SHARED_LINK || "";
 
-  for (const delay of tries) {
-    if (delay) await new Promise(r => setTimeout(r, delay));
-    try {
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${KEY}` },
-        // don’t let edge cache a 503
-        cache: "no-store",
-      });
+// Required
+const SITE_ID =
+  process.env.PLAUSIBLE_SITE_ID ||
+  process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN || // fallback if you set only this
+  new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://heyskolsister.com").host;
 
-      if (res.ok) return { ok: true as const, data: await res.json() };
-
-      // retry on transient errors
-      if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
-        lastErr = { status: res.status, body: await safeText(res) };
-        continue;
-      }
-
-      // non-retryable error
-      return { ok: false as const, error: { status: res.status, body: await safeText(res) } };
-    } catch (e: any) {
-      lastErr = e;
-    }
-  }
-
-  return { ok: false as const, error: lastErr ?? { status: 503, body: "Service unavailable" } };
-}
+type FetchErr = { status?: number; body?: string; message?: string };
 
 async function safeText(res: Response) {
   try { return await res.text(); } catch { return ""; }
 }
 
+async function callPlausible(params: Record<string, string>) {
+  const url = new URL(API);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  if (SHARED && !KEY) url.searchParams.set("auth", SHARED);
+
+  const tries = [0, 500, 1200]; // backoff (ms) for 5xx/429
+  let lastErr: FetchErr | undefined;
+
+  for (const delay of tries) {
+    if (delay) await new Promise(r => setTimeout(r, delay));
+
+    try {
+      const res = await fetch(url.toString(), {
+        headers: KEY ? { Authorization: `Bearer ${KEY}` } : undefined,
+        cache: "no-store",
+      });
+
+      if (res.ok) return { ok: true as const, data: await res.json() };
+
+      const body = await safeText(res);
+      // retry on transient
+      if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
+        lastErr = { status: res.status, body };
+        continue;
+      }
+      // permanent error
+      return { ok: false as const, error: { status: res.status, body } };
+    } catch (e: any) {
+      lastErr = { message: e?.message || String(e) };
+    }
+  }
+  return { ok: false as const, error: lastErr || { status: 503, body: "Service unavailable" } };
+}
+
+/** tiny in-proc cache so brief outages don’t break UI */
+let lastOk: { asOf: number; payload: any } | null = null;
+
 export async function GET(req: Request) {
-  if (!KEY || !SITE_ID) {
-    return NextResponse.json(
-      { error: "Missing PLAUSIBLE_API_KEY or PLAUSIBLE_SITE_ID" },
-      { status: 500 },
-    );
+  if (!SITE_ID) {
+    return NextResponse.json({ error: "Missing SITE_ID" }, { status: 500 });
   }
 
   const url = new URL(req.url);
   const period = url.searchParams.get("period") || "30d";
-  const metrics = url.searchParams.get("metrics")
-    || "visitors,pageviews,bounce_rate,visit_duration";
+  const metrics =
+    url.searchParams.get("metrics") ||
+    "visitors,pageviews,bounce_rate,visit_duration";
 
-  const result = await fetchAgg({ site_id: SITE_ID, period, metrics });
+  const result = await callPlausible({ site_id: SITE_ID, period, metrics });
 
   if (result.ok) {
     lastOk = { asOf: Date.now(), payload: result.data };
@@ -69,16 +83,18 @@ export async function GET(req: Request) {
     });
   }
 
-  // Serve last good data if we have it
+  // Serve last good payload if available
   if (lastOk) {
+    console.warn("[analytics] serving cached due to error:", result.error);
     return NextResponse.json(
       { ...lastOk.payload, _staleAsOf: lastOk.asOf },
       { headers: { "X-From-Cache": "1" } },
     );
   }
 
-  // Otherwise bubble the error with context
-  const status = typeof result.error?.status === "number" ? result.error.status : 502;
+  const status =
+    typeof result.error?.status === "number" ? result.error.status : 502;
+  console.error("[analytics] Plausible error:", result.error);
   return NextResponse.json(
     { error: "Plausible API error", details: result.error },
     { status },
