@@ -1,93 +1,116 @@
 // app/api/admin/mailchimp/route.ts
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // we use Buffer for Basic auth
 
-function bearerOk(req: Request) {
-  const key = process.env.ADMIN_API_KEY;
-  if (!key) return true; // no lock if not configured
-  const hdr = req.headers.get("authorization") || "";
-  return hdr === `Bearer ${key}`;
+function inferServerPrefix(key?: string, fallback?: string) {
+  if (fallback) return fallback.replace(/^\s+|\s+$/g, "");
+  const m = /-([a-z0-9]+)$/i.exec(key || "");
+  return m ? m[1] : undefined;
 }
 
-function mcAuthHeader(apiKey: string) {
+function authHeader(key: string) {
   // Mailchimp uses HTTP Basic; username can be anything
-  const b64 = Buffer.from(`anystring:${apiKey}`).toString("base64");
-  return `Basic ${b64}`;
+  const token = Buffer.from(`anystring:${key}`).toString("base64");
+  return `Basic ${token}`;
 }
 
-export async function GET(req: Request) {
-  if (!bearerOk(req)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
-
+export async function GET() {
   const API_KEY = process.env.MAILCHIMP_API_KEY || "";
-  const SERVER  = process.env.MAILCHIMP_SERVER_PREFIX || ""; // e.g. "us17"
-  const LIST_ID = process.env.MAILCHIMP_LIST_ID || "";
+  let SERVER_PREFIX = inferServerPrefix(API_KEY, process.env.MAILCHIMP_SERVER_PREFIX);
+  let LIST_ID = process.env.MAILCHIMP_LIST_ID || "";
+  const LIST_NAME = process.env.MAILCHIMP_LIST_NAME || ""; // optional convenience
 
-  if (!API_KEY || !SERVER || !LIST_ID) {
+  if (!API_KEY) {
     return NextResponse.json(
-      { ok: false, error: "Missing Mailchimp env (MAILCHIMP_API_KEY, MAILCHIMP_LIST_ID, MAILCHIMP_SERVER_PREFIX)" },
+      { ok: false, error: "Missing MAILCHIMP_API_KEY" },
       { status: 500 }
     );
   }
 
-  const BASE = `https://${SERVER}.api.mailchimp.com/3.0`;
-  const headers = { Authorization: mcAuthHeader(API_KEY) };
+  if (!SERVER_PREFIX) {
+    return NextResponse.json(
+      { ok: false, error: "Missing MAILCHIMP_SERVER_PREFIX (and could not infer from API key)" },
+      { status: 500 }
+    );
+  }
 
-  const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const BASE = `https://${SERVER_PREFIX}.api.mailchimp.com/3.0`;
+  const headers = { Authorization: authHeader(API_KEY) };
+
+  // If no LIST_ID, try to discover one (by name first, else first list)
+  if (!LIST_ID) {
+    const res = await fetch(
+      `${BASE}/lists?count=100&fields=lists.id,lists.name,total_items`,
+      { headers, cache: "no-store" }
+    );
+    const json = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      return NextResponse.json(
+        { ok: false, error: "List discovery failed", detail: json },
+        { status: 502 }
+      );
+    }
+    const lists: Array<{ id: string; name: string }> = json?.lists || [];
+    const byName =
+      LIST_NAME &&
+      lists.find(
+        (l) => l.name?.toLowerCase().trim() === LIST_NAME.toLowerCase().trim()
+      );
+    LIST_ID = (byName || lists[0])?.id || "";
+    if (!LIST_ID) {
+      return NextResponse.json(
+        { ok: false, error: "No lists found. Set MAILCHIMP_LIST_ID or create a list." },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Helper to count items via total_items without pulling the whole list
+  const count = async (url: string) => {
+    const r = await fetch(url, { headers, cache: "no-store" });
+    const j = await r.json().catch(() => ({} as any));
+    if (!r.ok) throw new Error(`Mailchimp ${r.status}: ${JSON.stringify(j)}`);
+    return Number(j?.total_items ?? 0);
+  };
+
+  const sinceISO = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
 
   try {
-    const [listRes, recentRes, growthRes] = await Promise.all([
-      // List metadata + stats
-      fetch(`${BASE}/lists/${encodeURIComponent(LIST_ID)}`, { headers, cache: "no-store" }),
-      // Most recent signups
-      fetch(
-        `${BASE}/lists/${encodeURIComponent(LIST_ID)}/members?count=10&sort_field=timestamp_opt&sort_dir=DESC`,
-        { headers, cache: "no-store" }
-      ),
-      // Growth (new subscribed in last 30 days)
-      fetch(
-        `${BASE}/lists/${encodeURIComponent(LIST_ID)}/members?count=0&status=subscribed&since_timestamp_opt=${encodeURIComponent(
-          sinceIso
-        )}`,
-        { headers, cache: "no-store" }
+    const [metaRes, total, unsub, growth30d] = await Promise.all([
+      fetch(`${BASE}/lists/${LIST_ID}?fields=name`, { headers, cache: "no-store" }),
+      count(`${BASE}/lists/${LIST_ID}/members?count=0`),
+      count(`${BASE}/lists/${LIST_ID}/members?status=unsubscribed&count=0`),
+      count(
+        `${BASE}/lists/${LIST_ID}/members?status=subscribed&since_timestamp_opt=${encodeURIComponent(
+          sinceISO
+        )}&count=0`
       ),
     ]);
 
-    if (!listRes.ok) {
-      const text = await listRes.text().catch(() => "");
-      return NextResponse.json({ ok: false, error: `List fetch failed: ${text}` }, { status: 502 });
+    const meta = await metaRes.json().catch(() => ({} as any));
+    if (!metaRes.ok) {
+      return NextResponse.json(
+        { ok: false, error: "List metadata fetch failed", detail: meta },
+        { status: 502 }
+      );
     }
 
-    const listJson   = await listRes.json();
-    const recentJson = recentRes.ok ? await recentRes.json() : { members: [] };
-    const growthJson = growthRes.ok ? await growthRes.json() : { total_items: undefined };
-
-    const total = listJson?.stats?.member_count ?? listJson?.member_count ?? 0;
-    const unsub = listJson?.stats?.unsubscribe_count ?? listJson?.stats?.unsubscribed ?? 0;
-
-    const recent = Array.isArray(recentJson?.members)
-      ? recentJson.members.slice(0, 10).map((m: any) => ({
-          email: m?.email_address,
-          status: m?.status,
-          ts: m?.timestamp_opt ?? m?.timestamp_signup ?? m?.last_changed,
-        }))
-      : [];
-
-    const growth30d =
-      typeof growthJson?.total_items === "number" ? (growthJson.total_items as number) : undefined;
-
-    return NextResponse.json({
-      ok: true,
-      list_name: listJson?.name,
-      total_subscribers: total,
-      unsubscribes: unsub,
-      growth_30d: growth30d,
-      recent_signups: recent,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        list_id: LIST_ID,
+        list_name: meta?.name,
+        total_subscribers: total,
+        unsubscribes: unsub,
+        growth_30d: growth30d,
+      },
+      { status: 200 }
+    );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 502 }
+    );
   }
 }
