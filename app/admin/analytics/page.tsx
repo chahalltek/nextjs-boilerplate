@@ -17,11 +17,10 @@ function getBaseUrl() {
   const vercel = process.env.VERCEL_URL?.replace(/\/+$/, "");
   if (vercel) return `https://${vercel}`;
 
-  // 3) Request headers (works behind proxies)
+  // 3) Request headers (proxies)
   const h = headers();
   const proto = h.get("x-forwarded-proto") || "https";
-  const host =
-    h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
+  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
   return `${proto}://${host}`;
 }
 
@@ -42,12 +41,6 @@ async function fetchJSON<T = any>(path: string): Promise<T> {
     throw new Error(`${url} ${res.status}${txt ? ` — ${txt}` : ""}`);
   }
   return res.json();
-}
-
-function hasResults(
-  v: unknown
-): v is PlausibleAgg & { results: Record<string, number> } {
-  return !!v && typeof (v as any).results === "object" && (v as any).results !== null;
 }
 
 export default async function AdminAnalytics() {
@@ -84,7 +77,12 @@ export default async function AdminAnalytics() {
     })(),
   ]);
 
-  const agg: Record<string, number> = hasResults(plausible) ? plausible.results : {};
+  // Robust runtime guard + cast (avoids TS “never” narrowing flake during build)
+  const agg: Record<string, number> =
+    plausible && typeof (plausible as any).results === "object" && (plausible as any).results
+      ? ((plausible as any).results as Record<string, number>)
+      : {};
+
   const fmt = (n: number | undefined) =>
     typeof n === "number" ? n.toLocaleString() : "—";
 
@@ -173,7 +171,8 @@ export default async function AdminAnalytics() {
       </div>
 
       <p className="text-xs text-white/50">
-        Make sure <code>NEXT_PUBLIC_SITE_URL</code> (or <code>VERCEL_URL</code>) and <code>ADMIN_API_KEY</code> are set in the active environment (Preview/Production) and redeploy after changes.
+        Ensure <code>NEXT_PUBLIC_SITE_URL</code> (or <code>VERCEL_URL</code>) and <code>ADMIN_API_KEY</code> are set for the current environment
+        (Preview/Production) and redeploy after changes.
       </p>
     </main>
   );
