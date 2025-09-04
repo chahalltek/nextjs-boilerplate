@@ -1,62 +1,204 @@
 // app/api/admin/newsletter/recipients/route.ts
 import { NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
+import crypto from "crypto";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const runtime = "nodejs"; // we use crypto
 
-interface Recipient {
-  email: string;
-  source?: "mailchimp" | "kv" | "custom";
-  status?: string;
-  id?: string;
-  [key: string]: any;
+// ---------- Auth ----------
+function adminOk(req: Request) {
+  const expected = process.env.ADMIN_API_KEY || "";
+  if (!expected) return false;
+
+  const h = new Headers(req.headers);
+  const bearer = h.get("authorization");
+  if (bearer && bearer.toLowerCase().startsWith("bearer ")) {
+    return bearer.slice(7).trim() === expected;
+  }
+  const x = h.get("x-admin-key");
+  if (x && x === expected) return true;
+  return false;
 }
 
-function getProvidedAdminKey(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const bearer = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  const xkey = req.headers.get("x-admin-key")?.trim();
-  return bearer || xkey || "";
+// ---------- KV helpers ----------
+async function kvSmembers(key: string): Promise<string[]> {
+  try {
+    const arr = await kv.smembers<string>(key);
+    return (arr || []).map((s) => (s || "").toLowerCase());
+  } catch {
+    return [];
+  }
 }
 
+async function getSuppressions(): Promise<Set<string>> {
+  const suppressed = await kvSmembers("newsletter:suppressions"); // your own unsub list (if used)
+  return new Set(suppressed);
+}
+
+async function getDList(): Promise<string[]> {
+  const extra = await kvSmembers("newsletter:dlist"); // your “D-list” (optional)
+  return extra;
+}
+
+// ---------- Mailchimp ----------
+type McMember = { email_address: string; status: string };
+
+function mcEnvOk() {
+  return Boolean(
+    process.env.MAILCHIMP_API_KEY &&
+      process.env.MAILCHIMP_SERVER_PREFIX &&
+      process.env.MAILCHIMP_LIST_ID
+  );
+}
+
+function mcAuthHeader() {
+  const apiKey = process.env.MAILCHIMP_API_KEY!;
+  return "Basic " + Buffer.from(`anystring:${apiKey}`).toString("base64");
+}
+
+async function mcListSubscribed(): Promise<string[]> {
+  // Pull subscribed members from Mailchimp (paginated)
+  const dc = process.env.MAILCHIMP_SERVER_PREFIX!;
+  const listId = process.env.MAILCHIMP_LIST_ID!;
+  const auth = mcAuthHeader();
+
+  const perPage = 1000;
+  let offset = 0;
+  const emails: string[] = [];
+
+  // Cap pages to avoid super long requests
+  const MAX_PAGES = 5;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const url = new URL(`https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members`);
+    url.searchParams.set("status", "subscribed");
+    url.searchParams.set("count", String(perPage));
+    url.searchParams.set("offset", String(offset));
+    // Trim the response to what we need
+    url.searchParams.set("fields", "members.email_address,members.status,total_items");
+
+    const res = await fetch(url.toString(), { headers: { authorization: auth } });
+    if (!res.ok) {
+      // If MC creds are wrong, fail gracefully with empty set; caller will show count 0
+      return [];
+    }
+    const json = await res.json();
+    const members = (json?.members || []) as McMember[];
+    for (const m of members) {
+      if (m.status === "subscribed" && m.email_address) {
+        emails.push(m.email_address.toLowerCase());
+      }
+    }
+
+    if (members.length < perPage) break; // last page
+    offset += perPage;
+  }
+
+  return emails;
+}
+
+async function mcGetMember(email: string) {
+  const dc = process.env.MAILCHIMP_SERVER_PREFIX!;
+  const listId = process.env.MAILCHIMP_LIST_ID!;
+  const auth = mcAuthHeader();
+
+  const lower = email.trim().toLowerCase();
+  const hash = crypto.createHash("md5").update(lower).digest("hex");
+
+  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${hash}`;
+  const res = await fetch(url, { headers: { authorization: auth } });
+  if (res.status === 404) {
+    return { ok: true, found: false as const, email: lower };
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: `Mailchimp ${res.status}`, detail: json };
+  }
+  return {
+    ok: true,
+    found: true as const,
+    email: json.email_address,
+    status: json.status, // subscribed | unsubscribed | cleaned | pending | transactional
+    last_changed: json.last_changed,
+  };
+}
+
+// ---------- GET ----------
 export async function GET(req: Request) {
-  // --- Route-level admin key validation ---
-  const expected = (process.env.ADMIN_API_KEY || "").trim();
-  const provided = getProvidedAdminKey(req);
-
-  if (!expected) {
-    return NextResponse.json(
-      { error: "unauthorized", reason: "ADMIN_API_KEY not set in this environment" },
-      { status: 401 }
-    );
-  }
-  if (!provided) {
-    return NextResponse.json(
-      { error: "unauthorized", reason: "missing Authorization: Bearer or X-Admin-Key header" },
-      { status: 401 }
-    );
-  }
-  if (provided !== expected) {
-    return NextResponse.json(
-      { error: "unauthorized", reason: "bad key" },
-      { status: 401 }
-    );
+  if (!adminOk(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // --- Query handling ---
   const url = new URL(req.url);
-  const email = (url.searchParams.get("email") || "").toLowerCase();
+  const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+  const sample = Math.max(0, Math.min(200, Number(url.searchParams.get("sample") || 25))); // default sample 25
 
-  // TODO: Plug in Mailchimp + KV lookups here.
-  // Example shape: [{ email: "user@example.com", source: "mailchimp", status: "subscribed", id: "abc123" }]
-  const recipients: Recipient[] = [];
-
+  // Per-email diagnostic (tells you exactly why someone is/ isn’t included)
   if (email) {
-    const match =
-      recipients.find((r) => (r.email || "").toLowerCase() === email) || null;
-    return NextResponse.json({ ok: true, match });
+    const suppressed = (await getSuppressions()).has(email);
+
+    if (!mcEnvOk()) {
+      return NextResponse.json({
+        ok: true,
+        email,
+        mailchimp_configured: false,
+        suppressed,
+        included: !suppressed, // only KV logic would apply
+        reason: !suppressed ? "mc-not-configured" : "suppressed",
+      });
+    }
+
+    const mc = await mcGetMember(email);
+    if (!mc.ok) {
+      return NextResponse.json({ ok: false, source: "mailchimp", error: mc.error, detail: (mc as any).detail }, { status: 502 });
+    }
+    if (!mc.found) {
+      return NextResponse.json({
+        ok: true,
+        email,
+        found_in_mailchimp: false,
+        mailchimp_status: null,
+        suppressed,
+        included: false,
+        reason: "not-in-mailchimp",
+      });
+    }
+
+    const included = mc.status === "subscribed" && !suppressed;
+    return NextResponse.json({
+      ok: true,
+      email: mc.email,
+      found_in_mailchimp: true,
+      mailchimp_status: mc.status,
+      last_changed: mc.last_changed,
+      suppressed,
+      included,
+      reason: included ? "included" : mc.status !== "subscribed" ? "mc-status" : "suppressed",
+    });
   }
 
-  return NextResponse.json({ ok: true, count: recipients.length, recipients });
+  // Summary (no full dump unless you ask with ?sample=N)
+  let mcEmails: string[] = [];
+  if (mcEnvOk()) {
+    mcEmails = await mcListSubscribed();
+  }
+
+  const dlist = await getDList();        // optional KV “D-list”
+  const suppressed = await getSuppressions();
+
+  // Merge, dedupe, subtract suppressions
+  const merged = Array.from(new Set([...mcEmails, ...dlist])).filter((e) => !suppressed.has(e));
+
+  const response = {
+    ok: true,
+    count: merged.length,
+    recipients: merged.slice(0, sample), // sample so we don’t dump the whole list by default
+    sources: {
+      mailchimp_subscribed: mcEmails.length,
+      dlist: dlist.length,
+      suppressed: suppressed.size,
+    },
+  };
+
+  return NextResponse.json(response);
 }
