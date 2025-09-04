@@ -1,5 +1,17 @@
 import { NextResponse } from "next/server";
 
+function adminBearerOk(req: Request) {
+  const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
+  if (!ADMIN_API_KEY) return false;
+  const h = new Headers(req.headers).get("authorization") || "";
+  return h.startsWith("Bearer ") && h.slice(7) === ADMIN_API_KEY;
+}
+
+export async function GET(req: Request) {
+  if (!adminBearerOk(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
 function need(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env ${name}`);
