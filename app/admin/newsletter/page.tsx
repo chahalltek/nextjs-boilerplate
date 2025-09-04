@@ -1,3 +1,4 @@
+// app/admin/newsletter/page.tsx
 import { redirect } from "next/navigation";
 import {
   listDrafts,
@@ -62,7 +63,9 @@ function toTime(dateStr?: string) {
 
 function baseOrigin() {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
-    try { return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch {}
+    try {
+      return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin;
+    } catch {}
   }
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return "http://localhost:3000";
@@ -73,7 +76,7 @@ async function postJSON(path: string, body: any) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`,
+      Authorization: `Bearer ${process.env.ADMIN_API_KEY || ""}`,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -131,7 +134,14 @@ async function fallbackWeeklyRecap(dateFrom?: string, dateTo?: string) {
   const recaps = await pullMarkdownFromDir("content/recaps", { dateFrom, dateTo, limit: 1 });
   if (!recaps.length) return "";
   const r = recaps[0];
-  return `\n\n## Weekly Recap\n\n**${r.title}** (${r.date})\n\n${r.content}\n`;
+  return `
+
+## Weekly Recap
+
+**${r.title}** (${r.date})
+
+${r.content}
+`;
 }
 
 async function fallbackBlog(dateFrom?: string, dateTo?: string) {
@@ -143,7 +153,12 @@ async function fallbackBlog(dateFrom?: string, dateTo?: string) {
       return `- **${p.title}** (${p.date}) — ${firstPara}`;
     })
     .join("\n");
-  return `\n\n## From the Blog\n\n${items}\n`;
+  return `
+
+## From the Blog
+
+${items}
+`;
 }
 
 /* ----------------------------------- PAGE ----------------------------------- */
@@ -199,10 +214,14 @@ export default async function NewsletterAdmin({
     const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
     const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
     if (wantsRecap && !hasRecap) {
-      try { markdown += await fallbackWeeklyRecap(dateFrom, dateTo); } catch {}
+      try {
+        markdown += await fallbackWeeklyRecap(dateFrom, dateTo);
+      } catch {}
     }
     if (wantsBlog && !hasBlog) {
-      try { markdown += await fallbackBlog(dateFrom, dateTo); } catch {}
+      try {
+        markdown += await fallbackBlog(dateFrom, dateTo);
+      } catch {}
     }
 
     const draft = await saveDraft({
@@ -253,7 +272,7 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
   }
 
-  // NOTE: ClientUI expects a result object (no redirect).
+  // ClientUI expects a result object (no redirect).
   async function actionSendTest(formData: FormData) {
     "use server";
     const { sendNewsletter } = await import("@/lib/newsletter/send");
@@ -302,16 +321,18 @@ export default async function NewsletterAdmin({
     }
   }
 
-  // ✅ Moved inside the component (no top-level export)
+  // Kept inside the component so it isn't exported
   async function actionSendNow(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
     const draft = await getDraft(id);
     if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
 
-    const subject     = String(formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
-    const html        = String(formData.get("html") || "");
-    const markdown    = String(formData.get("markdown") || draft.markdown || "");
+    const subject = String(
+      formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!"
+    );
+    const html = String(formData.get("html") || "");
+    const markdown = String(formData.get("markdown") || draft.markdown || "");
     const audienceTag = String(formData.get("audienceTag") || (draft as any)?.audienceTag || "");
 
     await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
@@ -411,4 +432,3 @@ export default async function NewsletterAdmin({
     </main>
   );
 }
-
