@@ -6,9 +6,9 @@ export const config = {
   matcher: ["/admin", "/admin/:path*", "/api/admin/:path*"],
 };
 
-const ADMIN_COOKIE  = "skol_admin";
-const ADMIN_USER    = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS    = process.env.ADMIN_PASS || "";
+const ADMIN_COOKIE = "skol_admin";
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
+const ADMIN_PASS = process.env.ADMIN_PASS || ""; // optional basic auth
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
 
 function isLoginPath(pathname: string) {
@@ -27,27 +27,33 @@ function basicAuthOk(req: NextRequest) {
   }
 }
 
+/** NEW: allow Bearer key for /api/admin/** */
 function bearerOk(req: NextRequest) {
   if (!ADMIN_API_KEY) return false;
-  const header = req.headers.get("authorization") || "";
-  if (!header.startsWith("Bearer ")) return false;
-  return header.slice(7).trim() === ADMIN_API_KEY;
+  const h = req.headers.get("authorization") || "";
+  return h.startsWith("Bearer ") && h.slice(7) === ADMIN_API_KEY;
 }
 
 export default function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
+  // Allow login endpoints
   if (isLoginPath(pathname)) return NextResponse.next();
-  if (pathname.startsWith("/api/admin/") && bearerOk(req)) return NextResponse.next();
-  if (req.cookies.get(ADMIN_COOKIE)?.value) return NextResponse.next();
-  if (basicAuthOk(req)) return NextResponse.next();
 
-  if (pathname.startsWith("/api/")) {
+  // Cookie session from /api/admin/login
+  const hasCookie = req.cookies.get(ADMIN_COOKIE)?.value;
+
+  // For API routes, allow Bearer token OR cookie OR basic auth
+  if (pathname.startsWith("/api/admin")) {
+    if (bearerOk(req) || hasCookie || basicAuthOk(req)) return NextResponse.next();
     return new NextResponse(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
     });
   }
+
+  // For pages, allow cookie or basic auth; otherwise redirect to /admin/login
+  if (hasCookie || basicAuthOk(req)) return NextResponse.next();
 
   const url = req.nextUrl.clone();
   url.pathname = "/admin/login";
