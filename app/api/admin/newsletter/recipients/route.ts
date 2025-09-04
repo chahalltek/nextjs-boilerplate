@@ -1,80 +1,86 @@
+// app/api/admin/newsletter/recipients/route.ts
 import { NextResponse } from "next/server";
+import { createHash } from "crypto";
 
+export const runtime = "nodejs";
+
+/** Simple Bearer check so you can curl this endpoint */
 function adminBearerOk(req: Request) {
-  const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
-  if (!ADMIN_API_KEY) return false;
-  const h = new Headers(req.headers).get("authorization") || "";
-  return h.startsWith("Bearer ") && h.slice(7) === ADMIN_API_KEY;
+  const token = process.env.ADMIN_API_KEY || "";
+  if (!token) return false;
+  const h = req.headers.get("authorization") || "";
+  return h.startsWith("Bearer ") && h.slice(7) === token;
+}
+
+function jsonOrText(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function need(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} not set`);
+  return v;
+}
+
+/** Mailchimp member look-up by email */
+async function getMailchimpMember(email: string) {
+  const API_KEY  = need("MAILCHIMP_API_KEY");
+  const PREFIX   = need("MAILCHIMP_SERVER_PREFIX"); // e.g. us21
+  const LIST_ID  = need("MAILCHIMP_LIST_ID");
+
+  const lower = email.trim().toLowerCase();
+  const hash  = createHash("md5").update(lower).digest("hex");
+
+  const url = `https://${PREFIX}.api.mailchimp.com/3.0/lists/${LIST_ID}/members/${hash}`;
+  const auth = "Basic " + Buffer.from(`anystring:${API_KEY}`).toString("base64");
+
+  const res  = await fetch(url, {
+    headers: { Authorization: auth, Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    return { ok: false, status: res.status, detail: jsonOrText(text) };
+  }
+
+  const data = jsonOrText(text) as any;
+  return {
+    ok: true,
+    email: data.email_address,
+    status: data.status, // subscribed | unsubscribed | cleaned | pending | transactional
+    tags: Array.isArray(data.tags) ? data.tags.map((t: any) => t?.name).filter(Boolean) : [],
+    raw: data, // keep for debugging; remove if you don’t want to expose
+  };
 }
 
 export async function GET(req: Request) {
+  // Auth (middleware should also guard /api/admin/**, but this enables direct curl with Bearer)
   if (!adminBearerOk(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-function need(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env ${name}`);
-  return v;
-}
+  const { searchParams } = new URL(req.url);
+  const email = (searchParams.get("email") || "").trim();
 
-async function fetchAllSubscribed(): Promise<string[]> {
-  const KEY  = need("MAILCHIMP_API_KEY");
-  const LIST = need("MAILCHIMP_LIST_ID");
-  const DC   = need("MAILCHIMP_SERVER_PREFIX");
-
-  const all: string[] = [];
-  let offset = 0;
-  const count = 1000;
-
-  while (true) {
-    const url = `https://${DC}.api.mailchimp.com/3.0/lists/${LIST}/members?` +
-      new URLSearchParams({
-        status: "subscribed",
-        count: String(count),
-        offset: String(offset),
-        fields: "members.email_address,total_items",
-        exclude_fields: "_links",
-      }).toString();
-
-    const res = await fetch(url, {
-      headers: { Authorization: `apikey ${KEY}` },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(`Mailchimp ${res.status}: ${await res.text()}`);
-    }
-    const json = await res.json();
-    const batch = (json.members || []).map((m: any) => m.email_address as string);
-    all.push(...batch);
-    if (batch.length < count) break;
-    offset += count;
+  if (!email) {
+    return NextResponse.json(
+      { ok: false, error: "email query param is required, e.g. ?email=user@example.com" },
+      { status: 400 }
+    );
   }
-  return all;
-}
 
-export async function GET(req: Request) {
   try {
-    const auth = req.headers.get("authorization") || "";
-    const expected = process.env.ADMIN_API_KEY || "";
-    if (!expected || !auth.endsWith(expected)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const q = new URL(req.url).searchParams;
-    const probe = (q.get("email") || "").toLowerCase().trim();
-
-    const emails = await fetchAllSubscribed();
-    const includes = probe ? emails.some(e => e.toLowerCase() === probe) : undefined;
-
-    return NextResponse.json({
-      ok: true,
-      total: emails.length,
-      includesEmail: includes,
-      sampleFirst: emails.slice(0, 5),
-      sampleLast: emails.slice(-5),
-    });
+    const mc = await getMailchimpMember(email);
+    return NextResponse.json({ ok: true, source: "mailchimp", email, result: mc }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500 }
+    );
   }
 }
