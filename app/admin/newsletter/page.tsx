@@ -85,23 +85,6 @@ async function postJSON(path: string, body: any) {
   return json;
 }
 
-/* ------------------------------ SEND NOW (API) ------------------------------ */
-export async function actionSendNow(fd: FormData) {
-  "use server";
-  const id = String(fd.get("id") || "");
-  const draft = await getDraft(id);
-  if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
-
-  const subject     = String(fd.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
-  const html        = String(fd.get("html") || "");
-  const markdown    = String(fd.get("markdown") || draft.markdown || "");
-  const audienceTag = String(fd.get("audienceTag") || (draft as any)?.audienceTag || "");
-
-  await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
-  await markStatus(id, "sent");
-  redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
-}
-
 /* -------------------------- repo pulls for fallbacks ------------------------- */
 async function pullMarkdownFromDir(
   dir: string,
@@ -319,6 +302,23 @@ export default async function NewsletterAdmin({
     }
   }
 
+  // ✅ Moved inside the component (no top-level export)
+  async function actionSendNow(formData: FormData) {
+    "use server";
+    const id = String(formData.get("id") || "");
+    const draft = await getDraft(id);
+    if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
+
+    const subject     = String(formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
+    const html        = String(formData.get("html") || "");
+    const markdown    = String(formData.get("markdown") || draft.markdown || "");
+    const audienceTag = String(formData.get("audienceTag") || (draft as any)?.audienceTag || "");
+
+    await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
+    await markStatus(id, "sent");
+    redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
+  }
+
   async function actionDelete(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
@@ -411,4 +411,3 @@ export default async function NewsletterAdmin({
     </main>
   );
 }
-
