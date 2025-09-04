@@ -433,12 +433,17 @@ export default function ClientUI(props: {
             </button>
           </form>
 
-          <form action={actionSendNow}>
-            <input type="hidden" name="id" value={existing.id} />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Send now
-            </button>
-          </form>
+         <form action={actionSendNow}>
+  <input type="hidden" name="id" value={existing.id} />
+  <input type="hidden" name="subject" value={subject} />
+  <input type="hidden" name="markdown" value={markdown} />
+  <input type="hidden" name="audienceTag" value={audienceTag} />
+  {/* html is optional; server will build it if missing */}
+  <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+    Send now
+  </button>
+</form>
+
         </div>
       </section>
 
