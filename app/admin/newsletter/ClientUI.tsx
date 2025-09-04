@@ -309,6 +309,67 @@ export default function ClientUI(props: {
     });
   }
 
+  async function handleSendNow() {
+  setSendBadge(<Pill tone="neutral">Sending…</Pill>);
+  setScheduleBadge(null);
+  startSendingNow(async () => {
+    try {
+      const fd = new FormData();
+      fd.set("id", existing.id);
+      fd.set("subject", subject);
+      fd.set("markdown", markdown);
+      // CRUCIAL: give the API the HTML it expects (server-rendered template)
+      fd.set("html", previewHtmlFromServer);
+      fd.set("audienceTag", audienceTag);
+
+      const result: any = await actionSendNow(fd);
+      const id = result?.details?.[0]?.id;
+      const sent = result?.sent;
+      const recipients = result?.recipients;
+      const batches = result?.batches;
+
+      if (recipients) setRecipientsCount(recipients);
+
+      setSendBadge(
+        <Pill tone="ok">
+          Sent {sent ?? "✓"}{recipients ? `/${recipients}` : ""}{batches ? ` • ${batches} batch${batches>1?"es":""}`:""}
+          {id ? <> • <a className="underline" href={`https://resend.com/emails/${id}`} target="_blank" rel="noreferrer">Resend #{String(id).slice(0,8)}</a></> : null}
+        </Pill>
+      );
+    } catch (e: any) {
+      setSendBadge(<Pill tone="bad">Send failed: {e?.message || "Error"}</Pill>);
+    }
+  });
+}
+
+async function handleSchedule(formEl: HTMLFormElement) {
+  setScheduleBadge(<Pill tone="neutral">Scheduling…</Pill>);
+  setSendBadge(null);
+  startScheduling(async () => {
+    try {
+      const fd = new FormData(formEl);
+      fd.set("id", existing.id);
+      fd.set("subject", subject);
+      fd.set("markdown", markdown);
+      fd.set("html", previewHtmlFromServer);
+      fd.set("audienceTag", audienceTag);
+
+      const result: any = await actionSchedule(fd);
+      const when = result?.scheduleAt;
+      const recipients = result?.recipients;
+      if (recipients) setRecipientsCount(recipients);
+
+      setScheduleBadge(
+        <Pill tone="ok">
+          Scheduled{when ? ` for ${new Date(when).toLocaleString()}` : ""}
+        </Pill>
+      );
+    } catch (e: any) {
+      setScheduleBadge(<Pill tone="bad">Schedule failed: {e?.message || "Error"}</Pill>);
+    }
+  });
+}
+
   /* ---------- preview content ---------- */
   const previewMd = useMemo(() => markdown || "", [markdown]);
 
