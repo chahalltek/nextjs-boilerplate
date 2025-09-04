@@ -1,71 +1,124 @@
-"use client";
+import { NextResponse } from "next/server";
+import { Resend } from "resend";
+import { kv } from "@vercel/kv";
 
-import { useState, useTransition } from "react";
-import { dryRunSend, sendNow, scheduleSend } from "./actions";
+// small util
+function chunk<T>(arr: T[], n: number) {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
 
-export default function NewsletterAdmin() {
-  const [subject, setSubject] = useState("");
-  const [html, setHtml] = useState("");
-  const [scheduleAt, setScheduleAt] = useState(""); // ISO or "YYYY-MM-DDTHH:mm"
-  const [status, setStatus] = useState<string>("");
-  const [sending, startTransition] = useTransition();
+async function getRecipients(adminKey: string) {
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
-  async function onDry() {
-    setStatus("Running dry run…");
-    startTransition(async () => {
-      try {
-        const r = await dryRunSend({ subject, html });
-        setStatus(`✅ Dry run: ${r.recipients} recipients, ${r.batches} batch(es).`);
-      } catch (e: any) {
-        setStatus(`❌ Dry run failed: ${e.message}`);
-      }
+  const r = await fetch(`${base}/api/admin/newsletter/recipients`, {
+    headers: { authorization: `Bearer ${adminKey}` },
+    cache: "no-store",
+  });
+
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`recipients fetch failed: ${r.status} ${t}`);
+  }
+  const j = await r.json();
+  return (j?.recipients as string[]) || [];
+}
+
+export async function POST(req: Request) {
+  const adminKey = process.env.ADMIN_API_KEY || "";
+  const auth = req.headers.get("authorization") || "";
+  const isAuthorized = auth.startsWith("Bearer ") && auth.slice(7) === adminKey;
+
+  if (!isAuthorized) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(req.url);
+  const dry = ["1", "true", "yes"].includes((url.searchParams.get("dry") || "").toLowerCase());
+
+  let payload: { subject?: string; html?: string; scheduleAt?: string } = {};
+  try {
+    payload = await req.json();
+  } catch {}
+  const subject = (payload.subject || "").trim();
+  const html = String(payload.html || "");
+  const scheduleAt = (payload.scheduleAt || "").trim();
+
+  if (!subject) return NextResponse.json({ error: "missing subject" }, { status: 400 });
+  if (!html && !scheduleAt) return NextResponse.json({ error: "missing html" }, { status: 400 });
+
+  const recipients = await getRecipients(adminKey);
+  const batches = chunk(recipients, 90);
+
+  // DRY RUN – never touch Resend
+  if (dry) {
+    return NextResponse.json({
+      ok: true,
+      dry_run: true,
+      subject,
+      from: "admin@heyskolsister.com",
+      recipients: recipients.length,
+      sample: recipients.slice(0, 5),
+      batches: batches.length,
     });
   }
 
-  async function onSend() {
-    setStatus("Sending…");
-    startTransition(async () => {
-      try {
-        const r = await sendNow({ subject, html });
-        // indicator *next to the button* can just render `status`
-        setStatus(`✅ Sent ${r.sent}/${r.recipients} (${r.batches} batch${r.batches > 1 ? "es" : ""}).`);
-      } catch (e: any) {
-        setStatus(`❌ Send failed: ${e.message}`);
-      }
+  // SCHEDULE – persist to KV queue (a cron/route can consume later)
+  if (scheduleAt) {
+    const when = new Date(scheduleAt);
+    if (Number.isNaN(+when)) {
+      return NextResponse.json({ error: "invalid scheduleAt" }, { status: 400 });
+    }
+    await kv.zadd("nl:schedule", {
+      score: when.getTime(),
+      member: JSON.stringify({ subject, html, when: when.toISOString() }),
+    });
+    return NextResponse.json({
+      ok: true,
+      scheduled: true,
+      scheduleAt: when.toISOString(),
+      recipients: recipients.length,
     });
   }
 
-  async function onSchedule() {
-    if (!scheduleAt) return setStatus("⚠️ Choose a schedule date/time.");
-    setStatus("Scheduling…");
-    startTransition(async () => {
-      try {
-        const r = await scheduleSend({ subject, html, scheduleAt });
-        setStatus(`⏰ Scheduled for ${new Date(r.scheduleAt).toLocaleString()} (${r.recipients} recipients).`);
-      } catch (e: any) {
-        setStatus(`❌ Schedule failed: ${e.message}`);
-      }
+  // SEND NOW
+  const resendKey = process.env.RESEND_API_KEY || "";
+  if (!resendKey) return NextResponse.json({ error: "missing RESEND_API_KEY" }, { status: 500 });
+
+  const resend = new Resend(resendKey);
+
+  let sent = 0;
+  const details: Array<{ count: number; ok: boolean; id?: string; error?: string }> = [];
+
+  for (const batch of batches) {
+    const resp = await resend.emails.send({
+      from: "admin@heyskolsister.com",
+      to: batch,
+      subject,
+      html,
+    });
+    const ok = !resp.error;
+    if (ok) sent += batch.length;
+
+    details.push({
+      count: batch.length,
+      ok,
+      id: resp.data?.id,
+      error: resp.error?.message,
     });
   }
 
-  return (
-    <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={onDry} disabled={sending} className="btn">Dry run</button>
-        <button onClick={onSend} disabled={sending} className="btn">Send now</button>
-
-        <input
-          type="datetime-local"
-          value={scheduleAt}
-          onChange={(e) => setScheduleAt(e.target.value)}
-          className="rounded border border-white/20 bg-transparent px-2 py-1"
-          title="Schedule time"
-        />
-        <button onClick={onSchedule} disabled={sending} className="btn">Schedule</button>
-
-        {/* Indicator lives in the same row, right of buttons */}
-        <span className="ml-3 text-sm">{status}</span>
-      </div>
-    </section>
-  );
+  return NextResponse.json({
+    ok: true,
+    subject,
+    from: "admin@heyskolsister.com",
+    recipients: recipients.length,
+    batches: batches.length,
+    sent,
+    failedBatches: details.filter((d) => !d.ok).length,
+    details,
+  });
 }
