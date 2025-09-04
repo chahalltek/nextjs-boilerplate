@@ -1,8 +1,7 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 import ReactMarkdown from "react-markdown";
 
@@ -18,7 +17,7 @@ const rehypeRaw: any = rehypeRawOrig as any;
 type DraftListItem = {
   id: string;
   title: string;
-  status: string;
+  status: "compiled" | "edited" | "scheduled" | "sent" | string;
   updatedAt: string;
   scheduledAt: string | null;
   audienceTag?: string;
@@ -34,7 +33,7 @@ export default function ClientUI(props: {
     subject: string;
     markdown: string;
     audienceTag?: string;
-    previewHtml: string; // kept for compatibility; not used here
+    previewHtml: string; // kept for compatibility, not used here
   };
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
@@ -76,13 +75,8 @@ export default function ClientUI(props: {
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<SendTestResult | null>(null);
 
-  /* small inline flash message (compile / save) pulled from ?compiled=1&saved=1 */
+  /* small inline flash message (compile / save) pulled from ?compiled=1&saved=1&scheduled=1&sent=1 */
   const [flash, setFlash] = useState<string | null>(null);
-
-  // inline chips for schedule / send
-  const [justScheduled, setJustScheduled] = useState<boolean>(false);
-  const [justSent, setJustSent] = useState<boolean>(false);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const q = new URLSearchParams(window.location.search);
@@ -92,24 +86,17 @@ export default function ClientUI(props: {
       q.get("scheduled") ? "✅ Scheduled." : "",
       q.get("sent") ? "✅ Sent." : "",
     ].filter(Boolean);
-
-    // set chips before we clear the params
-    if (q.get("scheduled") === "1") setJustScheduled(true);
-    if (q.get("sent") === "1") setJustSent(true);
-
     if (msgs.length) {
       setFlash(msgs.join(" "));
       // clear from URL so it doesn’t persist on refresh
-      q.delete("compiled"); q.delete("saved"); q.delete("scheduled"); q.delete("sent");
+      q.delete("compiled");
+      q.delete("saved");
+      q.delete("scheduled");
+      q.delete("sent");
       const u = new URL(window.location.href);
       u.search = q.toString();
       window.history.replaceState({}, "", u.toString());
-      const t = setTimeout(() => {
-        setFlash(null);
-        // allow chips to fade a moment later
-        const t2 = setTimeout(() => { setJustScheduled(false); setJustSent(false); }, 800);
-        return () => clearTimeout(t2);
-      }, 3500);
+      const t = setTimeout(() => setFlash(null), 3500);
       return () => clearTimeout(t);
     }
   }, [existing.id]);
@@ -184,13 +171,13 @@ export default function ClientUI(props: {
       <header>
         <h1 className="text-3xl font-bold">Newsletter</h1>
         <p className="text-white/70">Pick sources, compile with AI, edit, schedule, send.</p>
+        {flash && <p className="mt-2 text-sm text-emerald-300">{flash}</p>}
       </header>
 
       {/* 1) Choose content */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">1) Choose content</h2>
-          {flash && <span className="text-sm text-emerald-300">{flash}</span>}
         </div>
         <form action={actionCompile} className="grid gap-3">
           {/* ranges */}
@@ -432,30 +419,26 @@ export default function ClientUI(props: {
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
           <form action={actionSchedule} className="flex items-end gap-2">
-  <input type="hidden" name="id" value={existing.id} />
-  {/* include current fields so schedule/save has them */}
-  <input type="hidden" name="subject" value={subject} />
-  <input type="hidden" name="markdown" value={markdown} />
-  <input type="hidden" name="audienceTag" value={audienceTag} />
-  <label className="grid gap-1 text-sm">
-    <span className="text-white/80">Send at (local)</span>
-    <input type="datetime-local" name="scheduleAt"
-           className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
-  </label>
-  <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-    Schedule
-  </button>
-<form action={actionSendNow}>
-  <input type="hidden" name="id" value={existing.id} />
-  {/* include current fields so we can send even if id is blank */}
-  <input type="hidden" name="subject" value={subject} />
-  <input type="hidden" name="markdown" value={markdown} />
-  <input type="hidden" name="audienceTag" value={audienceTag} />
-  <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
-          disabled={!existing.id && !markdown.trim()}>
-    Send now
-  </button>
-</form>
+            <input type="hidden" name="id" value={existing.id} />
+            <label className="grid gap-1 text-sm">
+              <span className="text-white/80">Send at (local)</span>
+              <input
+                type="datetime-local"
+                name="scheduleAt"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
+              />
+            </label>
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Schedule
+            </button>
+          </form>
+
+          <form action={actionSendNow}>
+            <input type="hidden" name="id" value={existing.id} />
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Send now
+            </button>
+          </form>
         </div>
       </section>
 
