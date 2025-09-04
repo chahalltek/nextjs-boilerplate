@@ -70,6 +70,59 @@ function toTime(dateStr?: string) {
   return 0;
 }
 
+function baseOrigin() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    try { return new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch {}
+  }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
+async function postJSON(path: string, body: any) {
+  const res = await fetch(`${baseOrigin()}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // IMPORTANT: your API checks this
+      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.ok === false) {
+    throw new Error(json?.error || `${res.status} ${res.statusText}`);
+  }
+  return json;
+}
+
+export async function actionSendNow(fd: FormData) {
+  const id          = String(fd.get("id") || "");
+  const subject     = String(fd.get("subject") || "");
+  const html        = String(fd.get("html") || "");       // prefer server-rendered email HTML
+  const markdown    = String(fd.get("markdown") || "");   // fallback if API wants to render
+  const audienceTag = String(fd.get("audienceTag") || "");
+
+  // POST to the real sender route
+  return postJSON("/api/admin/newsletter/send", {
+    id, subject, html, markdown, audienceTag
+  });
+}
+
+export async function actionSchedule(fd: FormData) {
+  const id          = String(fd.get("id") || "");
+  const subject     = String(fd.get("subject") || "");
+  const html        = String(fd.get("html") || "");
+  const markdown    = String(fd.get("markdown") || "");
+  const scheduleAt  = String(fd.get("scheduleAt") || ""); // ISO local datetime input
+  const audienceTag = String(fd.get("audienceTag") || "");
+
+  // If you don’t have a separate schedule route, you can post to /send and handle scheduleAt there.
+  return postJSON("/api/admin/newsletter/schedule", {
+    id, subject, html, markdown, audienceTag, scheduleAt
+  });
+}
+
 async function pullMarkdownFromDir(
   dir: string,
   { dateFrom, dateTo, limit = 3 }: { dateFrom?: string; dateTo?: string; limit?: number } = {}
