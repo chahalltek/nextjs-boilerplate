@@ -1,4 +1,6 @@
 // app/admin/newsletter/page.tsx
+"use server";
+
 import { redirect } from "next/navigation";
 import {
   listDrafts,
