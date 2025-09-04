@@ -2,11 +2,27 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { kv } from "@vercel/kv";
 
-// small util
+/* -------------------- small utils -------------------- */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function chunk<T>(arr: T[], n: number) {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
   return out;
+}
+
+function domainOf(email: string) {
+  return (email.split("@")[1] || "").toLowerCase();
+}
+
+// very simple html -> text fallback (good enough for newsletters)
+function htmlToTextSimple(html: string) {
+  return (html || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function getRecipients(adminKey: string) {
@@ -27,6 +43,7 @@ async function getRecipients(adminKey: string) {
   return (j?.recipients as string[]) || [];
 }
 
+/* -------------------- handler -------------------- */
 export async function POST(req: Request) {
   const adminKey = process.env.ADMIN_API_KEY || "";
   const auth = req.headers.get("authorization") || "";
@@ -51,10 +68,10 @@ export async function POST(req: Request) {
   if (!html && !scheduleAt) return NextResponse.json({ error: "missing html" }, { status: 400 });
 
   const recipients = await getRecipients(adminKey);
-  const batches = chunk(recipients, 90);
 
-  // DRY RUN – never touch Resend
+  /* ---------- DRY RUN ---------- */
   if (dry) {
+    const batches = chunk(recipients, 90);
     return NextResponse.json({
       ok: true,
       dry_run: true,
@@ -66,7 +83,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // SCHEDULE – persist to KV queue (a cron/route can consume later)
+  /* ---------- SCHEDULE ---------- */
   if (scheduleAt) {
     const when = new Date(scheduleAt);
     if (Number.isNaN(+when)) {
@@ -84,41 +101,106 @@ export async function POST(req: Request) {
     });
   }
 
-  // SEND NOW
+  /* ---------- SEND NOW (paced) ---------- */
   const resendKey = process.env.RESEND_API_KEY || "";
   if (!resendKey) return NextResponse.json({ error: "missing RESEND_API_KEY" }, { status: 500 });
 
   const resend = new Resend(resendKey);
 
+  const from = "admin@heyskolsister.com";
+  const unsubBase =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://heyskolsister.com");
+  const listUnsub = `<mailto:unsubscribe@heyskolsister.com?subject=unsubscribe>, <${unsubBase}/unsubscribe?e={{recipient}}>`;
+  const headers = {
+    "List-Unsubscribe": listUnsub,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    "Precedence": "bulk",
+  } as Record<string, string>;
+
+  const textAlt = htmlToTextSimple(html);
+
+  const gmail = recipients.filter((r) => {
+    const d = domainOf(r);
+    return d === "gmail.com" || d === "googlemail.com";
+  });
+  const other = recipients.filter((r) => !gmail.includes(r));
+
   let sent = 0;
-  const details: Array<{ count: number; ok: boolean; id?: string; error?: string }> = [];
+  let failed = 0;
+  let deferredHints = 0;
 
-  for (const batch of batches) {
-    const resp = await resend.emails.send({
-      from: "admin@heyskolsister.com",
-      to: batch,
-      subject,
-      html,
-    });
-    const ok = !resp.error;
-    if (ok) sent += batch.length;
+  type Detail = { to: string; ok: boolean; id?: string; error?: string };
+  const details: Detail[] = [];
 
-    details.push({
-      count: batch.length,
-      ok,
-      id: resp.data?.id,
-      error: resp.error?.message,
-    });
+  // Pace Gmail more strictly (e.g., ~5s)
+  for (const to of gmail) {
+    try {
+      const resp = await resend.emails.send({
+        from,
+        to,
+        subject,
+        html,
+        text: textAlt,
+        headers,
+      });
+      const ok = !resp.error;
+      if (ok) sent += 1;
+      else failed += 1;
+
+      const errMsg = resp.error?.message || "";
+      if (/4\.7\.28|421 4\.7\.28|rate limited/i.test(errMsg)) deferredHints += 1;
+
+      details.push({ to, ok, id: resp.data?.id, error: errMsg || undefined });
+    } catch (e: any) {
+      failed += 1;
+      const msg = String(e?.message || "");
+      if (/4\.7\.28|421 4\.7\.28|rate limited/i.test(msg)) deferredHints += 1;
+      details.push({ to, ok: false, error: msg });
+    }
+    await sleep(5000); // Gmail pacing
   }
 
+  // Others: a little faster pace
+  for (const to of other) {
+    try {
+      const resp = await resend.emails.send({
+        from,
+        to,
+        subject,
+        html,
+        text: textAlt,
+        headers,
+      });
+      const ok = !resp.error;
+      if (ok) sent += 1;
+      else failed += 1;
+
+      const errMsg = resp.error?.message || "";
+      if (/4\.7\.28|421 4\.7\.28|rate limited/i.test(errMsg)) deferredHints += 1;
+
+      details.push({ to, ok, id: resp.data?.id, error: errMsg || undefined });
+    } catch (e: any) {
+      failed += 1;
+      const msg = String(e?.message || "");
+      if (/4\.7\.28|421 4\.7\.28|rate limited/i.test(msg)) deferredHints += 1;
+      details.push({ to, ok: false, error: msg });
+    }
+    await sleep(1200);
+  }
+
+  // NOTE: Resend returns immediately after queueing; true Gmail "deferrals" show up in events.
+  // We surface any hint we caught synchronously but still return ok=true so the admin UI doesn't treat as a hard failure.
   return NextResponse.json({
     ok: true,
     subject,
-    from: "admin@heyskolsister.com",
+    from,
     recipients: recipients.length,
-    batches: batches.length,
+    gmailPaced: gmail.length,
+    otherPaced: other.length,
     sent,
-    failedBatches: details.filter((d) => !d.ok).length,
+    failed,
+    deferredHints, // count of responses that looked like Gmail rate limiting
     details,
   });
 }
