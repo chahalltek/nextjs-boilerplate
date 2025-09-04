@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { headers } from "next/headers";
-import Resend from "resend";
+import { Resend } from "resend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +13,7 @@ function okAuth(req: NextRequest) {
   return expected && (bearer === expected || alt === expected);
 }
 
-function getBaseUrl(req: NextRequest) {
-  // Prefer explicit public site URL, then Vercel host, then headers
+function getBaseUrl() {
   const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
   if (env) return env;
   const h = headers();
@@ -27,8 +26,8 @@ function getBaseUrl(req: NextRequest) {
   return `${proto}://${host.replace(/\/+$/, "")}`;
 }
 
-async function fetchRecipients(req: NextRequest): Promise<string[]> {
-  const base = getBaseUrl(req);
+async function fetchRecipients(): Promise<string[]> {
+  const base = getBaseUrl();
   const key = process.env.ADMIN_API_KEY || "";
   const url = `${base}/api/admin/newsletter/recipients`;
   const res = await fetch(url, {
@@ -61,13 +60,9 @@ export async function POST(req: NextRequest) {
   const resendKey = process.env.RESEND_API_KEY || "";
   const from = process.env.RESEND_FROM || "Hey Skol Sister <team@heyskolsister.com>";
 
-  // Body is what your admin page already posts
   let body: any = {};
-  try {
-    body = await req.json();
-  } catch {
-    // ignore
-  }
+  try { body = await req.json(); } catch {}
+
   const subject: string = body?.subject || "";
   const html: string = body?.html || body?.markup || "";
   const text: string | undefined = body?.text;
@@ -81,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   let recipients: string[] = [];
   try {
-    recipients = await fetchRecipients(req);
+    recipients = await fetchRecipients();
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: "recipients_failed", detail: e?.message || String(e) },
@@ -96,7 +91,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Dry run returns what *would* be sent
   if (dry) {
     return NextResponse.json({
       ok: true,
@@ -118,50 +112,43 @@ export async function POST(req: NextRequest) {
 
   const resend = new Resend(resendKey);
 
-  // Resend supports batch send; keep batch size modest (<=100)
+  // Most Resend SDK versions allow an array for `to`. Chunk to be safe.
   const batches = chunk(recipients, 90);
-  const results: Array<{ count: number; ok: boolean; ids?: string[]; error?: string }> = [];
+  const results: Array<{ count: number; ok: boolean; id?: string; error?: string }> = [];
 
   for (const emails of batches) {
     try {
-      // prefer batch endpoint to reduce API calls
-      const resp = await resend.emails.batch.send({
-        emails: emails.map((to) => ({
-          from,
-          to,
-          subject,
-          html,
-          text,
-        })),
+      const resp: any = await resend.emails.send({
+        from,
+        to: emails, // array of recipients in one call
+        subject,
+        html,
+        text,
       });
-
-      // resp is array of results
-      const ids = Array.isArray(resp) ? resp.map((r: any) => r?.id).filter(Boolean) : [];
-      results.push({ count: emails.length, ok: true, ids });
+      // Newer SDKs return { data, error }; older may throw on error
+      if (resp?.error) {
+        results.push({ count: emails.length, ok: false, error: resp.error?.message || "send_error" });
+      } else {
+        results.push({ count: emails.length, ok: true, id: resp?.data?.id || undefined });
+      }
     } catch (e: any) {
-      results.push({
-        count: emails.length,
-        ok: false,
-        error: e?.message || String(e),
-      });
+      results.push({ count: emails.length, ok: false, error: e?.message || String(e) });
     }
   }
 
-  const sent = results.filter((r) => r.ok).reduce((n, r) => n + (r.count || 0), 0);
-  const failedBatches = results.filter((r) => !r.ok);
+  const sent = results.filter(r => r.ok).reduce((n, r) => n + r.count, 0);
+  const failed = results.filter(r => !r.ok);
 
-  const response = {
-    ok: failedBatches.length === 0 && sent > 0,
+  const payload = {
+    ok: failed.length === 0 && sent > 0,
     subject,
     from,
     recipients: recipients.length,
     batches: batches.length,
     sent,
-    failedBatches: failedBatches.length,
-    details: results.slice(0, 3), // trim payload
+    failedBatches: failed.length,
+    details: results.slice(0, 3),
   };
 
-  // If nothing actually queued, respond 502 to force UI to show a failure.
-  const status = response.ok ? 200 : 502;
-  return NextResponse.json(response, { status });
+  return NextResponse.json(payload, { status: payload.ok ? 200 : 502 });
 }
