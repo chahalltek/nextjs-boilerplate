@@ -1,7 +1,7 @@
 // app/admin/newsletter/ClientUI.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { NewsletterSourceKey } from "@/lib/newsletter/store";
 import ReactMarkdown from "react-markdown";
@@ -13,7 +13,6 @@ import rehypeRawOrig from "rehype-raw";
 const remarkGfm: any = remarkGfmOrig as any;
 const remarkBreaks: any = remarkBreaksOrig as any;
 const rehypeRaw: any = rehypeRawOrig as any;
-const previewHtmlFromServer = props.existing.previewHtml || "";
 
 /* ---------- types ---------- */
 type DraftListItem = {
@@ -27,48 +26,6 @@ type DraftListItem = {
 
 type SendTestResult = { ok: boolean; message?: string };
 
-// Optional richer result we’ll try to read from server actions
-type SendResult =
-  | {
-      ok: boolean;
-      subject?: string;
-      recipients?: number;
-      batches?: number;
-      sent?: number;
-      details?: Array<{ id?: string; ok: boolean; count: number; error?: string }>;
-    }
-  | undefined;
-
-type ScheduleResult =
-  | {
-      ok: boolean;
-      recipients?: number;
-      scheduleAt?: string;
-    }
-  | undefined;
-
-/* ---------- tiny UI bits ---------- */
-function Pill({
-  tone = "neutral",
-  children,
-}: {
-  tone?: "neutral" | "ok" | "warn" | "bad";
-  children: React.ReactNode;
-}) {
-  const c =
-    tone === "ok"
-      ? "bg-emerald-400/15 text-emerald-200 border-emerald-400/30"
-      : tone === "bad"
-      ? "bg-red-400/10 text-red-200 border-red-400/30"
-      : tone === "warn"
-      ? "bg-amber-400/10 text-amber-200 border-amber-400/30"
-      : "bg-white/5 text-white/80 border-white/15";
-  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${c}`}>{children}</span>;
-}
-
-const toolbarBtn =
-  "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
-
 /* ---------- component ---------- */
 export default function ClientUI(props: {
   existing: {
@@ -77,20 +34,15 @@ export default function ClientUI(props: {
     subject: string;
     markdown: string;
     audienceTag?: string;
-    previewHtml: string; // unused now, but keep prop to avoid breaking page.tsx
+    previewHtml: string; // kept for compatibility; not used here
   };
   drafts: DraftListItem[];
   allSources: { key: NewsletterSourceKey; label: string }[];
   neverVerbatim: NewsletterSourceKey[];
-
-  // Server actions (provided by page.tsx)
   actionCompile: (fd: FormData) => Promise<void>;
   actionSave: (fd: FormData) => Promise<void>;
-
-  // These may return JSON; we treat return type as unknown and parse if present
-  actionSchedule: (fd: FormData) => Promise<any>;
-  actionSendNow: (fd: FormData) => Promise<any>;
-
+  actionSchedule: (fd: FormData) => Promise<void>;
+  actionSendNow: (fd: FormData) => Promise<void>;
   /** Server action returns {ok,message} (no redirect!) */
   actionSendTest: (fd: FormData) => Promise<SendTestResult>;
   /** Deletes on server; we also optimistically remove from local list */
@@ -126,6 +78,11 @@ export default function ClientUI(props: {
 
   /* small inline flash message (compile / save) pulled from ?compiled=1&saved=1 */
   const [flash, setFlash] = useState<string | null>(null);
+
+  // inline chips for schedule / send
+  const [justScheduled, setJustScheduled] = useState<boolean>(false);
+  const [justSent, setJustSent] = useState<boolean>(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const q = new URLSearchParams(window.location.search);
@@ -135,17 +92,24 @@ export default function ClientUI(props: {
       q.get("scheduled") ? "✅ Scheduled." : "",
       q.get("sent") ? "✅ Sent." : "",
     ].filter(Boolean);
+
+    // set chips before we clear the params
+    if (q.get("scheduled") === "1") setJustScheduled(true);
+    if (q.get("sent") === "1") setJustSent(true);
+
     if (msgs.length) {
       setFlash(msgs.join(" "));
       // clear from URL so it doesn’t persist on refresh
-      q.delete("compiled");
-      q.delete("saved");
-      q.delete("scheduled");
-      q.delete("sent");
+      q.delete("compiled"); q.delete("saved"); q.delete("scheduled"); q.delete("sent");
       const u = new URL(window.location.href);
       u.search = q.toString();
       window.history.replaceState({}, "", u.toString());
-      const t = setTimeout(() => setFlash(null), 3500);
+      const t = setTimeout(() => {
+        setFlash(null);
+        // allow chips to fade a moment later
+        const t2 = setTimeout(() => { setJustScheduled(false); setJustSent(false); }, 800);
+        return () => clearTimeout(t2);
+      }, 3500);
       return () => clearTimeout(t);
     }
   }, [existing.id]);
@@ -173,6 +137,8 @@ export default function ClientUI(props: {
       ta.selectionStart = ta.selectionEnd = newPos;
     });
   }
+  const toolbarBtn =
+    "rounded border border-white/20 px-2 py-1 text-xs hover:bg-white/10 bg-black/20";
 
   /* ---------- send test (client handler -> server action) ---------- */
   async function onSendTest(e: FormEvent<HTMLFormElement>) {
@@ -209,167 +175,6 @@ export default function ClientUI(props: {
     }
   }
 
-  /* ---------- Send / Schedule indicators ---------- */
-  const [sendingNow, startSendingNow] = useTransition();
-  const [scheduling, startScheduling] = useTransition();
-
-  const [sendBadge, setSendBadge] = useState<React.ReactNode>(null);
-  const [scheduleBadge, setScheduleBadge] = useState<React.ReactNode>(null);
-  const [recipientsBadge, setRecipientsBadge] = useState<React.ReactNode>(null);
-
-  function extractResendId(result: SendResult): string | undefined {
-    const id =
-      result?.details?.find?.((d) => d.ok && d.id)?.id ||
-      result?.details?.[0]?.id ||
-      undefined;
-    return id;
-  }
-
-  function setRecipientsCount(n?: number) {
-    if (typeof n === "number" && !Number.isNaN(n)) {
-      setRecipientsBadge(<Pill tone="neutral">Recipients: {n}</Pill>);
-    }
-  }
-
-  async function handleSendNow() {
-    setSendBadge(<Pill tone="neutral">Sending…</Pill>);
-    setScheduleBadge(null);
-    startSendingNow(async () => {
-      try {
-        const fd = new FormData();
-        fd.set("id", existing.id);
-        fd.set("subject", subject);
-        fd.set("markdown", markdown);
-
-        // prefer structured result; some actions may return void
-        const result: SendResult = await actionSendNow(fd);
-        const sent = result?.sent;
-        const recipients = result?.recipients;
-        const batches = result?.batches;
-        const id = extractResendId(result);
-
-        if (recipients) setRecipientsCount(recipients);
-
-        if (typeof sent === "number" && typeof recipients === "number") {
-          setSendBadge(
-            <Pill tone="ok">
-              Sent {sent}/{recipients}
-              {batches ? ` • ${batches} batch${batches > 1 ? "es" : ""}` : null}
-              {id ? (
-                <>
-                  {" "}
-                  •{" "}
-                  <a
-                    className="underline"
-                    href={`https://resend.com/emails/${id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Resend #{id.slice(0, 8)}
-                  </a>
-                </>
-              ) : null}
-            </Pill>
-          );
-        } else {
-          setSendBadge(<Pill tone="ok">Sent ✅</Pill>);
-        }
-      } catch (e: any) {
-        setSendBadge(<Pill tone="bad">Send failed: {e?.message || "Error"}</Pill>);
-      }
-    });
-  }
-
-  async function handleSchedule(formEl: HTMLFormElement) {
-    setScheduleBadge(<Pill tone="neutral">Scheduling…</Pill>);
-    setSendBadge(null);
-    startScheduling(async () => {
-      try {
-        const fd = new FormData(formEl);
-        fd.set("id", existing.id);
-        fd.set("subject", subject);
-        fd.set("markdown", markdown);
-
-        const result: ScheduleResult = await actionSchedule(fd);
-        const whenIso = result?.scheduleAt;
-        const recipients = result?.recipients;
-
-        if (recipients) setRecipientsCount(recipients);
-
-        if (whenIso) {
-          setScheduleBadge(
-            <Pill tone="ok">Scheduled for {new Date(whenIso).toLocaleString()}</Pill>
-          );
-        } else {
-          setScheduleBadge(<Pill tone="ok">Scheduled ⏰</Pill>);
-        }
-      } catch (e: any) {
-        setScheduleBadge(<Pill tone="bad">Schedule failed: {e?.message || "Error"}</Pill>);
-      }
-    });
-  }
-
-  async function handleSendNow() {
-  setSendBadge(<Pill tone="neutral">Sending…</Pill>);
-  setScheduleBadge(null);
-  startSendingNow(async () => {
-    try {
-      const fd = new FormData();
-      fd.set("id", existing.id);
-      fd.set("subject", subject);
-      fd.set("markdown", markdown);
-      // CRUCIAL: give the API the HTML it expects (server-rendered template)
-      fd.set("html", previewHtmlFromServer);
-      fd.set("audienceTag", audienceTag);
-
-      const result: any = await actionSendNow(fd);
-      const id = result?.details?.[0]?.id;
-      const sent = result?.sent;
-      const recipients = result?.recipients;
-      const batches = result?.batches;
-
-      if (recipients) setRecipientsCount(recipients);
-
-      setSendBadge(
-        <Pill tone="ok">
-          Sent {sent ?? "✓"}{recipients ? `/${recipients}` : ""}{batches ? ` • ${batches} batch${batches>1?"es":""}`:""}
-          {id ? <> • <a className="underline" href={`https://resend.com/emails/${id}`} target="_blank" rel="noreferrer">Resend #{String(id).slice(0,8)}</a></> : null}
-        </Pill>
-      );
-    } catch (e: any) {
-      setSendBadge(<Pill tone="bad">Send failed: {e?.message || "Error"}</Pill>);
-    }
-  });
-}
-
-async function handleSchedule(formEl: HTMLFormElement) {
-  setScheduleBadge(<Pill tone="neutral">Scheduling…</Pill>);
-  setSendBadge(null);
-  startScheduling(async () => {
-    try {
-      const fd = new FormData(formEl);
-      fd.set("id", existing.id);
-      fd.set("subject", subject);
-      fd.set("markdown", markdown);
-      fd.set("html", previewHtmlFromServer);
-      fd.set("audienceTag", audienceTag);
-
-      const result: any = await actionSchedule(fd);
-      const when = result?.scheduleAt;
-      const recipients = result?.recipients;
-      if (recipients) setRecipientsCount(recipients);
-
-      setScheduleBadge(
-        <Pill tone="ok">
-          Scheduled{when ? ` for ${new Date(when).toLocaleString()}` : ""}
-        </Pill>
-      );
-    } catch (e: any) {
-      setScheduleBadge(<Pill tone="bad">Schedule failed: {e?.message || "Error"}</Pill>);
-    }
-  });
-}
-
   /* ---------- preview content ---------- */
   const previewMd = useMemo(() => markdown || "", [markdown]);
 
@@ -385,10 +190,7 @@ async function handleSchedule(formEl: HTMLFormElement) {
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">1) Choose content</h2>
-          <div className="flex items-center gap-2">
-            {recipientsBadge}
-            {flash && <span className="text-sm text-emerald-300">{flash}</span>}
-          </div>
+          {flash && <span className="text-sm text-emerald-300">{flash}</span>}
         </div>
         <form action={actionCompile} className="grid gap-3">
           {/* ranges */}
@@ -627,23 +429,10 @@ async function handleSchedule(formEl: HTMLFormElement) {
 
       {/* 3) Schedule / Send */}
       <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">3) Schedule or send</h2>
-          <div className="flex items-center gap-2">
-            {scheduleBadge}
-            {sendBadge}
-          </div>
-        </div>
-
+        <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
-          {/* Schedule (client handled so we can show precise result) */}
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSchedule(e.currentTarget);
-            }}
-          >
+          <form action={actionSchedule} className="flex items-end gap-2">
+            <input type="hidden" name="id" value={existing.id} />
             <label className="grid gap-1 text-sm">
               <span className="text-white/80">Send at (local)</span>
               <input
@@ -652,22 +441,23 @@ async function handleSchedule(formEl: HTMLFormElement) {
                 className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
               />
             </label>
-            <button
-              disabled={scheduling}
-              className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-50"
-            >
-              {scheduling ? "Scheduling…" : "Schedule"}
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Schedule
             </button>
+            {justScheduled && (
+              <span className="ml-2 text-xs text-emerald-300">• scheduled</span>
+            )}
           </form>
 
-          {/* Send now (client handled so we can show precise result) */}
-          <button
-            onClick={handleSendNow}
-            disabled={sendingNow}
-            className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10 disabled:opacity-50"
-          >
-            {sendingNow ? "Sending…" : "Send now"}
-          </button>
+          <form action={actionSendNow} className="flex items-center gap-2">
+            <input type="hidden" name="id" value={existing.id} />
+            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+              Send now
+            </button>
+            {justSent && (
+              <span className="text-xs text-emerald-300">• sent</span>
+            )}
+          </form>
         </div>
       </section>
 
@@ -687,7 +477,9 @@ async function handleSchedule(formEl: HTMLFormElement) {
                   <div className="font-medium">{d.title || "Untitled"}</div>
                   <div className="text-white/50">
                     {d.status}
-                    {d.scheduledAt ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}` : ""}
+                    {d.scheduledAt
+                      ? ` • scheduled ${new Date(d.scheduledAt).toLocaleString()}`
+                      : ""}
                     {d.updatedAt ? ` • updated ${new Date(d.updatedAt).toLocaleString()}` : ""}
                     {d.audienceTag ? ` • audience: ${d.audienceTag}` : ""}
                   </div>
