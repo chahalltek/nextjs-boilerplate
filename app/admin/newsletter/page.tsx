@@ -406,7 +406,7 @@ const showBanner =
   flash.compiled ||
   flash.saved ||
   flash.scheduled ||
-  flash.sent ||
+  flash.send ||
   sentFailed ||
   typeof flash.test !== "undefined";          // 👈 NEW: show even on failure
 
@@ -414,10 +414,10 @@ const showBanner =
     return (
     <main className="container max-w-6xl py-8 space-y-4">
   {(flash.compiled || flash.saved || flash.scheduled ||
-    typeof flash.sent !== "undefined" || typeof flash.test !== "undefined") && (
+    typeof flash.send !== "undefined" || typeof flash.test !== "undefined") && (
     <div
       className={`rounded-lg px-3 py-2 border ${
-        flash.sent === "0" || flash.test === "0"
+        flash.send === "0" || flash.test === "0"
           ? "border-red-500/30 bg-red-500/10 text-red-300"
           : "border-green-500/30 bg-green-500/10 text-green-300"
       }`}
@@ -426,8 +426,8 @@ const showBanner =
       {flash.saved && "Draft saved. "}
       {flash.scheduled && "Scheduled. "}
 
-      {typeof flash.sent !== "undefined" &&
-        (flash.sent === "1"
+      {typeof flash.send !== "undefined" &&
+        (flash.send === "1"
           ? "Sent."
           : `Send failed${flash.sendMsg ? ` — ${flash.sendMsg}` : ""}. `)}
 
