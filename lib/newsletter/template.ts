@@ -95,19 +95,25 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
         </div>
 
         <!-- Footer -->
-        <div class="footer">
-          <p class="muted">
-            You’re receiving this because you subscribed at
-            <a href="${SITE}" target="_blank" rel="noopener">${SITE.replace(
-              "https://",
-              ""
-            )}</a>.
-            <br />
-            <a href="${SITE}/unsubscribe" target="_blank" rel="noopener">Unsubscribe</a>
-            &nbsp;•&nbsp;
-            <a href="${SITE}/privacy" target="_blank" rel="noopener">Privacy</a>
-          </p>
-        </div>
+       <div class="footer" style="padding:16px 0;">
+  <p class="muted" style="margin:0;font-size:12px;line-height:1.6;color:#A0A0A0;">
+    You’re receiving this because you subscribed at
+    <a href="${SITE}" target="_blank" rel="noopener"
+       style="color:#ffffff !important;text-decoration:underline;">
+      ${SITE.replace("https://","")}
+    </a>.
+    <br />
+    <a href="${SITE}/unsubscribe" target="_blank" rel="noopener"
+       style="color:#ffffff !important;text-decoration:underline;">Unsubscribe</a>
+    &nbsp;•&nbsp;
+    <a href="${SITE}/privacy" target="_blank" rel="noopener"
+       style="color:#ffffff !important;text-decoration:underline;">Privacy</a>
+    <br />
+    <span style="display:block;margin-top:8px;">
+      3201 Edwards Mill Rd Ste 141-530, Raleigh, NC 27612
+    </span>
+  </p>
+</div>
       </div>
     </td></tr>
   </table>
