@@ -9,7 +9,6 @@ import {
   type NewsletterSourceKey,
   type SourcePick,
 } from "@/lib/newsletter/store";
-
 import { listDir, getFile } from "@/lib/github";
 import matter from "gray-matter";
 import ClientUI from "./ClientUI";
@@ -17,9 +16,7 @@ import ClientUI from "./ClientUI";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* ----------------------------------------------------------------------------
- * Sources in the UI
- * --------------------------------------------------------------------------*/
+/* ---------------------------------- UI sources ---------------------------------- */
 const ALL_SOURCES: { key: NewsletterSourceKey; label: string }[] = [
   { key: "blog", label: "Blog" },
   { key: "weeklyRecap", label: "Weekly Recap" },
@@ -32,9 +29,7 @@ const NEVER_VERBATIM: NewsletterSourceKey[] = ["survivorPolls", "survivorLeaderb
 
 const genId = () => Math.random().toString(36).slice(2, 10);
 
-/* ----------------------------------------------------------------------------
- * Date helpers
- * --------------------------------------------------------------------------*/
+/* --------------------------------- date helpers --------------------------------- */
 function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   if (dateFrom || dateTo) return { dateFrom, dateTo };
   const now = new Date();
@@ -54,9 +49,7 @@ function computeRange(preset?: string, dateFrom?: string, dateTo?: string) {
   return { dateFrom: undefined, dateTo: undefined };
 }
 
-/* ----------------------------------------------------------------------------
- * Content fallbacks (guards if compiler omits a section)
- * --------------------------------------------------------------------------*/
+/* ----------------------------- content fallbacks ----------------------------- */
 const b64 = (s: string) => Buffer.from(s || "", "base64").toString("utf8");
 function toTime(dateStr?: string) {
   if (!dateStr) return 0;
@@ -80,7 +73,7 @@ async function postJSON(path: string, body: any) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`, // your API expects this
+      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -92,32 +85,24 @@ async function postJSON(path: string, body: any) {
   return json;
 }
 
-/* ----------------------------------------------------------------------------
- * Server action: SEND NOW (posts to API so Resend shows batches)
- * --------------------------------------------------------------------------*/
+/* ------------------------------ SEND NOW (API) ------------------------------ */
 export async function actionSendNow(fd: FormData) {
   "use server";
   const id = String(fd.get("id") || "");
   const draft = await getDraft(id);
-  if (!draft) {
-    redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
-  }
+  if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
 
-  // Prefer server-rendered HTML if provided; otherwise API can render from markdown
   const subject     = String(fd.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
   const html        = String(fd.get("html") || "");
   const markdown    = String(fd.get("markdown") || draft.markdown || "");
   const audienceTag = String(fd.get("audienceTag") || (draft as any)?.audienceTag || "");
 
   await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
-
   await markStatus(id, "sent");
   redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
 }
 
-/* ----------------------------------------------------------------------------
- * Pull content from repo (for fallbacks)
- * --------------------------------------------------------------------------*/
+/* -------------------------- repo pulls for fallbacks ------------------------- */
 async function pullMarkdownFromDir(
   dir: string,
   { dateFrom, dateTo, limit = 3 }: { dateFrom?: string; dateTo?: string; limit?: number } = {}
@@ -178,9 +163,7 @@ async function fallbackBlog(dateFrom?: string, dateTo?: string) {
   return `\n\n## From the Blog\n\n${items}\n`;
 }
 
-/* ----------------------------------------------------------------------------
- * Page
- * --------------------------------------------------------------------------*/
+/* ----------------------------------- PAGE ----------------------------------- */
 export default async function NewsletterAdmin({
   searchParams,
 }: {
@@ -191,7 +174,7 @@ export default async function NewsletterAdmin({
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
-  /* ---------- Server actions defined in-scope ---------- */
+  /* -------------------------- server actions in-scope -------------------------- */
   async function actionCompile(formData: FormData) {
     "use server";
     const { compileNewsletter } = await import("@/lib/newsletter/compile");
@@ -221,7 +204,6 @@ export default async function NewsletterAdmin({
     const globalDateTo = String(formData.get("dateTo") || "") || undefined;
     const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
-    // Compile via pipeline
     let { subject, markdown } = await compileNewsletter(picks, {
       dateFrom,
       dateTo,
@@ -229,20 +211,15 @@ export default async function NewsletterAdmin({
       perSource,
     });
 
-    // Guards: inject fallbacks if selected but missing
     const wantsRecap = picks.some((p) => p.key === "weeklyRecap");
     const wantsBlog = picks.some((p) => p.key === "blog");
     const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
     const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
     if (wantsRecap && !hasRecap) {
-      try {
-        markdown += await fallbackWeeklyRecap(dateFrom, dateTo);
-      } catch {}
+      try { markdown += await fallbackWeeklyRecap(dateFrom, dateTo); } catch {}
     }
     if (wantsBlog && !hasBlog) {
-      try {
-        markdown += await fallbackBlog(dateFrom, dateTo);
-      } catch {}
+      try { markdown += await fallbackBlog(dateFrom, dateTo); } catch {}
     }
 
     const draft = await saveDraft({
@@ -283,7 +260,6 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&saved=1&nonce=${Date.now()}`);
   }
 
-  // Keep schedule as "update the draft + show banner".
   async function actionSchedule(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
@@ -294,7 +270,7 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
   }
 
-  // Accepts both `testRecipients` and legacy `to`
+  // NOTE: ClientUI expects a result object (no redirect).
   async function actionSendTest(formData: FormData) {
     "use server";
     const { sendNewsletter } = await import("@/lib/newsletter/send");
@@ -305,8 +281,7 @@ export default async function NewsletterAdmin({
 
     const toRaw =
       String(formData.get("testRecipients") || "") ||
-      String(formData.get("to") || ""); // legacy name
-
+      String(formData.get("to") || "");
     const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
 
     const base = id ? await getDraft(id) : null;
@@ -324,41 +299,34 @@ export default async function NewsletterAdmin({
           audienceTag: undefined,
         };
 
-    const qs = new URLSearchParams({ nonce: String(Date.now()) });
-    const baseUrl = `/admin/newsletter${id ? `?id=${encodeURIComponent(id)}` : ""}`;
-
     if (!recipients.length) {
-      qs.set("test", "0");
-      qs.set("testMsg", "No recipients provided.");
-      return redirect(`${baseUrl}&${qs.toString()}`);
+      return { ok: false, message: "No recipients provided." };
     }
 
     try {
       const res: any = await sendNewsletter(draft, { recipients });
-      qs.set("test", res?.ok === false ? "0" : "1");
-      if (typeof res?.delivered === "number") qs.set("testDelivered", String(res.delivered));
-      if (typeof res?.failed === "number") qs.set("testFailed", String(res.failed));
-      if (res?.id) qs.set("testId", String(res.id));
-      if (Array.isArray(res?.errors) && res.errors.length) {
-        qs.set("testMsg", res.errors.join(" | ").slice(0, 300));
-      }
+      const delivered = Number(res?.delivered || 0);
+      const failed = Number(res?.failed || 0);
+      return {
+        ok: res?.ok === false ? false : true,
+        message:
+          res?.ok === false
+            ? (Array.isArray(res?.errors) ? res.errors.join(" | ").slice(0, 300) : "Send failed.")
+            : `Queued test: ${delivered} delivered, ${failed} failed.`,
+      };
     } catch (e: any) {
-      qs.set("test", "0");
-      qs.set("testMsg", e?.message || "Unknown error");
+      return { ok: false, message: e?.message || "Unknown error" };
     }
-
-    return redirect(`${baseUrl}&${qs.toString()}`);
   }
 
   async function actionDelete(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
     await deleteDraft(id);
-    // Force a fresh RSC payload so the list stays correct (no ghost items)
     redirect(`/admin/newsletter?nonce=${Date.now()}`);
   }
 
-  /* ---------- Legacy preview HTML (ClientUI renders Markdown properly) ---------- */
+  /* ------------------------- legacy preview (kept) ------------------------- */
   const previewHtml = (existing?.markdown || "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -389,7 +357,6 @@ export default async function NewsletterAdmin({
     };
   });
 
-  // Flash banner values from query string
   const flash = {
     compiled: searchParams?.compiled === "1",
     saved: searchParams?.saved === "1",
@@ -437,7 +404,7 @@ export default async function NewsletterAdmin({
         actionCompile={actionCompile}
         actionSave={actionSave}
         actionSchedule={actionSchedule}
-        actionSendNow={actionSendNow}        {/* <-- uses API route; shows up in Resend */}
+        actionSendNow={actionSendNow}
         actionSendTest={actionSendTest}
         actionDelete={actionDelete}
       />
