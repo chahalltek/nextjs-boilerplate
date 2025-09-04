@@ -23,7 +23,7 @@ function adminOk(req: Request) {
 // ---------- KV helpers ----------
 async function kvSmembers(key: string): Promise<string[]> {
   try {
-    const arr = await kv.smembers<string>(key);
+    const arr = (await kv.smembers(key)) as string[]; // cast the WHOLE return to string[]
     return (arr || []).map((s) => (s || "").toLowerCase());
   } catch {
     return [];
@@ -57,7 +57,6 @@ function mcAuthHeader() {
 }
 
 async function mcListSubscribed(): Promise<string[]> {
-  // Pull subscribed members from Mailchimp (paginated)
   const dc = process.env.MAILCHIMP_SERVER_PREFIX!;
   const listId = process.env.MAILCHIMP_LIST_ID!;
   const auth = mcAuthHeader();
@@ -65,8 +64,6 @@ async function mcListSubscribed(): Promise<string[]> {
   const perPage = 1000;
   let offset = 0;
   const emails: string[] = [];
-
-  // Cap pages to avoid super long requests
   const MAX_PAGES = 5;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -74,14 +71,10 @@ async function mcListSubscribed(): Promise<string[]> {
     url.searchParams.set("status", "subscribed");
     url.searchParams.set("count", String(perPage));
     url.searchParams.set("offset", String(offset));
-    // Trim the response to what we need
     url.searchParams.set("fields", "members.email_address,members.status,total_items");
 
     const res = await fetch(url.toString(), { headers: { authorization: auth } });
-    if (!res.ok) {
-      // If MC creds are wrong, fail gracefully with empty set; caller will show count 0
-      return [];
-    }
+    if (!res.ok) return [];
     const json = await res.json();
     const members = (json?.members || []) as McMember[];
     for (const m of members) {
@@ -89,8 +82,7 @@ async function mcListSubscribed(): Promise<string[]> {
         emails.push(m.email_address.toLowerCase());
       }
     }
-
-    if (members.length < perPage) break; // last page
+    if (members.length < perPage) break;
     offset += perPage;
   }
 
@@ -118,7 +110,7 @@ async function mcGetMember(email: string) {
     ok: true,
     found: true as const,
     email: json.email_address,
-    status: json.status, // subscribed | unsubscribed | cleaned | pending | transactional
+    status: json.status,
     last_changed: json.last_changed,
   };
 }
@@ -131,9 +123,8 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
-  const sample = Math.max(0, Math.min(200, Number(url.searchParams.get("sample") || 25))); // default sample 25
+  const sample = Math.max(0, Math.min(200, Number(url.searchParams.get("sample") || 25)));
 
-  // Per-email diagnostic (tells you exactly why someone is/ isn’t included)
   if (email) {
     const suppressed = (await getSuppressions()).has(email);
 
@@ -143,14 +134,17 @@ export async function GET(req: Request) {
         email,
         mailchimp_configured: false,
         suppressed,
-        included: !suppressed, // only KV logic would apply
+        included: !suppressed,
         reason: !suppressed ? "mc-not-configured" : "suppressed",
       });
     }
 
     const mc = await mcGetMember(email);
     if (!mc.ok) {
-      return NextResponse.json({ ok: false, source: "mailchimp", error: mc.error, detail: (mc as any).detail }, { status: 502 });
+      return NextResponse.json(
+        { ok: false, source: "mailchimp", error: mc.error, detail: (mc as any).detail },
+        { status: 502 }
+      );
     }
     if (!mc.found) {
       return NextResponse.json({
@@ -177,28 +171,24 @@ export async function GET(req: Request) {
     });
   }
 
-  // Summary (no full dump unless you ask with ?sample=N)
   let mcEmails: string[] = [];
   if (mcEnvOk()) {
     mcEmails = await mcListSubscribed();
   }
 
-  const dlist = await getDList();        // optional KV “D-list”
+  const dlist = await getDList();
   const suppressed = await getSuppressions();
 
-  // Merge, dedupe, subtract suppressions
   const merged = Array.from(new Set([...mcEmails, ...dlist])).filter((e) => !suppressed.has(e));
 
-  const response = {
+  return NextResponse.json({
     ok: true,
     count: merged.length,
-    recipients: merged.slice(0, sample), // sample so we don’t dump the whole list by default
+    recipients: merged.slice(0, sample),
     sources: {
       mailchimp_subscribed: mcEmails.length,
       dlist: dlist.length,
       suppressed: suppressed.size,
     },
-  };
-
-  return NextResponse.json(response);
+  });
 }
