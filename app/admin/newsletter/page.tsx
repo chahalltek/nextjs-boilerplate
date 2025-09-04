@@ -1,6 +1,3 @@
-// app/admin/newsletter/page.tsx
-"use server";
-
 import { redirect } from "next/navigation";
 import {
   listDrafts,
@@ -83,8 +80,7 @@ async function postJSON(path: string, body: any) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      // IMPORTANT: your API checks this
-      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`,
+      "Authorization": `Bearer ${process.env.ADMIN_API_KEY || ""}`, // your API expects this
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -96,33 +92,32 @@ async function postJSON(path: string, body: any) {
   return json;
 }
 
+/* ----------------------------------------------------------------------------
+ * Server action: SEND NOW (posts to API so Resend shows batches)
+ * --------------------------------------------------------------------------*/
 export async function actionSendNow(fd: FormData) {
-  const id          = String(fd.get("id") || "");
-  const subject     = String(fd.get("subject") || "");
-  const html        = String(fd.get("html") || "");       // prefer server-rendered email HTML
-  const markdown    = String(fd.get("markdown") || "");   // fallback if API wants to render
-  const audienceTag = String(fd.get("audienceTag") || "");
+  "use server";
+  const id = String(fd.get("id") || "");
+  const draft = await getDraft(id);
+  if (!draft) {
+    redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
+  }
 
-  // POST to the real sender route
-  return postJSON("/api/admin/newsletter/send", {
-    id, subject, html, markdown, audienceTag
-  });
-}
-
-export async function actionSchedule(fd: FormData) {
-  const id          = String(fd.get("id") || "");
-  const subject     = String(fd.get("subject") || "");
+  // Prefer server-rendered HTML if provided; otherwise API can render from markdown
+  const subject     = String(fd.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
   const html        = String(fd.get("html") || "");
-  const markdown    = String(fd.get("markdown") || "");
-  const scheduleAt  = String(fd.get("scheduleAt") || ""); // ISO local datetime input
-  const audienceTag = String(fd.get("audienceTag") || "");
+  const markdown    = String(fd.get("markdown") || draft.markdown || "");
+  const audienceTag = String(fd.get("audienceTag") || (draft as any)?.audienceTag || "");
 
-  // If you don’t have a separate schedule route, you can post to /send and handle scheduleAt there.
-  return postJSON("/api/admin/newsletter/schedule", {
-    id, subject, html, markdown, audienceTag, scheduleAt
-  });
+  await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
+
+  await markStatus(id, "sent");
+  redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
 }
 
+/* ----------------------------------------------------------------------------
+ * Pull content from repo (for fallbacks)
+ * --------------------------------------------------------------------------*/
 async function pullMarkdownFromDir(
   dir: string,
   { dateFrom, dateTo, limit = 3 }: { dateFrom?: string; dateTo?: string; limit?: number } = {}
@@ -196,7 +191,7 @@ export default async function NewsletterAdmin({
   const existing = editId ? await getDraft(editId) : null;
   const drafts = await listDrafts();
 
-  /* ---------- Server actions ---------- */
+  /* ---------- Server actions defined in-scope ---------- */
   async function actionCompile(formData: FormData) {
     "use server";
     const { compileNewsletter } = await import("@/lib/newsletter/compile");
@@ -288,6 +283,7 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&saved=1&nonce=${Date.now()}`);
   }
 
+  // Keep schedule as "update the draft + show banner".
   async function actionSchedule(formData: FormData) {
     "use server";
     const id = String(formData.get("id") || "");
@@ -298,18 +294,7 @@ export default async function NewsletterAdmin({
     redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
   }
 
-  async function actionSendNow(formData: FormData) {
-    "use server";
-    const { sendNewsletter } = await import("@/lib/newsletter/send");
-    const id = String(formData.get("id") || "");
-    const d = await getDraft(id);
-    if (!d) return;
-    await sendNewsletter(d);
-    await markStatus(id, "sent");
-    redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
-  }
-
-  // Accepts both `testRecipients` and legacy `to` to avoid client mismatch.
+  // Accepts both `testRecipients` and legacy `to`
   async function actionSendTest(formData: FormData) {
     "use server";
     const { sendNewsletter } = await import("@/lib/newsletter/send");
@@ -320,7 +305,7 @@ export default async function NewsletterAdmin({
 
     const toRaw =
       String(formData.get("testRecipients") || "") ||
-      String(formData.get("to") || ""); // legacy name from older ClientUI
+      String(formData.get("to") || ""); // legacy name
 
     const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
 
@@ -452,7 +437,7 @@ export default async function NewsletterAdmin({
         actionCompile={actionCompile}
         actionSave={actionSave}
         actionSchedule={actionSchedule}
-        actionSendNow={actionSendNow}
+        actionSendNow={actionSendNow}        {/* <-- uses API route; shows up in Resend */}
         actionSendTest={actionSendTest}
         actionDelete={actionDelete}
       />
