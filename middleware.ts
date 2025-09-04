@@ -8,13 +8,15 @@ export const config = {
 
 const ADMIN_COOKIE = "skol_admin";
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || ""; // optional basic auth
+const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "";
 
+/** Routes that should bypass auth (login endpoints) */
 function isLoginPath(pathname: string) {
   return pathname.startsWith("/admin/login") || pathname.startsWith("/api/admin/login");
 }
 
+/** Optional Basic Auth support (if ADMIN_PASS is set) */
 function basicAuthOk(req: NextRequest) {
   if (!ADMIN_PASS) return false;
   const header = req.headers.get("authorization");
@@ -27,7 +29,7 @@ function basicAuthOk(req: NextRequest) {
   }
 }
 
-/** NEW: allow Bearer key for /api/admin/** */
+/** NEW: Allow admin API access via Bearer ADMIN_API_KEY */
 function bearerOk(req: NextRequest) {
   if (!ADMIN_API_KEY) return false;
   const h = req.headers.get("authorization") || "";
@@ -37,24 +39,30 @@ function bearerOk(req: NextRequest) {
 export default function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Allow login endpoints
+  // 1) Always allow login endpoints
   if (isLoginPath(pathname)) return NextResponse.next();
 
-  // Cookie session from /api/admin/login
+  // 2) If they already have the admin cookie/session, allow
   const hasCookie = req.cookies.get(ADMIN_COOKIE)?.value;
+  if (hasCookie) return NextResponse.next();
 
-  // For API routes, allow Bearer token OR cookie OR basic auth
-  if (pathname.startsWith("/api/admin")) {
-    if (bearerOk(req) || hasCookie || basicAuthOk(req)) return NextResponse.next();
+  // 3) Allow Basic auth, if configured
+  if (basicAuthOk(req)) return NextResponse.next();
+
+  // 4) Allow Bearer admin key for API routes only
+  if (pathname.startsWith("/api/admin/") && bearerOk(req)) {
+    return NextResponse.next();
+  }
+
+  // 5) Otherwise block
+  if (pathname.startsWith("/api/")) {
     return new NextResponse(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
     });
   }
 
-  // For pages, allow cookie or basic auth; otherwise redirect to /admin/login
-  if (hasCookie || basicAuthOk(req)) return NextResponse.next();
-
+  // Non-API pages → redirect to /admin/login with "from"
   const url = req.nextUrl.clone();
   url.pathname = "/admin/login";
   url.searchParams.set("from", pathname + (search || ""));
