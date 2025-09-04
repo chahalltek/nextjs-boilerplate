@@ -1,5 +1,5 @@
-// middleware.ts (at project root)
-import { NextRequest, NextResponse } from "next/server";
+// middleware.ts
+import { NextResponse, type NextRequest } from "next/server";
 
 export const config = {
   matcher: ["/admin", "/admin/:path*", "/api/admin/:path*"],
@@ -8,19 +8,18 @@ export const config = {
 const ADMIN_COOKIE = "skol_admin";
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
+const ADMIN_API_KEY = (process.env.ADMIN_API_KEY || "").trim();
 
-// login endpoints allowed
 function isLoginPath(pathname: string) {
   return pathname.startsWith("/admin/login") || pathname.startsWith("/api/admin/login");
 }
 
-// if the request *includes* either an Authorization: Bearer ... or X-Admin-Key header,
-// let it pass; the route will validate the actual key value.
-function hasAnyAdminKeyHeader(req: NextRequest) {
+function hasValidAdminKey(req: NextRequest) {
+  if (!ADMIN_API_KEY) return false;
   const auth = req.headers.get("authorization") || "";
-  const hasBearer = /^Bearer\s+.+/i.test(auth);
-  const hasXKey = !!req.headers.get("x-admin-key");
-  return hasBearer || hasXKey;
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  const xkey = req.headers.get("x-admin-key")?.trim();
+  return bearer === ADMIN_API_KEY || xkey === ADMIN_API_KEY;
 }
 
 function basicAuthOk(req: NextRequest) {
@@ -36,20 +35,24 @@ function basicAuthOk(req: NextRequest) {
 }
 
 export default function middleware(req: NextRequest) {
-  const { pathname, searchParams } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
+  // Allow the login endpoints themselves
   if (isLoginPath(pathname)) return NextResponse.next();
 
-  // allow existing admin session cookie
-  if (req.cookies.get(ADMIN_COOKIE)?.value) return NextResponse.next();
+  // ✅ API key bypass for server-to-server calls to /api/admin/*
+  if (pathname.startsWith("/api/admin/") && hasValidAdminKey(req)) {
+    return NextResponse.next();
+  }
 
-  // allow API key *header presence* (route will verify)
-  if (hasAnyAdminKeyHeader(req)) return NextResponse.next();
+  // Cookie session set by your /api/admin/login handler
+  const hasCookie = req.cookies.get(ADMIN_COOKIE)?.value;
+  if (hasCookie) return NextResponse.next();
 
-  // optional HTTP Basic
+  // Optional fallback: Basic Auth
   if (basicAuthOk(req)) return NextResponse.next();
 
-  // block
+  // Not authenticated
   if (pathname.startsWith("/api/")) {
     return new NextResponse(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
@@ -57,10 +60,10 @@ export default function middleware(req: NextRequest) {
     });
   }
 
+  // Pages: redirect to /admin/login
   const url = req.nextUrl.clone();
   url.pathname = "/admin/login";
-  const qs = searchParams.toString();
-  url.search = qs ? `?${qs}` : "";
+  url.searchParams.set("from", pathname + (search || ""));
   url.searchParams.set("error", "missing admin session");
   return NextResponse.redirect(url);
 }
