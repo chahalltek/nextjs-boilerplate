@@ -386,21 +386,20 @@ export default async function NewsletterAdmin({
     });
 
  const flash = {
-  compiled: searchParams?.compiled === "1",
-  saved:    searchParams?.saved === "1",
-  scheduled:searchParams?.scheduled === "1",
+  compiled:  searchParams?.compiled === "1",
+  saved:     searchParams?.saved === "1",
+  scheduled: searchParams?.scheduled === "1",
 
-  // send success/failure + message
-  send:     typeof searchParams?.sent !== "undefined" ? String(searchParams.sent) : undefined, // "1" | "0" | undefined
-  sendMsg:  String(searchParams?.sendMsg || ""),
+  // send success/failure + message (from ?sent=1|0)
+  send:      typeof searchParams?.sent !== "undefined" ? String(searchParams.sent) : undefined, // "1" | "0" | undefined
+  sendMsg:   String(searchParams?.sendMsg || ""),
 
   // test info
-  test:           typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
-  testDelivered:  Number(searchParams?.testDelivered || 0),
-  testFailed:     Number(searchParams?.testFailed || 0),
-  testMsg:        String(searchParams?.testMsg || ""),
+  test:          typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
+  testDelivered: Number(searchParams?.testDelivered || 0),
+  testFailed:    Number(searchParams?.testFailed || 0),
+  testMsg:       String(searchParams?.testMsg || ""),
 };
-
 
 const sentFailed = searchParams?.sent === "0"; // 👈 NEW
 const showBanner =
@@ -415,10 +414,10 @@ const showBanner =
     return (
     <main className="container max-w-6xl py-8 space-y-4">
   {(flash.compiled || flash.saved || flash.scheduled ||
-    typeof flash.send !== "undefined" || typeof flash.test !== "undefined") && (
+    typeof flash.sent !== "undefined" || typeof flash.test !== "undefined") && (
     <div
       className={`rounded-lg px-3 py-2 border ${
-        flash.send === "0" || flash.test === "0"
+        flash.sent === "0" || flash.test === "0"
           ? "border-red-500/30 bg-red-500/10 text-red-300"
           : "border-green-500/30 bg-green-500/10 text-green-300"
       }`}
@@ -427,8 +426,8 @@ const showBanner =
       {flash.saved && "Draft saved. "}
       {flash.scheduled && "Scheduled. "}
 
-      {typeof flash.send !== "undefined" &&
-        (flash.send === "1"
+      {typeof flash.sent !== "undefined" &&
+        (flash.sent === "1"
           ? "Sent."
           : `Send failed${flash.sendMsg ? ` — ${flash.sendMsg}` : ""}. `)}
 
