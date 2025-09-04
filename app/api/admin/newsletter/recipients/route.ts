@@ -1,21 +1,31 @@
 // app/api/admin/newsletter/recipients/route.ts
 import { NextResponse } from "next/server";
 
-// (your existing helper functions to gather recipients)
-// ... getRecipientsFromMailchimp(), getRecipientsFromKV(), etc.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
+interface Recipient {
+  email: string;
+  source?: "mailchimp" | "kv" | "custom";
+  status?: string;
+  id?: string;
+  [key: string]: any;
+}
 
-  // --- Route-level key validation ---
-  const expected = (process.env.ADMIN_API_KEY || "").trim();
+function getProvidedAdminKey(req: Request) {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   const xkey = req.headers.get("x-admin-key")?.trim();
-  const provided = bearer || xkey || "";
+  return bearer || xkey || "";
+}
+
+export async function GET(req: Request) {
+  // --- Route-level admin key validation ---
+  const expected = (process.env.ADMIN_API_KEY || "").trim();
+  const provided = getProvidedAdminKey(req);
 
   if (!expected) {
-    // Safer to fail closed if the key isn't configured
     return NextResponse.json(
       { error: "unauthorized", reason: "ADMIN_API_KEY not set in this environment" },
       { status: 401 }
@@ -23,7 +33,7 @@ export async function GET(req: Request) {
   }
   if (!provided) {
     return NextResponse.json(
-      { error: "unauthorized", reason: "missing Authorization Bearer or X-Admin-Key header" },
+      { error: "unauthorized", reason: "missing Authorization: Bearer or X-Admin-Key header" },
       { status: 401 }
     );
   }
@@ -34,16 +44,18 @@ export async function GET(req: Request) {
     );
   }
 
-  // --- Your existing logic below ---
-  const email = url.searchParams.get("email") || "";
-  // TODO: replace with your real recipient sources
-  // const recipients = await getRecipientsFromMailchimpAndKV();
-  const recipients = []; // placeholder
+  // --- Query handling ---
+  const url = new URL(req.url);
+  const email = (url.searchParams.get("email") || "").toLowerCase();
+
+  // TODO: Plug in Mailchimp + KV lookups here.
+  // Example shape: [{ email: "user@example.com", source: "mailchimp", status: "subscribed", id: "abc123" }]
+  const recipients: Recipient[] = [];
 
   if (email) {
-    const lower = email.toLowerCase();
-    const found = recipients.find((r: any) => (r.email || "").toLowerCase() === lower);
-    return NextResponse.json({ ok: true, match: found || null });
+    const match =
+      recipients.find((r) => (r.email || "").toLowerCase() === email) || null;
+    return NextResponse.json({ ok: true, match });
   }
 
   return NextResponse.json({ ok: true, count: recipients.length, recipients });
