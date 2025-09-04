@@ -13,6 +13,7 @@ import rehypeRawOrig from "rehype-raw";
 const remarkGfm: any = remarkGfmOrig as any;
 const remarkBreaks: any = remarkBreaksOrig as any;
 const rehypeRaw: any = rehypeRawOrig as any;
+const previewHtmlFromServer = props.existing.previewHtml || "";
 
 /* ---------- types ---------- */
 type DraftListItem = {
