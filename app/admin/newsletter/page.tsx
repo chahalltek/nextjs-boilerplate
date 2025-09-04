@@ -311,20 +311,30 @@ export default async function NewsletterAdmin({
 
     // Called by the “Send now” form
     async function actionSendNow(formData: FormData) {
-      "use server";
-      const id = String(formData.get("id") || "");
-      const draft = await getDraft(id);
-      if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
+  "use server";
+  const id          = String(formData.get("id") || "");
+  const subject     = String(formData.get("subject") || "");
+  const html        = String(formData.get("html") || "");        // optional override
+  const markdownIn  = String(formData.get("markdown") || "");
+  const audienceTag = String(formData.get("audienceTag") || "");
 
-      const subject     = String(formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
-      const html        = String(formData.get("html") || "");
-      const markdown    = String(formData.get("markdown") || draft.markdown || "");
-      const audienceTag = String(formData.get("audienceTag") || (draft as any)?.audienceTag || "");
+  // If we have a draft, use it as the authoritative source and fall back to form fields.
+  const draft = id ? await getDraft(id).catch(() => null) : null;
+  const finalSubject  = subject || draft?.subject || "Your weekly Hey Skol Sister rundown!";
+  const finalMarkdown = markdownIn || draft?.markdown || "";
 
-      await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
-      await markStatus(id, "sent");
-      redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
-    }
+  try {
+    await postJSON("/api/admin/newsletter/send", {
+      id, subject: finalSubject, html, markdown: finalMarkdown, audienceTag
+    });
+
+    if (draft) await markStatus(id, "sent");
+    redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
+  } catch (e: any) {
+    const msg = encodeURIComponent(e?.message || "Send failed");
+    redirect(`/admin/newsletter?sent=0&sendMsg=${msg}&nonce=${Date.now()}`);
+  }
+}
 
     /* ------------------------- legacy preview (kept) ------------------------- */
     const previewHtml = (existing?.markdown || "")
@@ -357,37 +367,53 @@ export default async function NewsletterAdmin({
       };
     });
 
-    const flash = {
-      compiled: searchParams?.compiled === "1",
-      saved: searchParams?.saved === "1",
-      scheduled: searchParams?.scheduled === "1",
-      sent: searchParams?.sent === "1",
-      test: typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
-      testDelivered: Number(searchParams?.testDelivered || 0),
-      testFailed: Number(searchParams?.testFailed || 0),
-      testMsg: String(searchParams?.testMsg || ""),
-    };
+   const flash = {
+  compiled: searchParams?.compiled === "1",
+  saved: searchParams?.saved === "1",
+  scheduled: searchParams?.scheduled === "1",
+  sent: searchParams?.sent === "1",
+  test: typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
+  testDelivered: Number(searchParams?.testDelivered || 0),
+  testFailed: Number(searchParams?.testFailed || 0),
+  testMsg: String(searchParams?.testMsg || ""),
+  sendMsg: String(searchParams?.sendMsg || ""), // 👈 NEW: reason when sent=0
+};
+
+const sentFailed = searchParams?.sent === "0"; // 👈 NEW
+const showBanner =
+  flash.compiled ||
+  flash.saved ||
+  flash.scheduled ||
+  flash.sent ||
+  sentFailed ||
+  typeof flash.test !== "undefined";          // 👈 NEW: show even on failure
+
 
     return (
-      <main className="container max-w-6xl py-8 space-y-4">
-        {(flash.compiled || flash.saved || flash.scheduled || flash.sent || typeof flash.test !== "undefined") && (
-          <div
-            className={`rounded-lg px-3 py-2 border ${
-              flash.test === "0"
-                ? "border-red-500/30 bg-red-500/10 text-red-300"
-                : "border-green-500/30 bg-green-500/10 text-green-300"
-            }`}
-          >
-            {flash.compiled && "Draft compiled successfully. "}
-            {flash.saved && "Draft saved. "}
-            {flash.scheduled && "Scheduled. "}
-            {flash.sent && "Sent. "}
-            {typeof flash.test !== "undefined" &&
-              (flash.test === "1"
-                ? `Test sent: ${flash.testDelivered} delivered, ${flash.testFailed} failed.`
-                : `Test failed${flash.testMsg ? ` — ${flash.testMsg}` : ""}.`)}
-          </div>
-        )}
+     <main className="container max-w-6xl py-8 space-y-4">
+  {showBanner && (
+    <div
+      className={`rounded-lg px-3 py-2 border ${
+        sentFailed || flash.test === "0"
+          ? "border-red-500/30 bg-red-500/10 text-red-300"
+          : "border-green-500/30 bg-green-500/10 text-green-300"
+      }`}
+    >
+      {flash.compiled && "Draft compiled successfully. "}
+      {flash.saved && "Draft saved. "}
+      {flash.scheduled && "Scheduled. "}
+      {flash.sent && "Sent. "}
+      {/* NEW: explicit send failure message */}
+      {sentFailed &&
+        `Send failed${flash.sendMsg ? ` — ${flash.sendMsg}` : ""}. `}
+      {typeof flash.test !== "undefined" &&
+        (flash.test === "1"
+          ? `Test sent: ${flash.testDelivered} delivered, ${flash.testFailed} failed.`
+          : `Test failed${flash.testMsg ? ` — ${flash.testMsg}` : ""}.`)}
+    </div>
+  )}
+  {/* ...rest of the page... */}
+
 
         <ClientUI
           existing={{

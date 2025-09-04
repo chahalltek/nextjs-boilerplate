@@ -432,32 +432,30 @@ export default function ClientUI(props: {
         <h2 className="text-lg font-semibold">3) Schedule or send</h2>
         <div className="flex flex-wrap items-end gap-3">
           <form action={actionSchedule} className="flex items-end gap-2">
-            <input type="hidden" name="id" value={existing.id} />
-            <label className="grid gap-1 text-sm">
-              <span className="text-white/80">Send at (local)</span>
-              <input
-                type="datetime-local"
-                name="scheduleAt"
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2"
-              />
-            </label>
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Schedule
-            </button>
-            {justScheduled && (
-              <span className="ml-2 text-xs text-emerald-300">• scheduled</span>
-            )}
-          </form>
-
-          <form action={actionSendNow} className="flex items-center gap-2">
-            <input type="hidden" name="id" value={existing.id} />
-            <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
-              Send now
-            </button>
-            {justSent && (
-              <span className="text-xs text-emerald-300">• sent</span>
-            )}
-          </form>
+  <input type="hidden" name="id" value={existing.id} />
+  {/* include current fields so schedule/save has them */}
+  <input type="hidden" name="subject" value={subject} />
+  <input type="hidden" name="markdown" value={markdown} />
+  <input type="hidden" name="audienceTag" value={audienceTag} />
+  <label className="grid gap-1 text-sm">
+    <span className="text-white/80">Send at (local)</span>
+    <input type="datetime-local" name="scheduleAt"
+           className="rounded-lg border border-white/20 bg-transparent px-3 py-2" />
+  </label>
+  <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10">
+    Schedule
+  </button>
+<form action={actionSendNow}>
+  <input type="hidden" name="id" value={existing.id} />
+  {/* include current fields so we can send even if id is blank */}
+  <input type="hidden" name="subject" value={subject} />
+  <input type="hidden" name="markdown" value={markdown} />
+  <input type="hidden" name="audienceTag" value={audienceTag} />
+  <button className="rounded-lg border border-white/20 px-3 py-2 hover:bg-white/10"
+          disabled={!existing.id && !markdown.trim()}>
+    Send now
+  </button>
+</form>
         </div>
       </section>
 
