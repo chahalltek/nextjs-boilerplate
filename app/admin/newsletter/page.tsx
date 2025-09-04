@@ -134,14 +134,7 @@ async function fallbackWeeklyRecap(dateFrom?: string, dateTo?: string) {
   const recaps = await pullMarkdownFromDir("content/recaps", { dateFrom, dateTo, limit: 1 });
   if (!recaps.length) return "";
   const r = recaps[0];
-  return `
-
-## Weekly Recap
-
-**${r.title}** (${r.date})
-
-${r.content}
-`;
+  return `\n\n## Weekly Recap\n\n**${r.title}** (${r.date})\n\n${r.content}\n`;
 }
 
 async function fallbackBlog(dateFrom?: string, dateTo?: string) {
@@ -153,12 +146,7 @@ async function fallbackBlog(dateFrom?: string, dateTo?: string) {
       return `- **${p.title}** (${p.date}) — ${firstPara}`;
     })
     .join("\n");
-  return `
-
-## From the Blog
-
-${items}
-`;
+  return `\n\n## From the Blog\n\n${items}\n`;
 }
 
 /* ----------------------------------- PAGE ----------------------------------- */
@@ -167,268 +155,277 @@ export default async function NewsletterAdmin({
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
+  // allow ?debug=1 to show the message in production
+  const wantDebug = (typeof searchParams?.debug === "string" && searchParams.debug === "1") || false;
 
-  const existing = editId ? await getDraft(editId) : null;
-  const drafts = await listDrafts();
+  try {
+    const editId = typeof searchParams?.id === "string" ? searchParams.id : undefined;
 
-  /* -------------------------- server actions in-scope -------------------------- */
-  async function actionCompile(formData: FormData) {
-    "use server";
-    const { compileNewsletter } = await import("@/lib/newsletter/compile");
+    // Safely load data (don’t crash the render)
+    const [existing, drafts] = await Promise.all([
+      editId ? getDraft(editId).catch((e) => { throw new Error(`getDraft failed: ${e?.message || e}`); }) : Promise.resolve(null),
+      listDrafts().catch((e) => { throw new Error(`listDrafts failed: ${e?.message || e}`); }),
+    ]);
 
-    const picks: SourcePick[] = ALL_SOURCES
-      .filter((s) => formData.get(`include:${s.key}`) === "on")
-      .map((s) => ({
-        key: s.key,
-        verbatim: !NEVER_VERBATIM.includes(s.key) && formData.get(`verbatim:${s.key}`) === "on",
-      }));
+    /* -------------------------- server actions in-scope -------------------------- */
+    async function actionCompile(formData: FormData) {
+      "use server";
+      const { compileNewsletter } = await import("@/lib/newsletter/compile");
 
-    const perSource: Record<
-      NewsletterSourceKey,
-      { dateFrom?: string; dateTo?: string; limit?: number }
-    > = {} as any;
+      const picks: SourcePick[] = ALL_SOURCES
+        .filter((s) => formData.get(`include:${s.key}`) === "on")
+        .map((s) => ({
+          key: s.key,
+          verbatim: !NEVER_VERBATIM.includes(s.key) && formData.get(`verbatim:${s.key}`) === "on",
+        }));
 
-    for (const s of ALL_SOURCES) {
-      const from = String(formData.get(`from:${s.key}`) || "") || undefined;
-      const to = String(formData.get(`to:${s.key}`) || "") || undefined;
-      const limS = String(formData.get(`limit:${s.key}`) || "");
-      const limit = limS ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0)) : undefined;
-      if (from || to || limit) perSource[s.key] = { dateFrom: from, dateTo: to, limit };
-    }
+      const perSource: Record<NewsletterSourceKey, { dateFrom?: string; dateTo?: string; limit?: number }> = {} as any;
 
-    const preset = (String(formData.get("preset") || "") || undefined) as string | undefined;
-    const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
-    const globalDateTo = String(formData.get("dateTo") || "") || undefined;
-    const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
+      for (const s of ALL_SOURCES) {
+        const from = String(formData.get(`from:${s.key}`) || "") || undefined;
+        const to = String(formData.get(`to:${s.key}`) || "") || undefined;
+        const limS = String(formData.get(`limit:${s.key}`) || "");
+        const limit = limS ? Math.max(1, Math.min(20, parseInt(limS, 10) || 0)) : undefined;
+        if (from || to || limit) perSource[s.key] = { dateFrom: from, dateTo: to, limit };
+      }
 
-    let { subject, markdown } = await compileNewsletter(picks, {
-      dateFrom,
-      dateTo,
-      stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
-      perSource,
-    });
+      const preset = (String(formData.get("preset") || "") || undefined) as string | undefined;
+      const globalDateFrom = String(formData.get("dateFrom") || "") || undefined;
+      const globalDateTo = String(formData.get("dateTo") || "") || undefined;
+      const { dateFrom, dateTo } = computeRange(preset, globalDateFrom, globalDateTo);
 
-    const wantsRecap = picks.some((p) => p.key === "weeklyRecap");
-    const wantsBlog = picks.some((p) => p.key === "blog");
-    const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
-    const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
-    if (wantsRecap && !hasRecap) {
-      try {
-        markdown += await fallbackWeeklyRecap(dateFrom, dateTo);
-      } catch {}
-    }
-    if (wantsBlog && !hasBlog) {
-      try {
-        markdown += await fallbackBlog(dateFrom, dateTo);
-      } catch {}
-    }
+      let { subject, markdown } = await compileNewsletter(picks, {
+        dateFrom,
+        dateTo,
+        stylePrompt: String(formData.get("stylePrompt") || "") || undefined,
+        perSource,
+      });
 
-    const draft = await saveDraft({
-      subject: subject || "Your weekly Hey Skol Sister rundown!",
-      markdown: markdown || "",
-      picks,
-      status: "draft",
-      scheduledAt: null,
-      audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
-      title: "Weekly Newsletter",
-    });
+      const wantsRecap = picks.some((p) => p.key === "weeklyRecap");
+      const wantsBlog = picks.some((p) => p.key === "blog");
+      const hasRecap = /\b(Weekly Recap|CWS)\b/i.test(markdown || "");
+      const hasBlog = /\b(From the Blog|Blog)\b/i.test(markdown || "");
+      if (wantsRecap && !hasRecap) {
+        try { markdown += await fallbackWeeklyRecap(dateFrom, dateTo); } catch {}
+      }
+      if (wantsBlog && !hasBlog) {
+        try { markdown += await fallbackBlog(dateFrom, dateTo); } catch {}
+      }
 
-    redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1&nonce=${Date.now()}`);
-  }
-
-  async function actionSave(formData: FormData) {
-    "use server";
-    const id = String(formData.get("id") || genId());
-    const base =
-      (await getDraft(id)) ??
-      ({
-        id,
-        createdAt: "",
-        updatedAt: "",
-        subject: "",
-        markdown: "",
-        picks: [],
+      const draft = await saveDraft({
+        subject: subject || "Your weekly Hey Skol Sister rundown!",
+        markdown: markdown || "",
+        picks,
         status: "draft",
-      } as NewsletterDraft);
+        scheduledAt: null,
+        audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
+        title: "Weekly Newsletter",
+      });
 
-    await saveDraft({
-      ...base,
-      title: String(formData.get("title") || "Weekly Newsletter"),
-      subject: String(formData.get("subject") || "Your weekly Hey Skol Sister rundown!"),
-      markdown: String(formData.get("markdown") || ""),
-      audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
-    });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&saved=1&nonce=${Date.now()}`);
-  }
+      redirect(`/admin/newsletter?id=${encodeURIComponent(draft.id)}&compiled=1&nonce=${Date.now()}`);
+    }
 
-  async function actionSchedule(formData: FormData) {
-    "use server";
-    const id = String(formData.get("id") || "");
-    const when = String(formData.get("scheduleAt") || "");
-    const d = await getDraft(id);
-    if (!d) return;
-    await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
-    redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
-  }
-
-  // ClientUI expects a result object (no redirect).
-  async function actionSendTest(formData: FormData) {
-    "use server";
-    const { sendNewsletter } = await import("@/lib/newsletter/send");
-
-    const id = String(formData.get("id") || "");
-    const subject = String(formData.get("subject") || "");
-    const markdown = String(formData.get("markdown") || "");
-
-    const toRaw =
-      String(formData.get("testRecipients") || "") ||
-      String(formData.get("to") || "");
-    const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
-
-    const base = id ? await getDraft(id) : null;
-    const draft: NewsletterDraft = base
-      ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
-      : {
-          id: genId(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          subject: subject || "Newsletter Test",
-          markdown,
+    async function actionSave(formData: FormData) {
+      "use server";
+      const id = String(formData.get("id") || genId());
+      const base =
+        (await getDraft(id)) ??
+        ({
+          id,
+          createdAt: "",
+          updatedAt: "",
+          subject: "",
+          markdown: "",
           picks: [],
           status: "draft",
-          scheduledAt: null,
-          audienceTag: undefined,
+        } as NewsletterDraft);
+
+      await saveDraft({
+        ...base,
+        title: String(formData.get("title") || "Weekly Newsletter"),
+        subject: String(formData.get("subject") || "Your weekly Hey Skol Sister rundown!"),
+        markdown: String(formData.get("markdown") || ""),
+        audienceTag: String(formData.get("audienceTag") || "").trim() || undefined,
+      });
+      redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&saved=1&nonce=${Date.now()}`);
+    }
+
+    async function actionSchedule(formData: FormData) {
+      "use server";
+      const id = String(formData.get("id") || "");
+      const when = String(formData.get("scheduleAt") || "");
+      const d = await getDraft(id);
+      if (!d) return;
+      await saveDraft({ ...d, scheduledAt: when || null, status: when ? "scheduled" : "draft" });
+      redirect(`/admin/newsletter?id=${encodeURIComponent(id)}&scheduled=1&nonce=${Date.now()}`);
+    }
+
+    // NOTE: ClientUI expects a result object (no redirect).
+    async function actionSendTest(formData: FormData) {
+      "use server";
+      const { sendNewsletter } = await import("@/lib/newsletter/send");
+
+      const id = String(formData.get("id") || "");
+      const subject = String(formData.get("subject") || "");
+      const markdown = String(formData.get("markdown") || "");
+
+      const toRaw =
+        String(formData.get("testRecipients") || "") ||
+        String(formData.get("to") || "");
+      const recipients = toRaw.split(/[,\s;]+/).map((s) => s.trim()).filter(Boolean);
+
+      const base = id ? await getDraft(id) : null;
+      const draft: NewsletterDraft = base
+        ? { ...base, subject: subject || base.subject, markdown: markdown || base.markdown }
+        : {
+            id: genId(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            subject: subject || "Newsletter Test",
+            markdown,
+            picks: [],
+            status: "draft",
+            scheduledAt: null,
+            audienceTag: undefined,
+          };
+
+      if (!recipients.length) {
+        return { ok: false, message: "No recipients provided." };
+      }
+
+      try {
+        const res: any = await sendNewsletter(draft, { recipients });
+        const delivered = Number(res?.delivered || 0);
+        const failed = Number(res?.failed || 0);
+        return {
+          ok: res?.ok === false ? false : true,
+          message:
+            res?.ok === false
+              ? (Array.isArray(res?.errors) ? res.errors.join(" | ").slice(0, 300) : "Send failed.")
+              : `Queued test: ${delivered} delivered, ${failed} failed.`,
         };
-
-    if (!recipients.length) {
-      return { ok: false, message: "No recipients provided." };
+      } catch (e: any) {
+        return { ok: false, message: e?.message || "Unknown error" };
+      }
     }
 
-    try {
-      const res: any = await sendNewsletter(draft, { recipients });
-      const delivered = Number(res?.delivered || 0);
-      const failed = Number(res?.failed || 0);
+    // Called by the “Send now” form
+    async function actionSendNow(formData: FormData) {
+      "use server";
+      const id = String(formData.get("id") || "");
+      const draft = await getDraft(id);
+      if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
+
+      const subject     = String(formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!");
+      const html        = String(formData.get("html") || "");
+      const markdown    = String(formData.get("markdown") || draft.markdown || "");
+      const audienceTag = String(formData.get("audienceTag") || (draft as any)?.audienceTag || "");
+
+      await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
+      await markStatus(id, "sent");
+      redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
+    }
+
+    /* ------------------------- legacy preview (kept) ------------------------- */
+    const previewHtml = (existing?.markdown || "")
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((l) => {
+        if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
+        if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
+        if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
+        if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
+        if (!l.trim()) return "<br/>";
+        return `<p class="opacity-80">${l}</p>`;
+      })
+      .join("\n")
+      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
+
+    const prettyDrafts = (drafts || []).map((d) => {
+      let display = "draft";
+      if (d.status === "sent") display = "sent";
+      else if (d.status === "scheduled") display = "scheduled";
+      else if (d.createdAt && d.updatedAt && d.createdAt === d.updatedAt) display = "compiled";
+      else display = "edited";
       return {
-        ok: res?.ok === false ? false : true,
-        message:
-          res?.ok === false
-            ? (Array.isArray(res?.errors) ? res.errors.join(" | ").slice(0, 300) : "Send failed.")
-            : `Queued test: ${delivered} delivered, ${failed} failed.`,
+        id: d.id,
+        title: d.title || "Weekly Newsletter",
+        status: display as "compiled" | "edited" | "scheduled" | "sent",
+        updatedAt: d.updatedAt,
+        scheduledAt: d.scheduledAt ?? null,
+        audienceTag: (d as any).audienceTag,
       };
-    } catch (e: any) {
-      return { ok: false, message: e?.message || "Unknown error" };
-    }
-  }
+    });
 
-  // Kept inside the component so it isn't exported
-  async function actionSendNow(formData: FormData) {
-    "use server";
-    const id = String(formData.get("id") || "");
-    const draft = await getDraft(id);
-    if (!draft) redirect(`/admin/newsletter?sent=0&nonce=${Date.now()}`);
-
-    const subject = String(
-      formData.get("subject") || draft.subject || "Your weekly Hey Skol Sister rundown!"
-    );
-    const html = String(formData.get("html") || "");
-    const markdown = String(formData.get("markdown") || draft.markdown || "");
-    const audienceTag = String(formData.get("audienceTag") || (draft as any)?.audienceTag || "");
-
-    await postJSON("/api/admin/newsletter/send", { id, subject, html, markdown, audienceTag });
-    await markStatus(id, "sent");
-    redirect(`/admin/newsletter?sent=1&nonce=${Date.now()}`);
-  }
-
-  async function actionDelete(formData: FormData) {
-    "use server";
-    const id = String(formData.get("id") || "");
-    await deleteDraft(id);
-    redirect(`/admin/newsletter?nonce=${Date.now()}`);
-  }
-
-  /* ------------------------- legacy preview (kept) ------------------------- */
-  const previewHtml = (existing?.markdown || "")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((l) => {
-      if (l.startsWith("# ")) return `<h1 class="text-xl font-semibold mb-2">${l.slice(2)}</h1>`;
-      if (l.startsWith("## ")) return `<h2 class="text-lg font-semibold mt-4 mb-2">${l.slice(3)}</h2>`;
-      if (l.startsWith("### ")) return `<h3 class="font-semibold mt-3 mb-1">${l.slice(4)}</h3>`;
-      if (l.startsWith("- ")) return `<li>${l.slice(2)}</li>`;
-      if (!l.trim()) return "<br/>";
-      return `<p class="opacity-80">${l}</p>`;
-    })
-    .join("\n")
-    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 space-y-1">$1</ul>');
-
-  const prettyDrafts = drafts.map((d) => {
-    let display = "draft";
-    if (d.status === "sent") display = "sent";
-    else if (d.status === "scheduled") display = "scheduled";
-    else if (d.createdAt && d.updatedAt && d.createdAt === d.updatedAt) display = "compiled";
-    else display = "edited";
-    return {
-      id: d.id,
-      title: d.title || "Weekly Newsletter",
-      status: display as "compiled" | "edited" | "scheduled" | "sent",
-      updatedAt: d.updatedAt,
-      scheduledAt: d.scheduledAt ?? null,
-      audienceTag: (d as any).audienceTag,
+    const flash = {
+      compiled: searchParams?.compiled === "1",
+      saved: searchParams?.saved === "1",
+      scheduled: searchParams?.scheduled === "1",
+      sent: searchParams?.sent === "1",
+      test: typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
+      testDelivered: Number(searchParams?.testDelivered || 0),
+      testFailed: Number(searchParams?.testFailed || 0),
+      testMsg: String(searchParams?.testMsg || ""),
     };
-  });
 
-  const flash = {
-    compiled: searchParams?.compiled === "1",
-    saved: searchParams?.saved === "1",
-    scheduled: searchParams?.scheduled === "1",
-    sent: searchParams?.sent === "1",
-    test: typeof searchParams?.test !== "undefined" ? String(searchParams.test) : undefined,
-    testDelivered: Number(searchParams?.testDelivered || 0),
-    testFailed: Number(searchParams?.testFailed || 0),
-    testMsg: String(searchParams?.testMsg || ""),
-  };
+    return (
+      <main className="container max-w-6xl py-8 space-y-4">
+        {(flash.compiled || flash.saved || flash.scheduled || flash.sent || typeof flash.test !== "undefined") && (
+          <div
+            className={`rounded-lg px-3 py-2 border ${
+              flash.test === "0"
+                ? "border-red-500/30 bg-red-500/10 text-red-300"
+                : "border-green-500/30 bg-green-500/10 text-green-300"
+            }`}
+          >
+            {flash.compiled && "Draft compiled successfully. "}
+            {flash.saved && "Draft saved. "}
+            {flash.scheduled && "Scheduled. "}
+            {flash.sent && "Sent. "}
+            {typeof flash.test !== "undefined" &&
+              (flash.test === "1"
+                ? `Test sent: ${flash.testDelivered} delivered, ${flash.testFailed} failed.`
+                : `Test failed${flash.testMsg ? ` — ${flash.testMsg}` : ""}.`)}
+          </div>
+        )}
 
-  return (
-    <main className="container max-w-6xl py-8 space-y-4">
-      {(flash.compiled || flash.saved || flash.scheduled || flash.sent || typeof flash.test !== "undefined") && (
-        <div
-          className={`rounded-lg px-3 py-2 border ${
-            flash.test === "0"
-              ? "border-red-500/30 bg-red-500/10 text-red-300"
-              : "border-green-500/30 bg-green-500/10 text-green-300"
-          }`}
-        >
-          {flash.compiled && "Draft compiled successfully. "}
-          {flash.saved && "Draft saved. "}
-          {flash.scheduled && "Scheduled. "}
-          {flash.sent && "Sent. "}
-          {typeof flash.test !== "undefined" &&
-            (flash.test === "1"
-              ? `Test sent: ${flash.testDelivered} delivered, ${flash.testFailed} failed.`
-              : `Test failed${flash.testMsg ? ` — ${flash.testMsg}` : ""}.`)}
-        </div>
-      )}
+        <ClientUI
+          existing={{
+            id: existing?.id || "",
+            title: existing?.title || "Weekly Newsletter",
+            subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
+            markdown: existing?.markdown || "",
+            audienceTag: (existing as any)?.audienceTag,
+            previewHtml,
+          }}
+          drafts={prettyDrafts}
+          allSources={ALL_SOURCES}
+          neverVerbatim={NEVER_VERBATIM}
+          actionCompile={actionCompile}
+          actionSave={actionSave}
+          actionSchedule={actionSchedule}
+          actionSendNow={actionSendNow}
+          actionSendTest={actionSendTest}
+          actionDelete={async (fd) => { "use server"; await deleteDraft(String(fd.get("id") || "")); redirect(`/admin/newsletter?nonce=${Date.now()}`); }}
+        />
+      </main>
+    );
+  } catch (err: any) {
+    // Server-side log so you can see the real stack in Vercel logs
+    console.error("[/admin/newsletter] render failed:", err);
 
-      <ClientUI
-        existing={{
-          id: existing?.id || "",
-          title: existing?.title || "Weekly Newsletter",
-          subject: existing?.subject || "Your weekly Hey Skol Sister rundown!",
-          markdown: existing?.markdown || "",
-          audienceTag: (existing as any)?.audienceTag,
-          previewHtml,
-        }}
-        drafts={prettyDrafts}
-        allSources={ALL_SOURCES}
-        neverVerbatim={NEVER_VERBATIM}
-        actionCompile={actionCompile}
-        actionSave={actionSave}
-        actionSchedule={actionSchedule}
-        actionSendNow={actionSendNow}
-        actionSendTest={actionSendTest}
-        actionDelete={actionDelete}
-      />
-    </main>
-  );
+    // Minimal in-page error with optional detail via ?debug=1
+    return (
+      <main className="container max-w-2xl py-10">
+        <h1 className="text-xl font-semibold mb-3">Something went wrong</h1>
+        <p className="text-white/70 mb-4">The admin page failed to render.</p>
+        { (process.env.NODE_ENV !== "production" || wantDebug) && (
+          <pre className="whitespace-pre-wrap rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
+            {String(err?.message || err)}
+          </pre>
+        )}
+        <a href="/admin/newsletter" className="underline">Retry</a>
+      </main>
+    );
+  }
 }
