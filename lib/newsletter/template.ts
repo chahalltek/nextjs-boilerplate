@@ -4,7 +4,7 @@ import type { NewsletterDraft } from "@/lib/newsletter/store";
 /** Optional override for the email logo */
 const LOGO_URL =
   process.env.NEWSLETTER_LOGO_URL || "https://heyskolsister.com/logo.png";
-const LOGO_HEIGHT = Number(process.env.NEWSLETTER_LOGO_HEIGHT || 96); 
+const LOGO_HEIGHT = Number(process.env.NEWSLETTER_LOGO_HEIGHT || 96);
 const SITE = "https://heyskolsister.com";
 
 const NAV = [
@@ -19,6 +19,9 @@ const BRAND_STYLE =
   "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,Arial,sans-serif;" +
   "font-size:26px;font-weight:800;line-height:1.2;color:#ffffff;" +
   "text-decoration:none;display:inline-block;";
+
+/** Single place to control the unsubscribe URL used in the message */
+const UNSUB_URL = `${SITE}/unsubscribe?oneclick=1`;
 
 export function renderNewsletterEmail(draft: NewsletterDraft): string {
   const subject = draft.subject || "Your weekly Hey Skol Sister rundown!";
@@ -48,6 +51,8 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
     .logo { display:block; height:36px; margin:0 auto; }
     .header { padding:24px 0 8px; text-align:center; }
     .footer { text-align:center; padding:18px 0 36px; }
+    .unsubbar { text-align:center; margin:12px 0 16px; }
+    .unsubbar a { color:#ffffff !important; text-decoration:underline; font-size:12px; opacity:0.9; }
   </style>
 </head>
 <body>
@@ -61,19 +66,18 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
         <!-- Header -->
         <div class="header">
           <a href="${SITE}" target="_blank" rel="noopener">
-  <img
-    class="logo"
-    src="${LOGO_URL}"
-    alt="Hey Skol Sister"
-    height="${LOGO_HEIGHT}"
-    style="height:${LOGO_HEIGHT}px;width:auto;display:block;margin:0 auto;"
-  />
-</a>
+            <img
+              class="logo"
+              src="${LOGO_URL}"
+              alt="Hey Skol Sister"
+              height="${LOGO_HEIGHT}"
+              style="height:${LOGO_HEIGHT}px;width:auto;display:block;margin:0 auto;"
+            />
+          </a>
 
           <!-- Strong textual brand (big, bold, white) -->
           <div style="margin-top:8px;">
             <a href="${SITE}" target="_blank" rel="noopener" style="${BRAND_STYLE}">
-              <!-- font tag helps keep white in dark-mode clients that override colors -->
               <font color="#ffffff" style="color:#ffffff">Hey Skol Sister</font>
             </a>
           </div>
@@ -87,6 +91,11 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
                 )}</a>`
             ).join(" • ")}
           </div>
+
+          <!-- One-click unsubscribe (visible header area) -->
+          <div class="unsubbar">
+            <a href="${UNSUB_URL}" target="_blank" rel="noopener">Unsubscribe with one click</a>
+          </div>
         </div>
 
         <!-- Body -->
@@ -95,25 +104,27 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
         </div>
 
         <!-- Footer -->
-       <div class="footer" style="padding:16px 0;">
-  <p class="muted" style="margin:0;font-size:12px;line-height:1.6;color:#A0A0A0;">
-    You’re receiving this because you subscribed at
-    <a href="${SITE}" target="_blank" rel="noopener"
-       style="color:#ffffff !important;text-decoration:underline;">
-      ${SITE.replace("https://","")}
-    </a>.
-    <br />
-    <a href="${SITE}/unsubscribe" target="_blank" rel="noopener"
-       style="color:#ffffff !important;text-decoration:underline;">Unsubscribe</a>
-    &nbsp;•&nbsp;
-    <a href="${SITE}/privacy" target="_blank" rel="noopener"
-       style="color:#ffffff !important;text-decoration:underline;">Privacy</a>
-    <br />
-    <span style="display:block;margin-top:8px;">
-      3201 Edwards Mill Rd Ste 141-530, Raleigh, NC 27612
-    </span>
-  </p>
-</div>
+        <div class="footer" style="padding:16px 0;">
+          <p class="muted" style="margin:0;font-size:12px;line-height:1.6;color:#A0A0A0;">
+            You’re receiving this because you subscribed at
+            <a href="${SITE}" target="_blank" rel="noopener"
+               style="color:#ffffff !important;text-decoration:underline;">
+              ${SITE.replace("https://","")}
+            </a>.
+            <br />
+            <!-- One-click link in the body/footer as well -->
+            <a href="${UNSUB_URL}" target="_blank" rel="noopener"
+               style="color:#ffffff !important;text-decoration:underline;">Unsubscribe instantly</a>
+            &nbsp;•&nbsp;
+            <a href="${SITE}/privacy" target="_blank" rel="noopener"
+               style="color:#ffffff !important;text-decoration:underline;">Privacy</a>
+            <br />
+            <span style="display:block;margin-top:8px;">
+              3201 Edwards Mill Rd Ste 141-530, Raleigh, NC 27612
+            </span>
+          </p>
+        </div>
+
       </div>
     </td></tr>
   </table>
@@ -123,7 +134,6 @@ export function renderNewsletterEmail(draft: NewsletterDraft): string {
 
 /* ------------------------------------------------------------------ */
 /* Tiny, dependency-free Markdown -> HTML that's “email-safe enough”. */
-/* Supports: #, ##, ###, **bold**, _italic_, lists, paragraphs, HR.   */
 /* ------------------------------------------------------------------ */
 function markdownToHtml(md: string): string {
   md = md.replace(/\r\n/g, "\n");
