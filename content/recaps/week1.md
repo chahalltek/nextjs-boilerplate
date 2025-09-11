@@ -4,7 +4,7 @@ date: '2025-09-10'
 excerpt: ''
 published: true
 ---
-The NFL season opener gave us everything we wanted: touchdowns, spiting, fantasy heartbreak, and at least two managers in every league already questioning all their preseason “expert” research. Daniel Jones came out looking like the sequel nobody asked for but secretly enjoyed.  He scored on every drive!  Across the field, Aaron Rodgers looked 39 going on 29, clearly enjoying being responsible once again for another Jets' loss.  The top fantasy QB of the week, Justin Fields!
+The NFL season opener gave us everything we wanted: touchdowns, spitting, fantasy heartbreak, and at least two managers in every league already questioning all their preseason “expert” research. Daniel Jones came out looking like the sequel nobody asked for but secretly enjoyed.  He scored on every drive!  Across the field, Aaron Rodgers looked 39 going on 29, clearly enjoying being responsible once again for another Jets' loss.  The top fantasy QB of the week, Justin Fields!
 
 But the real fantasy gods showed up with Breece Hall and Travis Etienne, who must’ve texted each other before the game like, “Wanna make everyone regret not drafting us earlier?”  After all the panic over Christian McCaffrey availability, he got the ball 31 times and shot back into the top 3.  Meanwhile, my favorite stat line of the week, Ja'Marr Chase, Nico Collins, Amon-Ra St. Brown, Brian Thomas Jr, Drake London and AJ Brown combined for 115 total yards!  Brutal.  Only Puka Nacua delivered for fantasy owners!
 
